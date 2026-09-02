@@ -15,6 +15,8 @@ using EntitiesStocks;
 using Entities;
 
 using StockTimeMachine.Entities;
+using StockTimeMachine.Repositories;
+using StockTimeMachine.Providers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,6 +80,15 @@ builder.Services.AddDbContext<StockTimeMachineDbContext>(options =>
             errorNumbersToAdd: null)
     )
 );
+
+// ========== STOCK TIME MACHINE ==========
+builder.Services.AddHttpClient<ISecEdgarProvider, SecEdgarProvider>(client =>
+{
+    client.DefaultRequestHeaders.Add("User-Agent", "StockTimeMachine/1.0 (research@example.com)");
+});
+builder.Services.AddHttpClient<IAlphaVantageProvider, AlphaVantageProvider>();
+builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+builder.Services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();
 
 // ========== CONFIGURATION ==========
 builder.Services.Configure<TradingOptions>(
