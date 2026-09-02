@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>6aa1eac3-42e2-47f0-a3b7-95b9544ecd80</UserSecretsId>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <DockerfileContext>..\..\..</DockerfileContext>
+    <DockerfileContext>..\..</DockerfileContext>
   </PropertyGroup>
 	
 	<ItemGroup>
@@ -24,7 +24,7 @@
     <ProjectReference Include="..\RipositoryContracts\RepositoryContracts.csproj" />
     <ProjectReference Include="..\ServiceContracts\ServiceContractsContacts.csproj" />
     <ProjectReference Include="..\Services\Services.csproj" />
-    <ProjectReference Include="..\..\StockTimeMachine\StockTimeMachine.csproj" />
+    <ProjectReference Include="..\StockTimeMachine\StockTimeMachine.csproj" />
   </ItemGroup>
 
   <ItemGroup>

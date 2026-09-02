@@ -23,6 +23,7 @@ COPY ["src/Entities/EntitiesStocks.csproj", "src/Entities/"]
 COPY ["src/Repositories_Stocks/Repositories_Stocks.csproj", "src/Repositories_Stocks/"]
 COPY ["src/RipositoryContracts/RepositoryContracts.csproj", "src/RipositoryContracts/"]
 COPY ["src/Services/Services.csproj", "src/Services/"]
+COPY ["src/StockTimeMachine/StockTimeMachine.csproj", "src/StockTimeMachine/"]
 RUN dotnet restore "./src/StockTimeMachine.Web/StockTimeMachine.Web.csproj"
 COPY . .
 WORKDIR "/src/src/StockTimeMachine.Web"

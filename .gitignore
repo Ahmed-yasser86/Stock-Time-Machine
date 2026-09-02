@@ -134,3 +134,6 @@ MSSQL_SA_PASSWORD.yaml
 stocksapp-secret.yaml
 planPromt.md
 STOCK_TIME_MACHINE_PLAN.md
+
+# ----- Feature documentation -----
+docs/features/*.md
