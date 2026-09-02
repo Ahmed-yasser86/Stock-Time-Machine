@@ -8,6 +8,7 @@ public class TimeMachineViewModel
     public DateOnly SnapshotDate { get; set; } = new DateOnly(2020, 1, 15);
 
     public HistoricalSnapshot? Snapshot { get; set; }
+    public Simulation? SimulationResult { get; set; }
     public string? Error { get; set; }
 
     public decimal? Price => Snapshot?.Price;

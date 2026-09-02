@@ -187,8 +187,65 @@
 
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">What Happened After?</h5>
+                <h5 class="mb-0">What If? Investment Simulation</h5>
             </div>
+            <div class="card-body">
+                <div class="alert alert-warning small mb-3">
+                    Returns shown are based on raw share prices. Stock splits and dividends are not factored into this simulation.
+                </div>
+                <form method="post" asp-area="TimeMachine" asp-controller="TimeMachine" asp-action="Simulate">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="symbol" value="@Model.Symbol" />
+                    <input type="hidden" name="date" value="@Model.SnapshotDate.ToString("yyyy-MM-dd")" />
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Investment Amount ($)</label>
+                            <input type="number" name="amount" class="form-control" value="10000" min="1" step="1" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Exit Date (optional)</label>
+                            <input type="date" name="exitDate" class="form-control" />
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary">Run Simulation</button>
+                        </div>
+                    </div>
+                </form>
+
+                @if (Model.SimulationResult is not null)
+                {
+                    <hr />
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <small class="text-muted">Entry Price</small>
+                            <p class="mb-0">$@Model.SimulationResult.EntryPrice.ToString("N2")</p>
+                        </div>
+                        <div class="col-md-3">
+                            <small class="text-muted">Shares Purchased</small>
+                            <p class="mb-0">@Model.SimulationResult.SharesPurchased.ToString("N4")</p>
+                        </div>
+                        <div class="col-md-3">
+                            <small class="text-muted">Exit Price</small>
+                            <p class="mb-0">$@Model.SimulationResult.ExitPrice?.ToString("N2")</p>
+                        </div>
+                        <div class="col-md-3">
+                            <small class="text-muted">Final Value</small>
+                            <p class="mb-0 fw-bold @(Model.SimulationResult.FinalValue >= Model.SimulationResult.InvestmentAmount ? "text-success" : "text-danger")">
+                                $@Model.SimulationResult.FinalValue.ToString("N2")
+                            </p>
+                        </div>
+                        <div class="col-md-3">
+                            <small class="text-muted">Return</small>
+                            <p class="mb-0 fw-bold @(Model.SimulationResult.ReturnPercentage >= 0 ? "text-success" : "text-danger")">
+                                @(Model.SimulationResult.ReturnPercentage >= 0 ? "+" : "")@Model.SimulationResult.ReturnPercentage.ToString("N2")%
+                            </p>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
             <div class="card-body">
                 <p class="text-muted small">Select a later date to see how the stock price changed and what new information became available.</p>
                 <a asp-action="Index" asp-route-symbol="@Model.Symbol" class="btn btn-outline-primary">Explore Another Date &rarr;</a>

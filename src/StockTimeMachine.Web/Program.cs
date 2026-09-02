@@ -94,6 +94,7 @@ builder.Services.AddHttpClient<IAlphaVantageProvider, AlphaVantageProvider>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();
 builder.Services.AddScoped<ITimeMachineService, TimeMachineService>();
+builder.Services.AddScoped<ISimulationService, SimulationService>();
 
 // ========== CONFIGURATION ==========
 builder.Services.Configure<TradingOptions>(
