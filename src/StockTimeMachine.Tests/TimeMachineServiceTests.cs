@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using StockTimeMachine.Entities;
+using StockTimeMachine.Exceptions;
 using StockTimeMachine.ProviderContracts;
 using StockTimeMachine.Repositories;
 using StockTimeMachine.RepositoryContracts;
@@ -35,7 +36,7 @@ public class TimeMachineServiceTests
     public async Task GetSnapshot_FutureDate_Throws()
     {
         var futureDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
-        await Assert.ThrowsAsync<ArgumentException>(() => _sut.GetSnapshot("TSLA", futureDate));
+        await Assert.ThrowsAsync<InvalidHistoricalDateException>(() => _sut.GetSnapshot("TSLA", futureDate));
     }
 
     [Fact]

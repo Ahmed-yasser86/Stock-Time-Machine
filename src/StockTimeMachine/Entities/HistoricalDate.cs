@@ -1,3 +1,5 @@
+using StockTimeMachine.Exceptions;
+
 namespace StockTimeMachine.Entities;
 
 public record HistoricalDate(DateOnly Date)
@@ -6,7 +8,7 @@ public record HistoricalDate(DateOnly Date)
     {
         var today = referenceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         if (date > today)
-            throw new ArgumentException("Cannot create historical date in the future");
+            throw new InvalidHistoricalDateException("Cannot create historical date in the future");
         return new HistoricalDate(date);
     }
 }

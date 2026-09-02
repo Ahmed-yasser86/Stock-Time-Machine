@@ -1,5 +1,6 @@
 using Xunit;
 using StockTimeMachine.Entities;
+using StockTimeMachine.Exceptions;
 
 namespace StockTimeMachine.Tests;
 
@@ -17,7 +18,7 @@ public class HistoricalDateTests
     public void Create_FutureDate_ShouldThrow()
     {
         var futureDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
-        Assert.Throws<ArgumentException>(() => HistoricalDate.Create(futureDate));
+        Assert.Throws<InvalidHistoricalDateException>(() => HistoricalDate.Create(futureDate));
     }
 
     [Fact]
@@ -33,7 +34,7 @@ public class HistoricalDateTests
     {
         var reference = new DateOnly(2020, 6, 15);
         var futureFromRef = new DateOnly(2020, 12, 25);
-        Assert.Throws<ArgumentException>(() => HistoricalDate.Create(futureFromRef, reference));
+        Assert.Throws<InvalidHistoricalDateException>(() => HistoricalDate.Create(futureFromRef, reference));
     }
 }
 
@@ -122,5 +123,67 @@ public class PricePointTests
         Assert.Equal(100.00m, price.Open);
         Assert.Equal(103.50m, price.Close);
         Assert.Equal(1000000, price.Volume);
+    }
+}
+
+public class TemporalBoundaryTests
+{
+    [Fact]
+    public void GetCutoffUtc_ShouldReturnEndOfTradingDayInUtc()
+    {
+        var date = new DateOnly(2020, 1, 15);
+        var cutoff = TemporalBoundary.GetCutoffUtc(date);
+
+        Assert.Equal(DateTimeKind.Utc, cutoff.Kind);
+        // 23:59:59 ET (UTC-5) = 04:59:59 UTC next day
+        Assert.Equal(2020, cutoff.Year);
+        Assert.Equal(1, cutoff.Month);
+        Assert.Equal(16, cutoff.Day);
+        Assert.Equal(4, cutoff.Hour);
+        Assert.Equal(59, cutoff.Minute);
+        Assert.Equal(59, cutoff.Second);
+    }
+
+    [Fact]
+    public void GetCutoffUtc_IsTimezoneAware()
+    {
+        var summerDate = new DateOnly(2020, 7, 15); // EDT (UTC-4)
+        var winterDate = new DateOnly(2020, 1, 15); // EST (UTC-5)
+
+        var summerCutoff = TemporalBoundary.GetCutoffUtc(summerDate);
+        var winterCutoff = TemporalBoundary.GetCutoffUtc(winterDate);
+
+        // Summer (EDT UTC-4): 23:59:59 ET = 03:59:59 UTC
+        // Winter (EST UTC-5): 23:59:59 ET = 04:59:59 UTC
+        Assert.Equal(3, summerCutoff.Hour);
+        Assert.Equal(4, winterCutoff.Hour);
+    }
+
+    [Fact]
+    public void GetCutoffUtc_FilingBeforeCutoff_ShouldBeIncluded()
+    {
+        var cutoff = TemporalBoundary.GetCutoffUtc(new DateOnly(2020, 1, 15));
+        var filingBefore = new DateTime(2020, 1, 15, 16, 0, 0, DateTimeKind.Utc); // 4pm UTC, before 4:59:59 UTC cutoff
+
+        Assert.True(filingBefore <= cutoff);
+    }
+
+    [Fact]
+    public void GetCutoffUtc_FilingAfterCutoff_ShouldBeExcluded()
+    {
+        var cutoff = TemporalBoundary.GetCutoffUtc(new DateOnly(2020, 1, 15));
+        var filingAfter = new DateTime(2020, 1, 16, 5, 0, 0, DateTimeKind.Utc); // after 04:59:59 UTC cutoff
+
+        Assert.False(filingAfter <= cutoff);
+    }
+
+    [Fact]
+    public void GetCutoffUtc_SameRequestProducesDeterministicResult()
+    {
+        var date = new DateOnly(2020, 1, 15);
+        var first = TemporalBoundary.GetCutoffUtc(date);
+        var second = TemporalBoundary.GetCutoffUtc(date);
+
+        Assert.Equal(first, second);
     }
 }

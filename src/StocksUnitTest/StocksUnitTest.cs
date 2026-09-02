@@ -47,6 +47,7 @@ namespace StocksUnitTest
         
         #region CreateBuyOrder
 
+        [Fact]
         public async Task CreateBuyOrder_InsertNullValue()
         {
             BuyOrderRequest? request = null;
@@ -74,6 +75,7 @@ namespace StocksUnitTest
             });
         }
 
+        [Fact]
         public async Task CreateBuyOrder_InsertNullSympole_ShouldThrowArgumentNullException()
         {
             BuyOrderRequest request = new BuyOrderRequest
@@ -90,6 +92,7 @@ namespace StocksUnitTest
             });
         }
 
+        [Fact]
         public async Task CreateBuyOrder_InsertNotExsistingStock_ShouldThrowArgumentNullException()
         {
             BuyOrderRequest request = new BuyOrderRequest

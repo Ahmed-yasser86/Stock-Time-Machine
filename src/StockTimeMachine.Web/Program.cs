@@ -21,6 +21,7 @@ using StockTimeMachine.ProviderContracts;
 using StockTimeMachine.Providers;
 using StockTimeMachine.ServiceContracts;
 using StockTimeMachine.Services;
+using StockTimeMachine.Web.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,7 +43,6 @@ builder.Services.AddScoped<ICountryServices, CountryServices>();
 builder.Services.AddScoped<IPersonServices, PersonServices>();
 
 // ========== FINNHUB (NO DATABASE) ==========
-builder.Services.AddHttpClient<IFinnhubRepository, FinnhubRepository>();
 builder.Services.AddScoped<IFinnhubRepository, FinnhubRepository>();
 builder.Services.AddScoped<IFinnhubService, FinnhubService>();
 
@@ -77,7 +77,7 @@ builder.Services.AddDbContext<StocksDbContext>(options =>
 
 builder.Services.AddDbContext<StockTimeMachineDbContext>(options =>
     options.UseSqlServer(
-        builder.Configuration.GetConnectionString("StocksDbConnection"),
+        builder.Configuration.GetConnectionString("StockTimeMachineDb"),
         sqlOptions => sqlOptions.EnableRetryOnFailure(
             maxRetryCount: 5,
             maxRetryDelay: TimeSpan.FromSeconds(10),
@@ -142,6 +142,7 @@ if (builder.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpLogging();
 app.UseRouting();
 app.UseStaticFiles();
