@@ -1,0 +1,204 @@
+@model StocksApp2.Areas.TimeMachine.Models.TimeMachineViewModel
+@{
+    ViewData["Title"] = $"{Model.CompanyName} — {Model.SnapshotDate.ToString("MMMM dd, yyyy")}";
+}
+
+<div class="container mt-4">
+    <div class="mb-3">
+        <a asp-action="Index" class="btn btn-outline-secondary btn-sm">&larr; New Search</a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-warning">@Model.Error</div>
+    }
+
+    @if (Model.Snapshot is not null)
+    {
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h2 class="mb-0">@Model.CompanyName <span class="text-muted">(@Model.Symbol)</span></h2>
+                <p class="text-muted mb-0">Data as of @Model.SnapshotDate.ToString("MMMM dd, yyyy")</p>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-2">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <small class="text-muted">Close</small>
+                        <h4 class="mb-0">$@Model.Price?.ToString("N2")</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <small class="text-muted">Open</small>
+                        <h5 class="mb-0">$@Model.Open?.ToString("N2")</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <small class="text-muted">High</small>
+                        <h5 class="mb-0">$@Model.High?.ToString("N2")</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <small class="text-muted">Low</small>
+                        <h5 class="mb-0">$@Model.Low?.ToString("N2")</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <small class="text-muted">Volume</small>
+                        <h5 class="mb-0">@Model.Volume?.ToString("N0")</h5>
+                    </div>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(Model.CompanySector))
+            {
+                <div class="col-md-2">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <small class="text-muted">Sector</small>
+                            <h6 class="mb-0">@Model.CompanySector</h6>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (Model.PriceHistory.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Price History — 30 Days Before @Model.SnapshotDate.ToString("MMM dd, yyyy")</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Open</th>
+                                <th>High</th>
+                                <th>Low</th>
+                                <th>Close</th>
+                                <th>Volume</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in Model.PriceHistory)
+                            {
+                                <tr>
+                                    <td>@p.Date.ToString("yyyy-MM-dd")</td>
+                                    <td>$@p.Open.ToString("N2")</td>
+                                    <td>$@p.High.ToString("N2")</td>
+                                    <td>$@p.Low.ToString("N2")</td>
+                                    <td>$@p.Close.ToString("N2")</td>
+                                    <td>@p.Volume.ToString("N0")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">What Was Filed Before @Model.SnapshotDate.ToString("MMM dd, yyyy")?</h5>
+            </div>
+            <div class="card-body">
+                @if (Model.Filings.Any())
+                {
+                    <p class="text-muted small">Only SEC filings submitted before this date are shown. These are the material events and financial disclosures that were publicly available to investors at the time.</p>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Form</th>
+                                <th>Filed</th>
+                                <th>Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var filing in Model.Filings)
+                            {
+                                <tr>
+                                    <td><span class="badge bg-secondary">@filing.FormType</span></td>
+                                    <td>@filing.FiledAt.ToString("yyyy-MM-dd")</td>
+                                    <td><a href="@filing.Url" target="_blank" rel="noopener">SEC EDGAR</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="text-muted">No SEC filings found for @Model.Symbol before @Model.SnapshotDate.ToString("MMM dd, yyyy").</p>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">News &amp; Events</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info small mb-3">
+                    News coverage is best-effort and may be incomplete. Source availability varies by date and company.
+                </div>
+                @if (Model.News.Any())
+                {
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Headline</th>
+                                <th>Date</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var article in Model.News)
+                            {
+                                <tr>
+                                    <td><a href="@article.Url" target="_blank" rel="noopener">@article.Title</a></td>
+                                    <td>@article.PublishedAt.ToString("yyyy-MM-dd")</td>
+                                    <td>@article.Source</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="text-muted">No news articles available for this date. News coverage for historical dates is limited and best-effort.</p>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">What Happened After?</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">Select a later date to see how the stock price changed and what new information became available.</p>
+                <a asp-action="Index" asp-route-symbol="@Model.Symbol" class="btn btn-outline-primary">Explore Another Date &rarr;</a>
+            </div>
+        </div>
+    }
+    else if (string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="text-center mt-5">
+            <h4 class="text-muted">No data available</h4>
+            <p>Try a different company or date.</p>
+        </div>
+    }
+</div>

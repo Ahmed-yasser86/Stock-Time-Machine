@@ -21,14 +21,31 @@ public class TimeMachineController : Controller
     [HttpGet]
     public IActionResult Index()
     {
-        var model = new TimeMachineViewModel();
-        return View(model);
+        return View(new TimeMachineSearchModel());
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Index(TimeMachineViewModel model)
+    public IActionResult Index(TimeMachineSearchModel model)
     {
+        if (!ModelState.IsValid)
+            return View(model);
+
+        return RedirectToAction("Snapshot", new { symbol = model.Symbol, date = model.SnapshotDate.ToString("yyyy-MM-dd") });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Snapshot(string symbol, string date)
+    {
+        if (string.IsNullOrEmpty(symbol) || !DateOnly.TryParse(date, out var snapshotDate))
+            return RedirectToAction("Index");
+
+        var model = new TimeMachineViewModel
+        {
+            Symbol = symbol.ToUpper(),
+            SnapshotDate = snapshotDate
+        };
+
         try
         {
             var snapshot = await _timeMachine.GetSnapshot(model.Symbol, model.SnapshotDate);

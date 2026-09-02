@@ -19,11 +19,5 @@ public class TimeMachineViewModel
     public string CompanySector => Snapshot?.Company?.Sector ?? "";
     public List<PricePoint> PriceHistory => Snapshot?.RecentPrices ?? new();
     public List<SecFiling> Filings => Snapshot?.RecentFilings ?? new();
-}
-
-public class FilingInfo
-{
-    public string FormType { get; set; } = "";
-    public DateTime FiledAt { get; set; }
-    public string Url { get; set; } = "";
+    public List<NewsArticle> News => Snapshot?.RecentNews ?? new();
 }

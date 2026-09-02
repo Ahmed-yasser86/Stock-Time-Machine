@@ -1,137 +1,52 @@
-@model StocksApp2.Areas.TimeMachine.Models.TimeMachineViewModel
+@model StocksApp2.Areas.TimeMachine.Models.TimeMachineSearchModel
 @{
     ViewData["Title"] = "Stock Time Machine";
 }
 
 <div class="container mt-4">
-    <h1>Stock Time Machine</h1>
-    <p class="text-muted">What could a reasonable investor have known?</p>
-
-    <form method="post" class="row g-3 mb-4">
-        @Html.AntiForgeryToken()
-        <div class="col-md-3">
-            <label class="form-label">Company Symbol</label>
-            <input asp-for="Symbol" class="form-control" placeholder="TSLA" />
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Historical Date</label>
-            <input asp-for="SnapshotDate" type="date" class="form-control" />
-        </div>
-        <div class="col-md-3 d-flex align-items-end">
-            <button type="submit" class="btn btn-primary">Enter Time Machine</button>
-        </div>
-    </form>
-
-    @if (!string.IsNullOrEmpty(Model.Error))
-    {
-        <div class="alert alert-warning">@Model.Error</div>
-    }
-
-    @if (Model.Snapshot is not null)
-    {
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">@Model.CompanyName (@Model.Symbol) &mdash; @Model.SnapshotDate.ToString("MMMM dd, yyyy")</h5>
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="text-center mb-4">
+                <h1>Stock Time Machine</h1>
+                <p class="text-muted">What could a reasonable investor have known?</p>
             </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3">
-                        <h6>Close</h6>
-                        <p class="display-6">$@Model.Price?.ToString("N2")</p>
-                    </div>
-                    <div class="col-md-2">
-                        <h6>Open</h6>
-                        <p class="text-muted">$@Model.Open?.ToString("N2")</p>
-                    </div>
-                    <div class="col-md-2">
-                        <h6>High</h6>
-                        <p class="text-muted">$@Model.High?.ToString("N2")</p>
-                    </div>
-                    <div class="col-md-2">
-                        <h6>Low</h6>
-                        <p class="text-muted">$@Model.Low?.ToString("N2")</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h6>Volume</h6>
-                        <p class="text-muted">@Model.Volume?.ToString("N0")</p>
-                    </div>
-                </div>
-                @if (!string.IsNullOrEmpty(Model.CompanySector))
-                {
-                    <p class="text-muted small mt-2">Sector: @Model.CompanySector</p>
-                }
-            </div>
-        </div>
 
-        @if (Model.PriceHistory.Any())
-        {
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">Price History (30 days up to @Model.SnapshotDate.ToString("MMM dd, yyyy"))</h5>
-                </div>
+            <div class="card">
                 <div class="card-body">
-                    <table class="table table-sm table-striped">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Open</th>
-                                <th>High</th>
-                                <th>Low</th>
-                                <th>Close</th>
-                                <th>Volume</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var p in Model.PriceHistory)
-                            {
-                                <tr>
-                                    <td>@p.Date.ToString("yyyy-MM-dd")</td>
-                                    <td>$@p.Open.ToString("N2")</td>
-                                    <td>$@p.High.ToString("N2")</td>
-                                    <td>$@p.Low.ToString("N2")</td>
-                                    <td>$@p.Close.ToString("N2")</td>
-                                    <td>@p.Volume.ToString("N0")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                    <form method="post">
+                        @Html.AntiForgeryToken()
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label asp-for="Symbol" class="form-label"></label>
+                                <input asp-for="Symbol" class="form-control form-control-lg" placeholder="e.g. TSLA, AAPL, MSFT" autofocus />
+                                <span asp-validation-for="Symbol" class="text-danger"></span>
+                            </div>
+                            <div class="col-md-5">
+                                <label asp-for="SnapshotDate" class="form-label"></label>
+                                <input asp-for="SnapshotDate" type="date" class="form-control form-control-lg" />
+                                <span asp-validation-for="SnapshotDate" class="text-danger"></span>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary btn-lg w-100">Enter</button>
+                            </div>
+                        </div>
+                    </form>
                 </div>
             </div>
-        }
 
-        @if (Model.Filings.Any())
-        {
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">SEC Filings Available on @Model.SnapshotDate.ToString("MMM dd, yyyy")</h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted small">Only filings submitted before this date are shown.</p>
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Form</th>
-                                <th>Filed</th>
-                                <th>Link</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var filing in Model.Filings)
-                            {
-                                <tr>
-                                    <td><span class="badge bg-secondary">@filing.FormType</span></td>
-                                    <td>@filing.FiledAt.ToString("yyyy-MM-dd")</td>
-                                    <td><a href="@filing.Url" target="_blank" rel="noopener">SEC EDGAR</a></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+            <div class="mt-4">
+                <h6>Try these:</h6>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a asp-action="Snapshot" asp-route-symbol="TSLA" asp-route-date="2020-01-15" class="btn btn-outline-secondary btn-sm">TSLA — Jan 2020</a>
+                    <a asp-action="Snapshot" asp-route-symbol="AAPL" asp-route-date="2020-01-15" class="btn btn-outline-secondary btn-sm">AAPL — Jan 2020</a>
+                    <a asp-action="Snapshot" asp-route-symbol="MSFT" asp-route-date="2020-01-15" class="btn btn-outline-secondary btn-sm">MSFT — Jan 2020</a>
+                    <a asp-action="Snapshot" asp-route-symbol="TSLA" asp-route-date="2021-01-01" class="btn btn-outline-secondary btn-sm">TSLA — Jan 2021</a>
                 </div>
             </div>
-        }
-        else
-        {
-            <div class="alert alert-info">No SEC filings found for @Model.Symbol before @Model.SnapshotDate.ToString("MMM dd, yyyy").</div>
-        }
-    }
+        </div>
+    </div>
 </div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
