@@ -109,31 +109,17 @@ builder.Services.AddHttpLogging(options =>
 
 var app = builder.Build();
 
-// ========== MIGRATIONS WITH RETRY ==========
+// ========== DATABASE INIT ==========
 using (var scope = app.Services.CreateScope())
 {
-    var maxRetries = 5;
-    for (int i = 0; i < maxRetries; i++)
-    {
-        try
-        {
-            var contactDb = scope.ServiceProvider.GetRequiredService<AppDBContext>();
-            await contactDb.Database.MigrateAsync();
+    var contactDb = scope.ServiceProvider.GetRequiredService<AppDBContext>();
+    await contactDb.Database.EnsureCreatedAsync();
 
-            var stocksDb = scope.ServiceProvider.GetRequiredService<StocksDbContext>();
-            await stocksDb.Database.MigrateAsync();
+    var stocksDb = scope.ServiceProvider.GetRequiredService<StocksDbContext>();
+    await stocksDb.Database.EnsureCreatedAsync();
 
-            var timeMachineDb = scope.ServiceProvider.GetRequiredService<StockTimeMachineDbContext>();
-            await timeMachineDb.Database.EnsureCreatedAsync();
-            break;
-        }
-        catch (Exception ex)
-        {
-            if (i == maxRetries - 1) throw;
-            Console.WriteLine($"Migration attempt {i + 1} failed: {ex.Message}. Retrying in 5s...");
-            await Task.Delay(5000);
-        }
-    }
+    var timeMachineDb = scope.ServiceProvider.GetRequiredService<StockTimeMachineDbContext>();
+    await timeMachineDb.Database.EnsureCreatedAsync();
 }
 
 Console.WriteLine("app started");
