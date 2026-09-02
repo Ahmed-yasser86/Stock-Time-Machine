@@ -1,19 +1,24 @@
+using StockTimeMachine.Entities;
+
 namespace StocksApp2.Areas.TimeMachine.Models;
 
 public class TimeMachineViewModel
 {
     public string Symbol { get; set; } = "TSLA";
     public DateOnly SnapshotDate { get; set; } = new DateOnly(2020, 1, 15);
-    public decimal? Price { get; set; }
-    public decimal? NextDayPrice { get; set; }
-    public decimal? GainLoss => Price.HasValue && NextDayPrice.HasValue
-        ? NextDayPrice.Value - Price.Value
-        : null;
-    public decimal? GainLossPercent => Price.HasValue && Price.Value != 0 && GainLoss.HasValue
-        ? Math.Round(GainLoss.Value / Price.Value * 100, 2)
-        : null;
-    public List<FilingInfo> Filings { get; set; } = new();
+
+    public HistoricalSnapshot? Snapshot { get; set; }
     public string? Error { get; set; }
+
+    public decimal? Price => Snapshot?.Price;
+    public decimal? Open => Snapshot?.Open;
+    public decimal? High => Snapshot?.High;
+    public decimal? Low => Snapshot?.Low;
+    public long? Volume => Snapshot?.Volume;
+    public string CompanyName => Snapshot?.Company?.Name ?? Symbol;
+    public string CompanySector => Snapshot?.Company?.Sector ?? "";
+    public List<PricePoint> PriceHistory => Snapshot?.RecentPrices ?? new();
+    public List<SecFiling> Filings => Snapshot?.RecentFilings ?? new();
 }
 
 public class FilingInfo

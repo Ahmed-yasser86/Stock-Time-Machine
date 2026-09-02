@@ -27,54 +27,77 @@
         <div class="alert alert-warning">@Model.Error</div>
     }
 
-    @if (Model.Price.HasValue)
+    @if (Model.Snapshot is not null)
     {
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">@Model.Symbol &mdash; @Model.SnapshotDate.ToString("MMMM dd, yyyy")</h5>
+                <h5 class="mb-0">@Model.CompanyName (@Model.Symbol) &mdash; @Model.SnapshotDate.ToString("MMMM dd, yyyy")</h5>
             </div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-4">
-                        <h6>Stock Price</h6>
-                        <p class="display-6">@("$")@Model.Price.Value.ToString("N2")</p>
+                    <div class="col-md-3">
+                        <h6>Close</h6>
+                        <p class="display-6">$@Model.Price?.ToString("N2")</p>
                     </div>
-                    <div class="col-md-4">
-                        <h6>Next Day (@Model.SnapshotDate.AddDays(1).ToString("MMM dd"))</h6>
-                        <p class="display-6">
-                            @if (Model.NextDayPrice.HasValue)
-                            {
-                                @("$")@Model.NextDayPrice.Value.ToString("N2")
-                            }
-                            else
-                            {
-                                <span class="text-muted">N/A</span>
-                            }
-                        </p>
+                    <div class="col-md-2">
+                        <h6>Open</h6>
+                        <p class="text-muted">$@Model.Open?.ToString("N2")</p>
                     </div>
-                    <div class="col-md-4">
-                        <h6>Hypothetical $10,000 Investment</h6>
-                        @if (Model.GainLoss.HasValue)
-                        {
-                            var investment = 10000m;
-                            var shares = investment / Model.Price!.Value;
-                            var finalValue = shares * Model.NextDayPrice!.Value;
-                            var gain = finalValue - investment;
-                            <p class="display-6 @(gain >= 0 ? "text-success" : "text-danger")">
-                                @("$")@finalValue.ToString("N2")
-                            </p>
-                            <p class="@(gain >= 0 ? "text-success" : "text-danger")">
-                                @(gain >= 0 ? "+" : "")@("$")@gain.ToString("N2") (@Model.GainLossPercent%)
-                            </p>
-                        }
-                        else
-                        {
-                            <p class="text-muted">No next-day data available</p>
-                        }
+                    <div class="col-md-2">
+                        <h6>High</h6>
+                        <p class="text-muted">$@Model.High?.ToString("N2")</p>
+                    </div>
+                    <div class="col-md-2">
+                        <h6>Low</h6>
+                        <p class="text-muted">$@Model.Low?.ToString("N2")</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h6>Volume</h6>
+                        <p class="text-muted">@Model.Volume?.ToString("N0")</p>
                     </div>
                 </div>
+                @if (!string.IsNullOrEmpty(Model.CompanySector))
+                {
+                    <p class="text-muted small mt-2">Sector: @Model.CompanySector</p>
+                }
             </div>
         </div>
+
+        @if (Model.PriceHistory.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Price History (30 days up to @Model.SnapshotDate.ToString("MMM dd, yyyy"))</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Open</th>
+                                <th>High</th>
+                                <th>Low</th>
+                                <th>Close</th>
+                                <th>Volume</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in Model.PriceHistory)
+                            {
+                                <tr>
+                                    <td>@p.Date.ToString("yyyy-MM-dd")</td>
+                                    <td>$@p.Open.ToString("N2")</td>
+                                    <td>$@p.High.ToString("N2")</td>
+                                    <td>$@p.Low.ToString("N2")</td>
+                                    <td>$@p.Close.ToString("N2")</td>
+                                    <td>@p.Volume.ToString("N0")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
 
         @if (Model.Filings.Any())
         {

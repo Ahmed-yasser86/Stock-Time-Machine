@@ -19,6 +19,8 @@ using StockTimeMachine.Repositories;
 using StockTimeMachine.RepositoryContracts;
 using StockTimeMachine.ProviderContracts;
 using StockTimeMachine.Providers;
+using StockTimeMachine.ServiceContracts;
+using StockTimeMachine.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -91,6 +93,7 @@ builder.Services.AddHttpClient<ISecEdgarProvider, SecEdgarProvider>(client =>
 builder.Services.AddHttpClient<IAlphaVantageProvider, AlphaVantageProvider>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();
+builder.Services.AddScoped<ITimeMachineService, TimeMachineService>();
 
 // ========== CONFIGURATION ==========
 builder.Services.Configure<TradingOptions>(
