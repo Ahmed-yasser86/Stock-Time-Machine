@@ -149,29 +149,30 @@
 
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">News &amp; Events</h5>
+                <h5 class="mb-0">Corporate Disclosures &amp; Material Events</h5>
             </div>
             <div class="card-body">
                 <div class="alert alert-info small mb-3">
-                    News coverage is best-effort and may be incomplete. Source availability varies by date and company.
+                    <strong>Source:</strong> SEC 8-K filings (material events and corporate disclosures).
+                    This is not comprehensive news coverage — it reflects only regulatory filings submitted before the selected date.
                 </div>
-                @if (Model.News.Any())
+                @if (Model.Filings.Any(f => f.FormType == "8-K" || f.FormType == "8-K/A"))
                 {
                     <table class="table table-striped">
                         <thead>
                             <tr>
-                                <th>Headline</th>
-                                <th>Date</th>
-                                <th>Source</th>
+                                <th>Event</th>
+                                <th>Filed</th>
+                                <th>Link</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var article in Model.News)
+                            @foreach (var filing in Model.Filings.Where(f => f.FormType == "8-K" || f.FormType == "8-K/A"))
                             {
                                 <tr>
-                                    <td><a href="@article.Url" target="_blank" rel="noopener">@article.Title</a></td>
-                                    <td>@article.PublishedAt.ToString("yyyy-MM-dd")</td>
-                                    <td>@article.Source</td>
+                                    <td><span class="badge bg-warning text-dark">@filing.FormType</span></td>
+                                    <td>@filing.FiledAt.ToString("yyyy-MM-dd")</td>
+                                    <td><a href="@filing.Url" target="_blank" rel="noopener">SEC EDGAR</a></td>
                                 </tr>
                             }
                         </tbody>
@@ -179,7 +180,7 @@
                 }
                 else
                 {
-                    <p class="text-muted">No news articles available for this date. News coverage for historical dates is limited and best-effort.</p>
+                    <p class="text-muted">No 8-K material events found for @Model.Symbol before @Model.SnapshotDate.ToString("MMM dd, yyyy").</p>
                 }
             </div>
         </div>
