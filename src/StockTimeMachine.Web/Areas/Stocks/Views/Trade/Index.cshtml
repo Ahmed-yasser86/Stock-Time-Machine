@@ -33,36 +33,14 @@
 </div>
 
 <script>
-    const token = '@ViewBag.FinnhubToken';
-    const symbol = document.getElementById("stockSymbol").value;
+    // WebSocket connection requires a backend proxy to avoid exposing API tokens.
+    // Token removed from client-side — see M6 security fix.
     const priceDisplay = document.getElementById("stockPrice");
     const hiddenPriceInput = document.getElementById("hiddenPrice");
-
-    const socket = new WebSocket(`wss://ws.finnhub.io?token=${token}`);
-
-    socket.addEventListener("open", () => {
-        socket.send(JSON.stringify({ type: "subscribe", symbol: symbol }));
-    });
-
-    socket.addEventListener("message", (event) => {
-        const response = JSON.parse(event.data);
-        if (response.type === "trade" && response.data && response.data.length > 0) {
-            const lastPrice = response.data[response.data.length - 1].p;
-
-            priceDisplay.innerText = lastPrice.toFixed(2);
-
-            hiddenPriceInput.value = lastPrice;
-        }
-    });
 
     function updatePriceBeforeSubmit() {
         hiddenPriceInput.value = priceDisplay.innerText;
     }
-
-    window.addEventListener("beforeunload", () => {
-        socket.send(JSON.stringify({ type: "unsubscribe", symbol: symbol }));
-        socket.close();
-    });
 </script>
 
 

@@ -33,6 +33,7 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__ContactDb=Server=app-database,1433;Database=ContectManagerDB;User Id=sa;Password=YourStrong@Pass123;Encrypt=False;TrustServerCertificate=True;
       - ConnectionStrings__StocksDbConnection=Server=app-database,1433;Database=StocksDb;User Id=sa;Password=YourStrong@Pass123;Encrypt=False;TrustServerCertificate=True;
+      - ConnectionStrings__StockTimeMachineDb=Server=app-database,1433;Database=StockTimeMachineDb;User Id=sa;Password=YourStrong@Pass123;Encrypt=False;TrustServerCertificate=True;
 
 volumes:
   sqlserver_data:                          
