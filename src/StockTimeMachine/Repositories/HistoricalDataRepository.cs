@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StockTimeMachine.Entities;
+using StockTimeMachine.RepositoryContracts;
 
 namespace StockTimeMachine.Repositories;
 

@@ -1,6 +1,6 @@
 using StockTimeMachine.Entities;
 
-namespace StockTimeMachine.Repositories;
+namespace StockTimeMachine.RepositoryContracts;
 
 public interface IHistoricalDataRepository
 {

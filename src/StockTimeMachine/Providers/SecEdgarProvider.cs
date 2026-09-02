@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using StockTimeMachine.Entities;
+using StockTimeMachine.ProviderContracts;
 
 namespace StockTimeMachine.Providers;
 

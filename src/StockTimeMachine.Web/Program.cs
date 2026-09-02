@@ -16,6 +16,8 @@ using Entities;
 
 using StockTimeMachine.Entities;
 using StockTimeMachine.Repositories;
+using StockTimeMachine.RepositoryContracts;
+using StockTimeMachine.ProviderContracts;
 using StockTimeMachine.Providers;
 
 var builder = WebApplication.CreateBuilder(args);

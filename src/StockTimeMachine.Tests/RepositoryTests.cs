@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using StockTimeMachine.Entities;
 using StockTimeMachine.Repositories;
+using StockTimeMachine.RepositoryContracts;
 
 namespace StockTimeMachine.Tests;
 
