@@ -1,0 +1,114 @@
+@model StocksApp2.Areas.TimeMachine.Models.TimeMachineViewModel
+@{
+    ViewData["Title"] = "Stock Time Machine";
+}
+
+<div class="container mt-4">
+    <h1>Stock Time Machine</h1>
+    <p class="text-muted">What could a reasonable investor have known?</p>
+
+    <form method="post" class="row g-3 mb-4">
+        @Html.AntiForgeryToken()
+        <div class="col-md-3">
+            <label class="form-label">Company Symbol</label>
+            <input asp-for="Symbol" class="form-control" placeholder="TSLA" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Historical Date</label>
+            <input asp-for="SnapshotDate" type="date" class="form-control" />
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary">Enter Time Machine</button>
+        </div>
+    </form>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-warning">@Model.Error</div>
+    }
+
+    @if (Model.Price.HasValue)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">@Model.Symbol &mdash; @Model.SnapshotDate.ToString("MMMM dd, yyyy")</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>Stock Price</h6>
+                        <p class="display-6">@("$")@Model.Price.Value.ToString("N2")</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Next Day (@Model.SnapshotDate.AddDays(1).ToString("MMM dd"))</h6>
+                        <p class="display-6">
+                            @if (Model.NextDayPrice.HasValue)
+                            {
+                                @("$")@Model.NextDayPrice.Value.ToString("N2")
+                            }
+                            else
+                            {
+                                <span class="text-muted">N/A</span>
+                            }
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Hypothetical $10,000 Investment</h6>
+                        @if (Model.GainLoss.HasValue)
+                        {
+                            var investment = 10000m;
+                            var shares = investment / Model.Price!.Value;
+                            var finalValue = shares * Model.NextDayPrice!.Value;
+                            var gain = finalValue - investment;
+                            <p class="display-6 @(gain >= 0 ? "text-success" : "text-danger")">
+                                @("$")@finalValue.ToString("N2")
+                            </p>
+                            <p class="@(gain >= 0 ? "text-success" : "text-danger")">
+                                @(gain >= 0 ? "+" : "")@("$")@gain.ToString("N2") (@Model.GainLossPercent%)
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="text-muted">No next-day data available</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (Model.Filings.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">SEC Filings Available on @Model.SnapshotDate.ToString("MMM dd, yyyy")</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Only filings submitted before this date are shown.</p>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Form</th>
+                                <th>Filed</th>
+                                <th>Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var filing in Model.Filings)
+                            {
+                                <tr>
+                                    <td><span class="badge bg-secondary">@filing.FormType</span></td>
+                                    <td>@filing.FiledAt.ToString("yyyy-MM-dd")</td>
+                                    <td><a href="@filing.Url" target="_blank" rel="noopener">SEC EDGAR</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">No SEC filings found for @Model.Symbol before @Model.SnapshotDate.ToString("MMM dd, yyyy").</div>
+        }
+    }
+</div>

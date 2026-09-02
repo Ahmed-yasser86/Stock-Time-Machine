@@ -1,0 +1,91 @@
+﻿@model ServiceContracts.DTOs.PersonAddRequest
+@using ServiceContracts.DTOs
+@using ServiceContracts.DTOs.Enums
+
+@{
+    ViewBag.Title = "Create Person";
+    List<CountryResponse> countries = ViewBag.Countries;
+}
+
+<h2>Create Person</h2>
+@if (ViewBag.ModelErrors != null)
+{
+    <div class="text-danger">
+        <ul>
+            @foreach (var error in ViewBag.ModelErrors)
+            {
+                <li>@error.ErrorMessage</li>
+            }
+        </ul>
+    </div>
+}
+<form asp-action="Create" asp-controller="Person" method="post">
+
+    <div>
+        <label asp-for="Name"></label>
+        <input asp-for="Name" />
+        <span asp-validation-for="Name"></span>
+    </div>
+
+    <div>
+        <label asp-for="DateOfBirth"></label>
+        <input asp-for="DateOfBirth" type="date" />
+        <span asp-validation-for="DateOfBirth"></span>
+    </div>
+
+    <div>
+        <label asp-for="email"></label>
+        <input asp-for="email" />
+        <span asp-validation-for="email"></span>
+    </div>
+
+    <div>
+        <label asp-for="phone"></label>
+        <input asp-for="phone" />
+        <span asp-validation-for="phone"></span>
+    </div>
+
+    <div>
+        <label asp-for="Gender"></label>
+
+        <input type="radio" asp-for="Gender" value="@GenderOptions.Male" /> Male
+        <input type="radio" asp-for="Gender" value="@GenderOptions.Female" /> Female
+        <input type="radio" asp-for="Gender" value="@GenderOptions.Other" /> Other
+
+        <span asp-validation-for="Gender"></span>
+    </div>
+
+    <div>
+        <label asp-for="Address"></label>
+        <textarea asp-for="Address"></textarea>
+        <span asp-validation-for="Address"></span>
+    </div>
+
+    <div>
+        <label asp-for="CountryId">Country</label>
+        <select asp-for="CountryId">
+            <option value="">Select Country</option>
+
+            @foreach (var country in countries)
+            {
+                <option value="@country.CountryId">@country.CountryName</option>
+            }
+
+        </select>
+        <span asp-validation-for="CountryId"></span>
+    </div>
+
+    <div>
+        <label asp-for="NewsLetter">Subscribe to Newsletter</label>
+        <input type="checkbox" name="NewsLetter" value="true" />
+    </div>
+
+    <br />
+
+    <button type="submit">Create</button>
+
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

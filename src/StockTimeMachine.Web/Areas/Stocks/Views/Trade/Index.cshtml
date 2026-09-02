@@ -1,0 +1,71 @@
+﻿@model StockTrade
+
+<h2>@Model.StockName (@Model.StockSymbol)</h2>
+<h3>Price: $<span id="stockPrice">@Model.Price</span></h3>
+
+<hr />
+
+<div class="row">
+    <div class="col-md-4">
+        <form method="post">
+            <input type="hidden" id="stockSymbol" name="StockSymbol" value="@Model.StockSymbol" />
+            <input type="hidden" id="stockName" name="StockName" value="@Model.StockName" />
+            <input type="hidden" id="hiddenPrice" name="Price" value="@Model.Price" />
+
+            <div class="form-group mb-3">
+                <label class="form-label">Quantity:</label>
+                <input type="number" name="Quantity" class="form-control" value="1" min="1" id="quantityInput" />
+            </div>
+
+            <div class="button-group">
+                <button type="submit" asp-area="Stocks" asp-controller="Trade" asp-action="BuyOrders"
+                        class="btn btn-success" onclick="updatePriceBeforeSubmit()">
+                    Buy Order
+                </button>
+
+                <button type="submit" asp-area="Stocks" asp-controller="Trade" asp-action="SellOrders"
+                        class="btn btn-danger" onclick="updatePriceBeforeSubmit()">
+                    Sell Order
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const token = '@ViewBag.FinnhubToken';
+    const symbol = document.getElementById("stockSymbol").value;
+    const priceDisplay = document.getElementById("stockPrice");
+    const hiddenPriceInput = document.getElementById("hiddenPrice");
+
+    const socket = new WebSocket(`wss://ws.finnhub.io?token=${token}`);
+
+    socket.addEventListener("open", () => {
+        socket.send(JSON.stringify({ type: "subscribe", symbol: symbol }));
+    });
+
+    socket.addEventListener("message", (event) => {
+        const response = JSON.parse(event.data);
+        if (response.type === "trade" && response.data && response.data.length > 0) {
+            const lastPrice = response.data[response.data.length - 1].p;
+
+            priceDisplay.innerText = lastPrice.toFixed(2);
+
+            hiddenPriceInput.value = lastPrice;
+        }
+    });
+
+    function updatePriceBeforeSubmit() {
+        hiddenPriceInput.value = priceDisplay.innerText;
+    }
+
+    window.addEventListener("beforeunload", () => {
+        socket.send(JSON.stringify({ type: "unsubscribe", symbol: symbol }));
+        socket.close();
+    });
+</script>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-validate/1.21.0/jquery.validate.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-validate-unobtrusive/3.2.12/jquery.validate.unobtrusive.min.js"></script>

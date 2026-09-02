@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stocksapp-deployment
+  labels:
+    app: stocksapp
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: stocksapp
+  template:
+    metadata:
+      labels:
+        app: stocksapp
+    spec:
+      initContainers:
+      - name: wait-for-mssql
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        command:
+          - sh
+          - -c
+          - |
+            until /opt/mssql-tools18/bin/sqlcmd -S db-service -U sa -P $SA_PASSWORD -Q 'SELECT 1' -No; do
+              echo "Waiting for SQL Server..."
+              sleep 5
+            done
+        env:
+        - name: SA_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: SA_PASSWORD
+      containers:
+      - name: stocksapp
+        image: stocksapp-main-taskmanager.api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: stocksapp-config
+        env:
+        - name: SA_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: SA_PASSWORD
+        - name: ConnectionStrings__ContactDb
+          value: "Server=db-service,1433;Database=ContectManagerDB;User Id=sa;Password=$(SA_PASSWORD);TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True;"
+        - name: ConnectionStrings__StocksDbConnection
+          value: "Server=db-service,1433;Database=StocksDb;User Id=sa;Password=$(SA_PASSWORD);TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True;"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1024Mi"
+            cpu: "1000m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 5

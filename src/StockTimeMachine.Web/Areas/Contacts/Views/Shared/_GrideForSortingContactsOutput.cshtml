@@ -1,0 +1,34 @@
+﻿@using ServiceContracts.DTOs
+@using ServiceContracts.DTOs.Enums
+
+@if (ViewBag.CurrentSortedBy == (ViewBag.ColumnName) && ViewBag.CurrentSortOption == sortedListOp.Ascending.ToString())
+{
+                    <th>
+
+    <a href="/Person/Index?searchBy=@ViewBag.CurrentSearchBy&searchString=@(ViewBag.CurrentSearchString)&SortedBy=@(ViewBag.ColumnName)&SortOption=@sortedListOp.Descending.ToString()">
+            @ViewBag.DisplayName ↓
+    </a>
+    </th>
+
+}
+else if (ViewBag.CurrentSortedBy == (ViewBag.ColumnName) && ViewBag.CurrentSortOption == sortedListOp.Descending.ToString())
+{
+                    <th>
+
+    <a href="/Person/Index?searchBy=@(ViewBag.CurrentSearchBy)&searchString=@(ViewBag.CurrentSearchString)&SortedBy=@(ViewBag.ColumnName)&SortOption=@sortedListOp.Ascending.ToString()">
+        @ViewBag.DisplayName ↑
+    </a>
+    </th>
+
+}
+else
+{
+                    <th>
+
+    <a href="/Person/Index?searchBy=@(ViewBag.CurrentSearchBy)&searchString=@(ViewBag.CurrentSearchString)&SortedBy=@(ViewBag.ColumnName)&SortOption=@sortedListOp.Ascending.ToString()">
+            @ViewBag.DisplayName  ↓
+
+    </a>
+    </th>
+
+}

@@ -1,0 +1,136 @@
+# ============================================
+# Stock Time Machine - .gitignore
+# ============================================
+
+# ----- Build output -----
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+artifacts/
+*.build.csdef
+
+# ----- IDE / Editor -----
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.idea/
+*.sln.iml
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# ----- NuGet -----
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+
+# ----- Logs -----
+[Ll]og/
+[Ll]ogs/
+Logs/
+*.log
+*.tlog
+
+# ----- Test results -----
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResult.xml
+nunit-*.xml
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# ----- Secrets (NEVER commit) -----
+appsettings.*.local.json
+*.secrets.json
+.env
+**/FinnhubToken*
+**/ApiKey*
+
+# ----- OS generated -----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+*.swp
+*~
+~$*
+
+# ----- Docker -----
+docker-compose.override.yml
+
+# ----- SQL Server -----
+*.mdf
+*.ldf
+*.ndf
+
+# ----- JetBrains Rider -----
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# ----- Misc -----
+*.cache
+*.pidb
+*.svclog
+*.scc
+ClientBin/
+~$*
+*.dbmdl
+*.jfm
+*.pfx
+*.publishsettings
+FakesAssemblies/
+*.GhostDoc.xml
+node_modules/
+*.plg
+*.opt
+*.vbw
+*.vbp
+*.dsw
+*.dsp
+*.ncb
+*.aps
+*.binlog
+*.nvuser
+.mfractor/
+.localhistory/
+.vshistory/
+healthchecksdb
+MigrationBackup/
+.ionide/
+FodyWeavers.xsd
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# ----- Project-specific -----
+StocksApp-main/
+.opencode/
+MSSQL_SA_PASSWORD.yaml
+stocksapp-secret.yaml
+planPromt.md
+STOCK_TIME_MACHINE_PLAN.md

@@ -1,0 +1,146 @@
+﻿@using ServiceContracts.DTOs
+@using ServiceContracts.DTOs.Enums
+@model IEnumerable<PersonRespones>
+
+@{
+    ViewData["Title"] = "Contacts List";
+}
+
+<form asp-area ="Contacts" asp-controller="Person" asp-action="Index" method="get">
+
+    <div class="row m-1">
+        <div class="col-8">
+            <h2>People Directory</h2>
+        </div>
+    </div>
+
+
+    <div class="row m-1">
+        <div class="col-8">
+            <h2>People Directory</h2>
+        </div>
+
+        <div class="col-4 text-end">
+            <a asp-area="Contacts"
+               asp-controller="Person"
+               asp-action="Create"
+               class="btn btn-success">
+                Create New Person
+            </a>
+        </div>
+    </div>
+
+    <div class="search-box mb-3 p-3 bg-light border rounded">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <select name="searchBy" class="form-select">
+                    @if (ViewBag.SearchFields != null)
+                    {
+                        foreach (var field in (Dictionary<string, string>)ViewBag.SearchFields)
+                        {
+                            bool isSelected = field.Key == (string)ViewBag.CurrentSearchBy;
+                            <!option value="@field.Key" @(isSelected ? "selected" : "")>
+                            @field.Value
+                            </!option>
+                        }
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <input type="text" name="searchString" class="form-control"
+                       placeholder="Search..." value="@ViewBag.CurrentSearchString" />
+            </div>
+
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">Search</button>
+                <a asp-action="Index" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </div>
+    </div>
+
+    <table class="table table-striped table-hover mt-4">
+        <thead class="thead-dark">
+            <tr>
+					@await Html.PartialAsync("_GrideForSortingContactsOutput",
+                    new ViewDataDictionary(ViewData){
+                     {"ColumnName", nameof(PersonRespones.Name)}
+                    ,{"DisplayName","Persone Name"}})
+
+                @await Html.PartialAsync("_GrideForSortingContactsOutput",
+                                new ViewDataDictionary(ViewData){
+                                {"ColumnName", nameof(PersonRespones.email)}
+                                ,{"DisplayName","email"}})
+
+                @await Html.PartialAsync("_GrideForSortingContactsOutput",
+                                new ViewDataDictionary(ViewData){
+                                {"ColumnName", nameof(PersonRespones.phone)}
+                                ,{"DisplayName","Phone"}})
+
+
+                @await Html.PartialAsync("_GrideForSortingContactsOutput",
+                                new ViewDataDictionary(ViewData){
+                                {"ColumnName", nameof(PersonRespones.Gender)}
+                                ,{"DisplayName","Gender"}})
+
+
+
+                @await Html.PartialAsync("_GrideForSortingContactsOutput",
+                                new ViewDataDictionary(ViewData){
+                                {"ColumnName", nameof(PersonRespones.DateOfBirth)}
+                                ,{"DisplayName","Date of Birth"}})
+
+                @await Html.PartialAsync("_GrideForSortingContactsOutput",
+                                new ViewDataDictionary(ViewData){
+                                {"ColumnName", nameof(PersonRespones.Address)}
+                                ,{"DisplayName","Address"}})
+
+
+                @await Html.PartialAsync("_GrideForSortingContactsOutput",
+                                new ViewDataDictionary(ViewData){
+                                {"ColumnName", nameof(PersonRespones.NewsLetter)}
+                                ,{"DisplayName","Newsletter"}})
+
+
+
+                @await Html.PartialAsync("_GrideForSortingContactsOutput",
+                                new ViewDataDictionary(ViewData){
+                                {"ColumnName", nameof(PersonRespones.CountryName)}
+                                ,{"DisplayName","Country"}})
+
+
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var person in Model)
+            {
+                <tr>
+                    <td><strong>@person.Name</strong></td>
+                    <td>@person.email</td>
+
+                    <td>@person.phone</td>
+                    <td>@person.Gender</td>
+                    <td>
+                        @(person.DateOfBirth.HasValue
+                                            ? person.DateOfBirth.Value.ToString("MMM dd, yyyy")
+                                            : "N/A")
+                </td>
+                <td>@person.Address</td>
+                <td class="text-center">
+                    <input type="checkbox" @(person.NewsLetter == true ? "checked" : "") disabled />
+
+                </td>
+                    <td>@person.CountryName</td>
+
+                <td>
+                    <a asp-controller="Person" asp-area="Contacts" asp-action="Edit" asp-route-id="@person.PersonId" class="btn btn-sm btn-outline-primary">Edit</a>
+                </td>
+
+                    <td>
+                        <a asp-controller="Person" asp-area="Contacts" asp-action="Delete" asp-route-id="@person.PersonId" class="btn btn-sm btn-outline-danger">Delete</a>
+                    </td>
+            </tr>
+                        }
+        </tbody>
+    </table>
+</form>

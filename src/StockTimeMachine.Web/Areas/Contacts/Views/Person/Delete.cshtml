@@ -1,0 +1,43 @@
+﻿@model ServiceContracts.DTOs.PersonRespones
+@using ServiceContracts.DTOs
+@using ServiceContracts.DTOs.Enums
+
+@{
+    ViewBag.Title = "Delete Person";
+    List<CountryResponse> countries = ViewBag.Countries;
+}
+
+<h2>Delete Person</h2>
+@if (ViewBag.ModelErrors != null)
+{
+    <div class="text-danger">
+        <ul>
+            @foreach (var error in ViewBag.ModelErrors)
+            {
+                <li>@error.ErrorMessage</li>
+            }
+        </ul>
+    </div>
+}
+<form asp-action="Delete" asp-controller="Person" method="post">
+    <input type="hidden" asp-for="PersonId" />
+    <div>
+        <label asp-for="Name"></label>
+        <input asp-for="Name"  disabled="disabled"/>
+        <span asp-validation-for="Name" ></span>
+    </div>
+
+  
+    <div>
+        <label asp-for="email"></label>
+        <input asp-for="email"  disabled="disabled"/>
+        <span asp-validation-for="email" ></span>
+    </div>
+
+    <button type="submit">delete</button>
+
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
