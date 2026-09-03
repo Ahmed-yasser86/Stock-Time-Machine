@@ -138,3 +138,12 @@ STOCK_TIME_MACHINE_PLAN.md
 # ----- Feature documentation -----
 docs/features/*.md
 .opencode
+
+# ----- Agent workdirs & local test artifacts (never commit) -----
+.kilo/
+.playwright-mcp/
+/*.png
+
+# ----- Documentation (local only, never commit) -----
+*.md
+docs/
