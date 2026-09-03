@@ -1,0 +1,85 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Product palette: archival research dossier — paper, ink, hairlines.
+     One brand color (deep teal) for action/identity, one temporal color
+     (vermilion) reserved for time, cutoffs and reveals. */
+  --color-bg: #faf7f0;
+  --color-bg-deep: #efe9db;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f5f1e8;
+  --color-surface-hover: #ece5d3;
+  --color-border: #ddd3bf;
+  --color-border-subtle: #e8e1d1;
+  --color-fg: #1a1f2b;
+  --color-fg-muted: #5b6372;
+  --color-fg-dim: #646c7c;
+  --color-accent: #e7e0cf;
+  --color-gain: #177245;
+  --color-loss: #b42318;
+  --color-info: #2456a6;
+  --color-temporal: #c14a09;
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-display: Charter, "Bitstream Charter", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* shadcn token layer — canonical components render in the dossier theme. */
+  --color-background: #faf7f0;
+  --color-foreground: #1a1f2b;
+  --color-card: #ffffff;
+  --color-card-foreground: #1a1f2b;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1a1f2b;
+  --color-primary: #0c5b66;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #e9e2d2;
+  --color-secondary-foreground: #1a1f2b;
+  --color-muted: #f0eada;
+  --color-muted-foreground: #5b6372;
+  --color-accent-foreground: #1a1f2b;
+  --color-destructive: #b42318;
+  --color-border: #ddd3bf;
+  --color-input: #c9bfa8;
+  --color-ring: #0c5b66;
+}
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.surface-grain {
+  background-image: radial-gradient(circle at 1px 1px, rgba(26, 31, 43, 0.055) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
