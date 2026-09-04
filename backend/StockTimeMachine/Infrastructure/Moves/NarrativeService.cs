@@ -69,7 +69,16 @@ public class NarrativeService : INarrativeService
             var docs = articles.Take(TopicClustering.MaxArticles).ToList();
             var vectors = await _gemini.EmbedAsync(
                 docs.Select(d => $"{d.Title} {d.Description}").ToList(), ct);
-            var memberLists = EmbeddingClustering.Cluster(vectors);
+            var mergeSimilarities = new List<double>();
+            var rejectedTop = new List<double>();
+            var rejectedPairs = new List<string>();
+            var memberLists = EmbeddingClustering.Cluster(vectors, mergeSimilarities, rejectedTop,
+                rejectedPairs, docs.Select(d => d.Title).ToList());
+            _logger.LogDebug("Embedding clustering for {Symbol}: {Merges} merges at [{Similarities}], strongest rejected [{Rejected}] :: {Pairs}",
+                result.CompanySymbol, mergeSimilarities.Count,
+                string.Join(", ", mergeSimilarities.Select(s => s.ToString("F3"))),
+                string.Join(", ", rejectedTop.Select(s => s.ToString("F3"))),
+                string.Join(" ;; ", rejectedPairs));
             var topics = memberLists.Select(members => ToCluster(members, docs, vectors)).ToList();
 
             foreach (var topic in topics

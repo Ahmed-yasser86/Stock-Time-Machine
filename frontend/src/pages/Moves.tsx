@@ -19,6 +19,39 @@ function normalizeSource(raw: string | null): NewsSource {
   return 'gdelt';
 }
 
+/**
+ * Staged progress for the two-phase analysis. Step states only — never fake
+ * percentages: each step is waiting, active, or done.
+ */
+function AnalysisProgress({ movesDone, threadsDone }: { movesDone: boolean; threadsDone: boolean }) {
+  const steps = [
+    {
+      label: 'Detecting key movements',
+      hint: 'deterministic scan of the 100 trading days',
+      state: movesDone ? 'done' : 'active',
+    },
+    {
+      label: 'Clustering threads & writing AI briefs',
+      hint: 'embeddings, article fetches, summaries — can take up to a minute',
+      state: !movesDone ? 'waiting' : threadsDone ? 'done' : 'active',
+    },
+  ] as const;
+  return (
+    <ol aria-label="Analysis progress" className="space-y-1 text-sm">
+      {steps.map((s) => (
+        <li key={s.label} className="flex items-baseline gap-2" aria-current={s.state === 'active' ? 'step' : undefined}>
+          <span aria-hidden="true">{s.state === 'done' ? '✓' : s.state === 'active' ? '◌' : '·'}</span>
+          <span className={s.state === 'waiting' ? 'text-fg-dim' : 'text-fg'}>
+            {s.label}
+            <span className="text-xs text-fg-dim"> — {s.hint}</span>
+            {s.state === 'active' ? '…' : ''}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export default function Moves() {
   const [params, setParams] = useSearchParams();
   const symbol = params.get('symbol')?.trim() ?? '';
@@ -37,6 +70,16 @@ export default function Moves() {
     queryKey: ['moves', symbol.toUpperCase(), date, newsSource],
     queryFn: () => api.moves(symbol, date, newsSource),
     enabled: symbol !== '' && date !== '',
+    staleTime: 5 * 60_000,
+  });
+
+  // Owned here (not inside NarrativeTopics) so the page can stage progress:
+  // moves first, threads + AI briefs second. Narratives run only after moves
+  // succeed, against the same decision date the moves call resolved.
+  const narrativesQuery = useQuery({
+    queryKey: ['narratives', symbol.toUpperCase(), date, newsSource],
+    queryFn: () => api.narratives(symbol, date, newsSource),
+    enabled: query.isSuccess,
     staleTime: 5 * 60_000,
   });
 
@@ -62,10 +105,11 @@ export default function Moves() {
 
   if (query.isPending) {
     return (
-      <div className="space-y-4">
-        <p className="text-sm text-fg-muted" aria-busy="true">
-          Analyzing the 100 trading days before {fmtDate(date)} — detecting significant movements…
+      <div className="space-y-4" aria-busy="true">
+        <p className="text-sm text-fg-muted">
+          Analyzing the 100 trading days before {fmtDate(date)}…
         </p>
+        <AnalysisProgress movesDone={false} threadsDone={false} />
         <LoadingDossier />
       </div>
     );
@@ -125,6 +169,12 @@ export default function Moves() {
           ))}
         </div>
       </section>
+
+      {narrativesQuery.isPending && (
+        <div aria-busy="true">
+          <AnalysisProgress movesDone={true} threadsDone={false} />
+        </div>
+      )}
 
       <section aria-label="Decision uncertainty" className="space-y-2">
         <Card>
@@ -196,7 +246,15 @@ export default function Moves() {
           </section>
 
           <section aria-label="Narrative threads" className="space-y-2">
-            <NarrativeTopics symbol={symbol} date={data.decisionDate} newsSource={newsSource} />
+            <NarrativeTopics
+              query={{
+                data: narrativesQuery.data,
+                isPending: narrativesQuery.isPending,
+                isError: narrativesQuery.isError,
+                error: narrativesQuery.error,
+                refetch: () => narrativesQuery.refetch(),
+              }}
+            />
           </section>
 
           {data.keyMoves.length === 0 && (

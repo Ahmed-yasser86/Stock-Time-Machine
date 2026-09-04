@@ -1,7 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
 import { fmtDate } from '../lib/format';
-import type { NewsSource } from '../types';
+import type { NarrativesResponse } from '../types';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -9,25 +7,23 @@ import { Skeleton } from './ui/skeleton';
 import { EmptySection, ErrorState } from './StateBlocks';
 
 /**
- * Narrative threads: keyword-overlap clusters (TF-IDF + cosine) over cached
- * news text. Labels are top terms, not semantic understanding — the UI says so.
- * Empty cache yields an honest empty state (warmed by snapshot/moves runs).
+ * Narrative threads: presentational — the Moves page owns the query so it can
+ * drive the staged progress bar. Threads mirror the selected source's entity
+ * matching, which can be loose: an off-topic thread means noisy provider
+ * tagging, never a claim about the company. Empty cache yields an honest
+ * empty state (warmed by snapshot/moves runs).
  */
 export function NarrativeTopics({
-  symbol,
-  date,
-  newsSource,
+  query,
 }: {
-  symbol: string;
-  date: string;
-  newsSource: NewsSource;
+  query: {
+    data: NarrativesResponse | undefined;
+    isPending: boolean;
+    isError: boolean;
+    error: unknown;
+    refetch: () => void;
+  };
 }) {
-  const query = useQuery({
-    queryKey: ['narratives', symbol.toUpperCase(), date, newsSource],
-    queryFn: () => api.narratives(symbol, date, newsSource),
-    staleTime: 5 * 60_000,
-  });
-
   if (query.isPending) {
     return (
       <Card aria-busy="true" aria-label="Loading narrative topics">
@@ -49,7 +45,10 @@ export function NarrativeTopics({
     );
   }
 
+  // Plain-object props don't narrow like useQuery's discriminated union;
+  // this guard is unreachable (pending/error return above) but keeps TS honest.
   const data = query.data;
+  if (!data) return null;
 
   return (
     <Card>
@@ -105,8 +104,10 @@ export function NarrativeTopics({
           <Alert>
             <AlertTitle className="text-xs">Reading guide</AlertTitle>
             <AlertDescription className="text-xs">
-              Threads group articles sharing distinctive words. They show what was being written
-              about together — not what matters most, and never why prices moved.
+              Threads group what the selected source returned for this company — its entity
+              matching can be loose, so an off-topic thread reflects noisy provider tagging,
+              not a claim about the company. Threads show what was being written about
+              together — not what matters most, and never why prices moved.
             </AlertDescription>
           </Alert>
         )}
