@@ -34,7 +34,6 @@ import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Separator } from '../components/ui/separator';
 import {
   Table,
   TableBody,
@@ -45,7 +44,9 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { EmptySection, ErrorState, LoadingDossier, ReconstructionProgress, type StageEvent } from '../components/StateBlocks';
+import { CutoffRule } from '../components/CutoffRule';
 import { EvidenceStream } from '../components/EvidenceStream';
+import { SectionHeading } from '../components/SectionHeading';
 import { GuidedTour } from '../components/GuidedTour';
 import { TemporalRuler } from '../components/TemporalRuler';
 import type { ChartMarker } from '../components/PriceChart';
@@ -304,7 +305,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
       {/* Market context */}
       <section aria-label="Historical market context" data-tour="boundary" className="space-y-4">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <h2 className="text-lg font-semibold">Historical market context</h2>
+          <SectionHeading kicker="Before the cutoff">Historical market context</SectionHeading>
           <Link
             to={`/moves?symbol=${encodeURIComponent(data.company.symbol)}&date=${data.snapshotDate}&newsSource=${currentSource}`}
             className="text-sm text-primary underline-offset-4 hover:underline"
@@ -367,7 +368,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
 
       {/* Evidence */}
       <section aria-label="Historical evidence" data-tour="evidence" className="space-y-4">
-        <h2 className="text-lg font-semibold">Historical evidence</h2>
+        <SectionHeading kicker="Before the cutoff">Historical evidence</SectionHeading>
         <p className="text-xs text-fg-dim">
           Every item carries its source and the date it became available. Regulatory evidence
           is eligible by filing date, never the period covered. News comes from{' '}
@@ -381,18 +382,12 @@ function Dossier({ data }: { data: SnapshotResponse }) {
         />
       </section>
 
-      {/* Boundary */}
-      <div className="flex items-center gap-4" aria-hidden="true">
-        <Separator className="flex-1" />
-        <span className="text-xs font-medium tracking-widest text-fg-dim uppercase">
-          Historical knowledge ends here
-        </span>
-        <Separator className="flex-1" />
-      </div>
+      {/* Boundary — the signature temporal rule */}
+      <CutoffRule date={data.snapshotDate} />
 
       {/* Reveal */}
       <section aria-label={`What happened after ${fmtDate(data.snapshotDate)}`} data-tour="reveal" className="space-y-4">
-        <h2 className="text-lg font-semibold">What Happened After {fmtDate(data.snapshotDate)}</h2>
+        <SectionHeading kicker="After the cutoff">What Happened After {fmtDate(data.snapshotDate)}</SectionHeading>
         <p className="text-sm text-fg-muted">
           Post-cutoff reality — kept strictly separate from what was knowable then. You now know
           what followed that moment.

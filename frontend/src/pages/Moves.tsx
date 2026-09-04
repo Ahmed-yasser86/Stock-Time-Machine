@@ -12,6 +12,8 @@ import { Card, CardContent } from '../components/ui/card';
 import { EmptySection, ErrorState, LoadingDossier } from '../components/StateBlocks';
 import { AiBriefBlock } from '../components/AiBriefBlock';
 import { ConcludeNote } from '../components/ConcludeNote';
+import { CutoffRule } from '../components/CutoffRule';
+import { SectionHeading } from '../components/SectionHeading';
 import { GuidedTour } from '../components/GuidedTour';
 import { MethodLink } from '../components/MethodLink';
 import { NextSteps } from '../components/NextSteps';
@@ -210,6 +212,15 @@ export default function Moves() {
           The 100 trading days leading up to the decision —{' '}
           <strong className="text-fg">{fmtDate(data.decisionDate)}</strong>.
         </p>
+        <CutoffRule date={data.decisionDate} label="Lens ends here — decision moment" />
+        <div>
+          <Link
+            to={`/compare?symbols=${data.company.symbol}&date=${data.decisionDate}&newsSource=${newsSource}`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            Compare this window vs another company
+          </Link>
+        </div>
         <p className="text-xs text-fg-dim">
           Movements detected deterministically (see Methodology); each carries only evidence
           available by its own date.
@@ -245,7 +256,7 @@ export default function Moves() {
         <Card>
           <CardContent className="space-y-2 pt-6">
             <div className="flex flex-wrap items-baseline gap-x-3">
-              <h2 className="text-lg font-semibold">Decision uncertainty</h2>
+              <SectionHeading kicker="Decide with context">Decision uncertainty</SectionHeading>
               <span className="font-mono text-2xl font-semibold tabular" aria-label={`Uncertainty score ${data.uncertainty.score} out of 100`}>
                 {data.uncertainty.score.toFixed(1)}
               </span>

@@ -50,8 +50,52 @@ export default function Landing() {
             >
               Open this investigation <ArrowRight aria-hidden="true" />
             </Link>
+            <Link
+              to={`/snapshot?symbol=${SAMPLE.symbol}&date=${SAMPLE.date}&guided=1`}
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              Take the guided tour
+            </Link>
           </CardContent>
         </Card>
+      </section>
+
+      {/* Journey strip — the investigation path at a glance */}
+      <section aria-label="How an investigation flows">
+        <ol className="flex flex-wrap items-center justify-center gap-1 text-sm">
+          {[
+            { label: 'Setup', to: '/investigate' },
+            { label: 'Reconstruct', to: `/snapshot?symbol=${SAMPLE.symbol}&date=${SAMPLE.date}` },
+            { label: 'Lens', to: `/moves?symbol=${SAMPLE.symbol}&date=${SAMPLE.date}` },
+            { label: 'Compare', to: '/compare' },
+          ].map((s, i, arr) => (
+            <li key={s.label} className="flex items-center gap-1">
+              {i > 0 && (
+                <span aria-hidden="true" className="text-temporal">
+                  →
+                </span>
+              )}
+              <Link
+                to={s.to}
+                className="rounded-md border border-border bg-surface px-3 py-1.5 font-medium text-fg-muted hover:border-fg-dim hover:text-fg"
+              >
+                <span className="mr-1.5 font-mono text-xs text-temporal">{i + 1}</span>
+                {s.label}
+              </Link>
+              {i === arr.length - 1 && (
+                <span aria-hidden="true" className="text-temporal">
+                  →
+                </span>
+              )}
+            </li>
+          ))}
+          <li className="flex items-center gap-1">
+            <span className="rounded-md border border-dashed border-border px-3 py-1.5 text-fg-dim">
+              <span className="mr-1.5 font-mono text-xs">5</span>
+              Conclude (yours)
+            </span>
+          </li>
+        </ol>
       </section>
 
       {/* Dual positioning */}

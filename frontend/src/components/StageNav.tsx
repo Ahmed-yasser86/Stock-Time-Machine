@@ -1,4 +1,6 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { fmtDate } from '../lib/format';
+import { newsSourceLabel, type NewsSource } from '../types';
 
 /** Visible journey spine: Setup → Reconstruct → Lens → Compare → Conclude.
  * Every link preserves the full investigation context (symbols, date, source);
@@ -27,8 +29,22 @@ export function StageNav() {
     { label: 'Conclude', to: `${lens}#conclude`, active: false },
   ];
 
+  const sourceLabel = newsSourceLabel((newsSource as NewsSource) ?? 'gdelt');
+  const names = (symbols || symbol).split(',').filter(Boolean);
+
   return (
-    <nav aria-label="Investigation stages" className="mb-6 flex flex-wrap items-center gap-1 text-sm">
+    <div className="mb-6 space-y-2">
+      <p
+        aria-label="Active investigation context"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+      >
+        <span className="font-mono font-semibold">{names.join(' · ')}</span>
+        <span className="text-fg-muted">as of {date ? fmtDate(date) : '—'}</span>
+        <span className="text-xs text-fg-dim">
+          cutoff {date ? `${fmtDate(date)} 23:59 US/Eastern` : '—'} · {sourceLabel}
+        </span>
+      </p>
+      <nav aria-label="Investigation stages" className="flex flex-wrap items-center gap-1 text-sm">
       {stages.map((s, i) => (
         <span key={s.label} className="flex items-center gap-1">
           {i > 0 && (
@@ -47,6 +63,7 @@ export function StageNav() {
           </Link>
         </span>
       ))}
-    </nav>
+      </nav>
+    </div>
   );
 }

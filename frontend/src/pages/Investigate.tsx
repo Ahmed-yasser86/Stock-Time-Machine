@@ -94,7 +94,13 @@ export default function Investigate() {
         <h1 className="font-display text-3xl font-semibold tracking-tight">Start an investigation</h1>
         <p className="text-sm text-fg-muted">
           Pick a company and a moment in its history. The engine reconstructs only what was
-          publicly knowable on or before that date.
+          publicly knowable on or before that date.{' '}
+          <Link
+            to="/snapshot?symbol=TSLA&date=2020-01-15&guided=1"
+            className="underline decoration-dotted underline-offset-2 hover:text-fg"
+          >
+            First time? Take the guided tour.
+          </Link>
         </p>
       </div>
 
