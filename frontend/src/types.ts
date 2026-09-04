@@ -137,6 +137,7 @@ export interface KeyMove {
   fiveDayMomentumPct: number;
   score: number;
   flags: string[];
+  sentimentDirection: 'agree' | 'disagree' | 'neutral' | 'unknown' | string;
 }
 
 export interface MarketReaction {
@@ -201,6 +202,34 @@ export interface WindowSummary {
   sufficientHistory: boolean;
 }
 
+export interface UncertaintyComponent {
+  name: string;
+  weight: number;
+  value: number;
+  detail: string;
+}
+
+export interface UncertaintyIndex {
+  score: number;
+  components: UncertaintyComponent[];
+}
+
+export interface TopicCluster {
+  labelTerms: string[];
+  articleIds: string[];
+  representativeTitle: string;
+  spanStart: string | null;
+  spanEnd: string | null;
+}
+
+export interface NarrativesResponse {
+  company: CompanySummary;
+  asOfDate: string;
+  newsSource: NewsSource;
+  articlesConsidered: number;
+  topics: TopicCluster[];
+}
+
 export interface MovesResponse {
   company: CompanySummary;
   decisionDate: string;
@@ -209,6 +238,8 @@ export interface MovesResponse {
   keyMoves: KeyMove[];
   evidenceByDate: Record<string, MoveEvidence>;
   windowPrices: PricePoint[];
+  uncertainty: UncertaintyIndex;
+  regimes: Record<string, 'calm' | 'normal' | 'tense' | 'warming' | string>;
 }
 
 export const NEWS_COVERAGE_DISCLAIMER =

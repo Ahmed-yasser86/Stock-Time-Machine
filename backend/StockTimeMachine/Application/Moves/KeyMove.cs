@@ -13,6 +13,7 @@ public class KeyMove
     public decimal FiveDayMomentumPct { get; set; }
     public double Score { get; set; }
     public List<string> Flags { get; set; } = new();
+    public string SentimentDirection { get; set; } = SentimentDivergence.Unknown;
 }
 
 // Flag constants. Display copy must use temporal language ("occurred around",
@@ -70,4 +71,7 @@ public class MovesWindow
     public Dictionary<string, MoveEvidence> EvidenceByDate { get; set; } = new();
     // The analyzed trading-day slice (ascending) backing the timeline view.
     public List<PricePoint> WindowPrices { get; set; } = new();
+    public UncertaintyIndex Uncertainty { get; set; } = new();
+    // Per-date regime labels for the slice ("yyyy-MM-dd" → calm|normal|tense|warming).
+    public Dictionary<string, string> Regimes { get; set; } = new();
 }

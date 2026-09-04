@@ -11,6 +11,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { EmptySection, ErrorState, LoadingDossier } from '../components/StateBlocks';
 import { MoveDrawer } from '../components/MoveDrawer';
 import { MovesTimeline } from '../components/MovesTimeline';
+import { NarrativeTopics } from '../components/NarrativeTopics';
 
 function normalizeSource(raw: string | null): NewsSource {
   if (raw === 'alphavantage') return 'alphavantage';
@@ -125,6 +126,34 @@ export default function Moves() {
         </div>
       </section>
 
+      <section aria-label="Decision uncertainty" className="space-y-2">
+        <Card>
+          <CardContent className="space-y-2 pt-6">
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <h2 className="text-lg font-semibold">Decision uncertainty</h2>
+              <span className="font-mono text-2xl font-semibold tabular" aria-label={`Uncertainty score ${data.uncertainty.score} out of 100`}>
+                {data.uncertainty.score.toFixed(1)}
+              </span>
+              <span className="text-xs text-fg-dim">/ 100 · higher means thinner or more conflicting evidence</span>
+            </div>
+            <ul className="space-y-1 text-sm">
+              {data.uncertainty.components.map((c) => (
+                <li key={c.name} className="flex flex-wrap gap-x-2">
+                  <span className="font-mono tabular text-fg-muted">
+                    {(c.weight * 100).toFixed(0)}% × {c.value.toFixed(3)}
+                  </span>
+                  <span className="font-medium">{c.name}</span>
+                  <span className="text-xs text-fg-dim">— {c.detail}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-fg-dim">
+              Transparent formula, no hidden inputs — see Methodology. Never investment advice.
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
       {!s.sufficientHistory ? (
         <EmptySection
           title="Insufficient history"
@@ -160,9 +189,14 @@ export default function Moves() {
                   decisionDate={data.decisionDate}
                   selectedDate={selected}
                   onSelect={(d) => setSelected((cur) => (cur === d ? null : d))}
+                  regimes={data.regimes}
                 />
               </CardContent>
             </Card>
+          </section>
+
+          <section aria-label="Narrative threads" className="space-y-2">
+            <NarrativeTopics symbol={symbol} date={data.decisionDate} newsSource={newsSource} />
           </section>
 
           {data.keyMoves.length === 0 && (

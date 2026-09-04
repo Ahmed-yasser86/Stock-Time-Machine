@@ -102,6 +102,7 @@ builder.Services.AddSingleton<ICompanyDirectory, JsonCompanyDirectory>();
 builder.Services.AddScoped<ITimeMachineService, TimeMachineService>();
 builder.Services.AddScoped<ISimulationService, SimulationService>();
 builder.Services.AddScoped<IMoveDetectionService, MoveDetectionService>();
+builder.Services.AddScoped<INarrativeService, NarrativeService>();
 
 // Retail-discussion surface (Arctic Shift: keyless community Reddit archive).
 // Best-effort per move; failures degrade to honest per-layer empty states.

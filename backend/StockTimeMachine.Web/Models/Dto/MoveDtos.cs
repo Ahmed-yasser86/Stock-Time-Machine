@@ -10,7 +10,8 @@ public sealed record KeyMoveDto(
     double VolumeRatio,
     decimal FiveDayMomentumPct,
     double Score,
-    IReadOnlyList<string> Flags);
+    IReadOnlyList<string> Flags,
+    string SentimentDirection);
 
 public sealed record MarketReactionDto(DateOnly Date, decimal Close);
 
@@ -55,6 +56,24 @@ public sealed record WindowSummaryDto(
     decimal WorstDayReturnPct,
     bool SufficientHistory);
 
+public sealed record UncertaintyComponentDto(string Name, double Weight, double Value, string Detail);
+
+public sealed record UncertaintyIndexDto(double Score, IReadOnlyList<UncertaintyComponentDto> Components);
+
+public sealed record TopicClusterDto(
+    IReadOnlyList<string> LabelTerms,
+    IReadOnlyList<string> ArticleIds,
+    string RepresentativeTitle,
+    DateTime? SpanStart,
+    DateTime? SpanEnd);
+
+public sealed record NarrativesResponse(
+    CompanySummaryDto Company,
+    DateOnly AsOfDate,
+    string NewsSource,
+    int ArticlesConsidered,
+    IReadOnlyList<TopicClusterDto> Topics);
+
 public sealed record MovesResponse(
     CompanySummaryDto Company,
     DateOnly DecisionDate,
@@ -62,4 +81,6 @@ public sealed record MovesResponse(
     WindowSummaryDto Summary,
     IReadOnlyList<KeyMoveDto> KeyMoves,
     Dictionary<string, MoveEvidenceDto> EvidenceByDate,
-    IReadOnlyList<PricePointDto> WindowPrices);
+    IReadOnlyList<PricePointDto> WindowPrices,
+    UncertaintyIndexDto Uncertainty,
+    Dictionary<string, string> Regimes);

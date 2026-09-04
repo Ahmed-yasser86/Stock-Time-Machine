@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownRight, ArrowUpRight, ExternalLink, Minus, X } from 'lucide-react';
 import { direction, fmtDate, fmtDateTimeUtc, fmtMoney } from '../lib/format';
+import { ReactionSparkline } from './ReactionSparkline';
 import type { KeyMove, MoveEvidence } from '../types';
 import { Badge } from './ui/badge';
 import { buttonVariants } from './ui/button';
@@ -95,6 +96,15 @@ export function MoveDrawer({
           ))}
         </div>
       )}
+      <p className="mt-2 text-xs text-fg-muted" title="Whether scored news leaned the same way the price moved. A disagreement is a contrarian lens, never a prediction.">
+        Narrative vs market:{' '}
+        <strong className="text-fg">
+          {move.sentimentDirection === 'agree' && 'agree ✓'}
+          {move.sentimentDirection === 'disagree' && 'disagree — worth a look'}
+          {move.sentimentDirection === 'neutral' && 'neutral'}
+          {move.sentimentDirection === 'unknown' && 'unknown (too few scored articles)'}
+        </strong>
+      </p>
 
       <h3 className="mt-4 text-sm font-semibold">How information arrived</h3>
       {!ev || ev.arrival.length === 0 ? (
@@ -135,14 +145,20 @@ export function MoveDrawer({
 
       <h3 className="mt-4 text-sm font-semibold">Market reaction after this move</h3>
       {ev && ev.reaction.length > 0 ? (
-        <ul className="mt-1 space-y-1 text-sm">
-          {ev.reaction.map((r) => (
-            <li key={r.date} className="flex justify-between font-mono tabular">
-              <span>{fmtDate(r.date)}</span>
-              <span>{fmtMoney(r.close)}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ReactionSparkline reaction={ev.reaction} moveClose={move.close} moveDate={move.date} />
+          <ul className="mt-1 space-y-1 text-sm">
+            {ev.reaction.map((r) => (
+              <li key={r.date} className="flex justify-between font-mono tabular">
+                <span>{fmtDate(r.date)}</span>
+                <span>{fmtMoney(r.close)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-fg-dim">
+            Recorded closes only — no benchmark exists, so no abnormal-return claim is made.
+          </p>
+        </>
       ) : (
         <p className="mt-1 text-sm text-fg-muted">No subsequent closes available.</p>
       )}

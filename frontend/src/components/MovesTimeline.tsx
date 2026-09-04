@@ -1,4 +1,4 @@
-import { CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { fmtDate, fmtDateShort, fmtMoney } from '../lib/format';
 import type { KeyMove, PricePoint } from '../types';
 
@@ -13,14 +13,34 @@ export function MovesTimeline({
   decisionDate,
   selectedDate,
   onSelect,
+  regimes = {},
 }: {
   prices: PricePoint[];
   moves: KeyMove[];
   decisionDate: string;
   selectedDate: string | null;
   onSelect: (date: string) => void;
+  regimes?: Record<string, string>;
 }) {
   const asc = [...prices].sort((a, b) => (a.date < b.date ? -1 : 1));
+  // Contiguous tense stretches become background washes; calm/normal/warming
+  // stay unshaded. Regimes describe realized volatility — nothing predictive.
+  const tenseRuns: { x1: string; x2: string }[] = [];
+  {
+    let runStart: string | null = null;
+    let prev: string | null = null;
+    for (const p of asc) {
+      if (regimes[p.date] === 'tense') {
+        if (runStart === null) runStart = p.date;
+        prev = p.date;
+      } else if (runStart !== null && prev !== null) {
+        tenseRuns.push({ x1: runStart, x2: prev });
+        runStart = null;
+        prev = null;
+      }
+    }
+    if (runStart !== null && prev !== null) tenseRuns.push({ x1: runStart, x2: prev });
+  }
   const values = asc.map((p) => p.close).filter((v) => Number.isFinite(v));
   const min = values.length > 0 ? Math.min(...values) : 0;
   const max = values.length > 0 ? Math.max(...values) : 0;
@@ -59,6 +79,16 @@ export function MovesTimeline({
               formatter={(value) => [fmtMoney(value as number), 'Close']}
             />
             <Line type="monotone" dataKey="close" stroke="#0c5b66" strokeWidth={2} dot={false} />
+            {tenseRuns.map((r) => (
+              <ReferenceArea
+                key={`${r.x1}-${r.x2}`}
+                x1={r.x1}
+                x2={r.x2}
+                fill="#b42318"
+                fillOpacity={0.07}
+                stroke="none"
+              />
+            ))}
             {moves.map((m, i) =>
               closeByDate.has(m.date) ? (
                 <ReferenceDot
@@ -101,7 +131,8 @@ export function MovesTimeline({
       </div>
       <p className="mt-1 text-xs text-fg-dim">
         Ranked by significance score (see Methodology). Vermilion rule marks your decision date;
-        everything right of it would be hindsight. Rank {moves.length > 0 ? `1–${moves.length}` : '—'} below unlocks each move's evidence.
+        everything right of it would be hindsight. Shaded stretches were tense volatility regimes
+        (trailing volatility, window-relative tertiles — descriptive, not predictive). Rank {moves.length > 0 ? `1–${moves.length}` : '—'} below unlocks each move's evidence.
       </p>
       <span className="sr-only">Move ranks: {Array.from(rankByDate.entries()).map(([d, r]) => `${r} on ${d}`).join(', ')}</span>
     </div>

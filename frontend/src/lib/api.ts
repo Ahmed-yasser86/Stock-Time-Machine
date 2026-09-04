@@ -3,6 +3,7 @@ import type {
   LiveQuote,
   MethodologyDoc,
   MovesResponse,
+  NarrativesResponse,
   NewsSource,
   ProblemDetails,
   SimulationRequest,
@@ -65,6 +66,11 @@ export const api = {
   moves: (symbol: string, date: string, newsSource?: NewsSource) =>
     request<MovesResponse>(
       `/api/timemachine/moves?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
+        (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
+    ),
+  narratives: (symbol: string, date: string, newsSource?: NewsSource) =>
+    request<NarrativesResponse>(
+      `/api/timemachine/narratives?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
         (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
     ),
   methodology: () => request<MethodologyDoc>('/api/timemachine/methodology'),

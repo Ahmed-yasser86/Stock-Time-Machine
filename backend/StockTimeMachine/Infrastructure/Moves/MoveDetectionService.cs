@@ -63,6 +63,7 @@ public class MoveDetectionService : IMoveDetectionService
         if (rows.Count < MinRows)
         {
             window.Summary = new WindowSummary { TradingDays = rows.Count, SufficientHistory = false };
+            window.Uncertainty = UncertaintyIndexCalculator.Calculate(window);
             return window;
         }
 
@@ -70,6 +71,7 @@ public class MoveDetectionService : IMoveDetectionService
         var slice = asc.TakeLast(WindowSize).ToList();
         window.Summary = Summarize(slice);
         window.WindowPrices = slice;
+        window.Regimes = RegimeClassifier.Classify(slice);
 
         var scored = ScoreDays(asc, slice).Take(TopMoves).ToList();
         var company = await _companyRepo.GetBySymbol(normalized, ct);
@@ -86,6 +88,16 @@ public class MoveDetectionService : IMoveDetectionService
                 await BuildEvidence(normalized, companyName, selectedNewsSource, move.Date, socialAll, ct);
         }
 
+        foreach (var move in window.KeyMoves)
+        {
+            var key = move.Date.ToString("yyyy-MM-dd");
+            var scores = window.EvidenceByDate.TryGetValue(key, out var evidence)
+                ? evidence.News.Select(n => n.SentimentScore)
+                : Enumerable.Empty<decimal?>();
+            move.SentimentDirection = SentimentDivergence.Classify(scores, move.DailyReturnPct);
+        }
+
+        window.Uncertainty = UncertaintyIndexCalculator.Calculate(window);
         return window;
     }
 
@@ -216,15 +228,15 @@ public class MoveDetectionService : IMoveDetectionService
                 var pc = (double)asc[j - 1].Close;
                 rets[k] = pc == 0 ? 0 : ((double)asc[j].Close - pc) / pc;
             }
-            var mean = Average(rets);
+            var mean = RollingStats.Average(rets);
             // Volatility floor: after perfectly flat windows any move is extreme.
             // Documented constant; deterministic given the same rows.
-            var std = Math.Max(StdDev(rets, mean), 0.0005);
+            var std = Math.Max(RollingStats.SampleStdDev(rets, mean), 0.0005);
             var z = (ret - mean) / std;
 
             var vols = new double[Rolling];
             for (int k = 0; k < Rolling; k++) vols[k] = asc[i - Rolling + k].Volume;
-            var med = Median(vols);
+            var med = RollingStats.Median(vols);
             var volRatio = med <= 0 ? 1 : (double)p.Volume / med;
 
             double mom5 = 0;
@@ -279,26 +291,7 @@ public class MoveDetectionService : IMoveDetectionService
             .ToList();
     }
 
-    private static double Average(double[] xs)
-    {
-        double s = 0;
-        foreach (var x in xs) s += x;
-        return s / xs.Length;
-    }
-
-    private static double StdDev(double[] xs, double mean)
-    {
-        double s = 0;
-        foreach (var x in xs) s += (x - mean) * (x - mean);
-        return xs.Length > 1 ? Math.Sqrt(s / (xs.Length - 1)) : 0;
-    }
-
-    private static double Median(double[] xs)
-    {
-        var sorted = xs.OrderBy(x => x).ToArray();
-        int n = sorted.Length;
-        return n % 2 == 1 ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
-    }
+    // Rolling statistics live in Application/Moves/RollingStats (shared).
 
     private async Task<MoveEvidence> BuildEvidence(
         string symbol, string? companyName, string newsSource, DateOnly moveDate,

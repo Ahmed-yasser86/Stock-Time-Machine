@@ -124,6 +124,10 @@ public class ApiContractTests : IClassFixture<ApiContractTests.Factory>
         var body = await resp.Content.ReadAsStringAsync();
         Assert.Contains("sufficientHistory", body);
         Assert.Contains("false", body);
+        Assert.Contains("uncertainty", body);
+        Assert.Contains("evidence-sparsity", body);
+        Assert.Contains("uncertainty", body);
+        Assert.Contains("evidence-sparsity", body);
     }
 
     [Fact]

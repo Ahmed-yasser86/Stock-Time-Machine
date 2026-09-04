@@ -101,6 +101,20 @@ public class MoveDetectionServiceTests
     }
 
     [Fact]
+    public async Task GetMoves_AttachesValidRegimes()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var sut = Sut(db, av, directory, new NullNewsProvider(NullLogger<NullNewsProvider>.Instance));
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        var valid = new[] { "calm", "normal", "tense", "warming" };
+        Assert.NotEmpty(window.Regimes);
+        Assert.All(window.Regimes.Values, v => Assert.Contains(v, valid));
+    }
+
+    [Fact]
     public async Task GetMoves_IsDeterministic()
     {
         var (db, av, directory) = BuildDb();
