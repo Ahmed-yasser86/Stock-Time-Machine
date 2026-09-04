@@ -162,7 +162,7 @@ export function EvidenceStream({
           }
         />
       ) : (
-        <ul className="density-compact space-y-2">
+        <ul className="density-compact evidence-rail space-y-2">
           {items.map((item) => (
             <li key={item.key} className="rounded-lg border border-border bg-surface p-3 text-sm">
               {item.node}
