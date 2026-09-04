@@ -15,7 +15,7 @@ import {
 import { api } from '../lib/api';
 import { fmtDate, fmtPct } from '../lib/format';
 import { MAX_COMPARE_PICKS, pickColor } from '../lib/palette';
-import type { MovesResponse, NewsSource } from '../types';
+import type { KeyMove, MovesResponse, NewsSource, TopicCluster } from '../types';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { buttonVariants } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -121,6 +121,72 @@ export default function Compare() {
     for (const s of series) row[s.symbol] = Number(s.points[i].value.toFixed(2));
     return row;
   }) : [];
+
+  // Shared move dates: same calendar day in ≥2 picks' top-5. Co-occurrence is
+  // observation, never joint causation — each move keeps its own evidence.
+  const sharedMoves = (() => {
+    const byDate = new Map<string, { symbol: string; move: KeyMove }[]>();
+    for (const { symbol, data } of ready) {
+      for (const move of data.keyMoves) {
+        if (!byDate.has(move.date)) byDate.set(move.date, []);
+        byDate.get(move.date)!.push({ symbol, move });
+      }
+    }
+    return [...byDate.entries()]
+      .filter(([, v]) => new Set(v.map((x) => x.symbol)).size >= 2)
+      .sort(([a], [b]) => (a < b ? 1 : -1));
+  })();
+
+  // Regime agreement: share of common trading days where every loaded pick
+  // carries the same regime label. Descriptive overlap, not a signal.
+  const regimeAgreement = (() => {
+    if (ready.length < 2 || commonDates.length === 0) return null;
+    let agree = 0;
+    for (const d of commonDates) {
+      const labels = ready.map(({ data }) => data.regimes?.[d]);
+      if (labels.every((l) => l && l === labels[0])) agree++;
+    }
+    return agree / commonDates.length;
+  })();
+
+  // Cross-company threads: narratives per pick (enabled as each pick's moves
+  // resolve), joined by shared label vocabulary (≥2 of 3 terms). Deterministic,
+  // zero extra quota beyond the per-pick narratives calls themselves.
+  const threadResults = useQueries({
+    queries: picks.map((symbol) => ({
+      queryKey: ['narratives', symbol, date, newsSource],
+      queryFn: () => api.narratives(symbol, date, newsSource),
+      enabled: results[picks.indexOf(symbol)]?.isSuccess ?? false,
+      staleTime: 5 * 60_000,
+      retry: 1,
+    })),
+  });
+  const threadsPending = threadResults.some((r) => r.isPending);
+  const sharedThreads = (() => {
+    const all: { symbol: string; thread: TopicCluster }[] = [];
+    threadResults.forEach((r, i) => {
+      if (r.isSuccess && r.data) {
+        for (const thread of r.data.topics) all.push({ symbol: picks[i], thread });
+      }
+    });
+    const groups: { terms: string[]; items: { symbol: string; thread: TopicCluster }[] }[] = [];
+    for (const item of all) {
+      const set = new Set(item.thread.labelTerms);
+      const hit = groups.find(
+        (g) => g.items.every((x) => x.symbol !== item.symbol) &&
+          g.terms.filter((t) => set.has(t)).length >= 2,
+      );
+      if (hit) {
+        hit.items.push(item);
+        hit.terms = [...new Set([...hit.terms, ...item.thread.labelTerms])].slice(0, 6);
+      } else {
+        groups.push({ terms: [...item.thread.labelTerms], items: [item] });
+      }
+    }
+    return groups
+      .filter((g) => new Set(g.items.map((x) => x.symbol)).size >= 2)
+      .sort((a, b) => b.items.length - a.items.length);
+  })();
 
   return (
     <div className="space-y-6">
@@ -268,6 +334,103 @@ export default function Compare() {
                       ))}
                     </tbody>
                   </table>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Shared move dates</CardTitle>
+                  <p className="text-xs text-fg-dim">
+                    Calendar days in ≥2 picks' top-5. Same-day movement is co-occurrence, never
+                    joint causation — each move keeps its own evidence behind its lens link.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {sharedMoves.length === 0 ? (
+                    <p className="text-sm text-fg-muted">
+                      No shared dates: these picks' biggest moves happened on different days.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {sharedMoves.map(([d, items]) => (
+                        <li key={d} className="rounded-lg border border-border p-3 text-sm">
+                          <p className="font-medium">{fmtDate(d)}</p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {items.map(({ symbol, move }, j) => (
+                              <Link
+                                key={`${symbol}-${j}`}
+                                to={`/moves?symbol=${symbol}&date=${date}&newsSource=${newsSource}&move=${move.date}`}
+                                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                              >
+                                {symbol} {move.dailyReturnPct > 0 ? '+' : ''}
+                                {move.dailyReturnPct.toFixed(2)}%
+                                {move.flags.length > 0 ? ` · ${move.flags.join(', ')}` : ''}
+                              </Link>
+                            ))}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+
+              {regimeAgreement !== null && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Regime agreement</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm">
+                      All loaded picks share the same volatility regime on{' '}
+                      <strong className="font-mono tabular">
+                        {(regimeAgreement * 100).toFixed(0)}%
+                      </strong>{' '}
+                      of {commonDates.length} shared trading days. Descriptive overlap of realized
+                      volatility — not a signal, and window-relative per pick (see Methodology).
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Shared narrative threads</CardTitle>
+                  <p className="text-xs text-fg-dim">
+                    Threads from different picks sharing ≥2 label terms. Vocabulary overlap, not
+                    semantic proof — open each thread in its own lens to verify.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {threadsPending ? (
+                    <p className="text-sm text-fg-muted" aria-busy="true">
+                      Clustering threads per pick…
+                    </p>
+                  ) : sharedThreads.length === 0 ? (
+                    <p className="text-sm text-fg-muted">
+                      No shared threads: these picks were covered as different stories.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {sharedThreads.map((g, i) => (
+                        <li key={i} className="rounded-lg border border-border p-3 text-sm">
+                          <p className="font-mono">{g.terms.join(' · ')}</p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {g.items.map(({ symbol, thread }, j) => (
+                              <Link
+                                key={`${symbol}-${j}`}
+                                to={`/moves?symbol=${symbol}&date=${date}&newsSource=${newsSource}`}
+                                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                              >
+                                {symbol}: {thread.representativeTitle.slice(0, 60)}
+                                {thread.representativeTitle.length > 60 ? '…' : ''}
+                              </Link>
+                            ))}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </CardContent>
               </Card>
 
