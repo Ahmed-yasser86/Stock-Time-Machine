@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { EmptySection, ErrorState, LoadingDossier } from '../components/StateBlocks';
+import { ConcludeNote } from '../components/ConcludeNote';
 import { MethodLink } from '../components/MethodLink';
 import { MoveDrawer } from '../components/MoveDrawer';
 import { MovesTimeline } from '../components/MovesTimeline';
@@ -297,6 +298,22 @@ export default function Moves() {
             available by its own date.
             Figures use raw closes; splits and dividends are not adjusted.
           </p>
+
+          <section aria-label="Conclude" className="space-y-2">
+            <ConcludeNote
+              storageKey={`stm:note:${data.company.symbol}|${data.decisionDate}|${newsSource}`}
+              citations={[
+                ...data.keyMoves.map((m, i) => ({
+                  id: `move ${m.date}`,
+                  label: `#${i + 1} ${m.date} ${m.dailyReturnPct.toFixed(2)}%`,
+                })),
+                ...(narrativesQuery.data?.topics.map((t) => ({
+                  id: `thread ${t.labelTerms.join(' · ')}`,
+                  label: t.representativeTitle,
+                })) ?? []),
+              ]}
+            />
+          </section>
         </>
       )}
     </div>

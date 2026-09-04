@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import {
   CartesianGrid,
   Legend,
@@ -17,7 +17,8 @@ import { fmtDate, fmtPct } from '../lib/format';
 import { MAX_COMPARE_PICKS, pickColor } from '../lib/palette';
 import type { KeyMove, MovesResponse, NewsSource, TopicCluster } from '../types';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
-import { buttonVariants } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -71,6 +72,70 @@ function align(responses: { symbol: string; data: MovesResponse }[]): {
     };
   });
   return { series, commonDates };
+}
+
+/**
+ * Opt-in AI brief for one shared thread group. Never auto-fetched: each brief
+ * costs embeddings-backed grounding + a generation call on the user's key.
+ */
+function SharedGroupBrief({
+  symbols,
+  date,
+  newsSource,
+  terms,
+}: {
+  symbols: string[];
+  date: string;
+  newsSource: NewsSource;
+  terms: string[];
+}) {
+  const brief = useQuery({
+    queryKey: ['compare-brief', symbols.join(','), date, newsSource, terms.join(',')],
+    queryFn: () => api.compareBrief(symbols, date, newsSource, terms),
+    enabled: false,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  if (brief.isPending && brief.fetchStatus !== 'idle') {
+    return (
+      <p className="mt-2 text-xs text-fg-dim" aria-busy="true">
+        Briefing shared story…
+      </p>
+    );
+  }
+
+  if (brief.isSuccess && brief.data.brief) {
+    return (
+      <div className="mt-2 space-y-1 rounded-md bg-canvas p-2">
+        <p className="flex flex-wrap items-center gap-2 text-xs">
+          <Badge variant="outline">AI brief · {brief.data.brief.model}</Badge>
+          <span className="text-fg-dim">shared story, per-pick citations — verify against the lenses</span>
+        </p>
+        <p className="text-sm">{brief.data.brief.summary}</p>
+        {brief.data.brief.keyPoints.length > 0 && (
+          <ul className="list-disc space-y-0.5 pl-5 text-sm">
+            {brief.data.brief.keyPoints.map((k, j) => (
+              <li key={j}>{k}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <Button size="sm" variant="outline" onClick={() => brief.refetch()} disabled={brief.isFetching}>
+        {brief.isFetching ? 'Briefing…' : 'AI brief this shared story'}
+      </Button>
+      {(brief.isError || (brief.isSuccess && !brief.data.brief)) && (
+        <p className="mt-1 text-xs text-fg-dim">
+          No brief available — nothing matched across picks, or the model declined. The threads above stand on their own.
+        </p>
+      )}
+    </div>
+  );
 }
 
 export default function Compare() {
@@ -422,6 +487,12 @@ export default function Compare() {
                       {sharedThreads.map((g, i) => (
                         <li key={i} className="rounded-lg border border-border p-3 text-sm">
                           <p className="font-mono">{g.terms.join(' · ')}</p>
+                          <SharedGroupBrief
+                            symbols={[...new Set(g.items.map((x) => x.symbol))]}
+                            date={date}
+                            newsSource={newsSource}
+                            terms={g.terms.slice(0, 6)}
+                          />
                           <div className="mt-1 flex flex-wrap gap-2">
                             {g.items.map(({ symbol, thread }, j) => (
                               <Link

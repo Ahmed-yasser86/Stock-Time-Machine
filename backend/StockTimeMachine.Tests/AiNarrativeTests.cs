@@ -132,6 +132,50 @@ public class AiNarrativeTests
     }
 
     [Fact]
+    public async Task BriefSharedThread_MatchesAcrossSymbols()
+    {
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("AAA", new[]
+        {
+            new NewsArticle { Id = "a1", Title = "Data center water approvals contested", Description = "Regulators pause", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/a1", CompanySymbol = "AAA" },
+        });
+        await repo.StoreNews("BBB", new[]
+        {
+            new NewsArticle { Id = "b1", Title = "Approvals sought for new data center", Description = "Water review", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 11), Url = "https://example.com/b1", CompanySymbol = "BBB" },
+        });
+        var gemini = new FixedGeminiStub();
+        var sut = new NarrativeService(repo, gemini,
+            new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+
+        var brief = await sut.BriefSharedThread(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt,
+            new[] { "data", "center", "approvals" });
+
+        Assert.NotNull(brief);
+        Assert.Equal("stub-flash", brief!.Model);
+        Assert.Single(gemini.SeenPrompts);
+        Assert.Contains("NEVER pool", gemini.SeenPrompts[0]);
+    }
+
+    [Fact]
+    public async Task BriefSharedThread_NoMatch_ReturnsNull()
+    {
+        var db = NewDb();
+        await SeedPair(db);
+        var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new FixedGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+
+        // "zzzqqq" appears nowhere: no match, no Gemini call.
+        var brief = await sut.BriefSharedThread(
+            new[] { "TSLA" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt,
+            new[] { "zzzqqq" });
+
+        Assert.Null(brief);
+    }
+
+    [Fact]
     public void EmbeddingClustering_IdenticalVectorsMerge_OrthogonalDoNot()
     {
         var topics = EmbeddingClustering.Cluster(new[]

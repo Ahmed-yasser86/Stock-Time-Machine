@@ -20,4 +20,12 @@ public interface INarrativeService
     // AI path (Gemini embeddings + per-thread briefs) is attempted first when
     // configured; any failure degrades to the deterministic TF-IDF path.
     Task<NarrativeTopicsResult> GetTopics(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default);
+
+    // Cross-pick shared-story brief: articles matching the shared terms across
+    // the given symbols' caches, briefed as ONE story with per-article
+    // citations. Never a joint verdict — the prompt bans cross-company
+    // causation and pooled conclusions. Null when nothing matches or AI is off.
+    Task<ClusterBrief?> BriefSharedThread(
+        IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
+        IReadOnlyList<string> terms, CancellationToken ct = default);
 }
