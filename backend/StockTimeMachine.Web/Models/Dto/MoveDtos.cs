@@ -16,7 +16,7 @@ public sealed record MarketReactionDto(DateOnly Date, decimal Close);
 
 public sealed record MoveFilingDto(string AccessionNumber, string FormType, DateTime FiledAt, string Url);
 
-public sealed record MoveNewsDto(string Title, string Source, DateTime PublishedAt, string Url);
+public sealed record MoveNewsDto(string Title, string Source, DateTime PublishedAt, string Url, decimal? SentimentScore);
 
 public sealed record SocialSignalDto(
     string Provider,

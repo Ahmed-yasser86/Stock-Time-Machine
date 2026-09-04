@@ -13,7 +13,10 @@ namespace StockTimeMachine;
 // (the caller records honest "unavailable"); valid-empty returns empty.
 public class ArcticShiftProvider : ISocialSignalProvider
 {
-    private static readonly string[] DefaultSubreddits = new[] { "wallstreetbets", "stocks", "investing" };
+    // Default is the single highest-signal retail venue. The service throttles
+    // aggressively per IP: fewer communities per investigation keeps the layer
+    // usable. Operators can widen via Social:ArcticShift:Subreddits.
+    private static readonly string[] DefaultSubreddits = new[] { "wallstreetbets" };
 
     private readonly HttpClient _http;
     private readonly ILogger<ArcticShiftProvider> _logger;
@@ -51,8 +54,9 @@ public class ArcticShiftProvider : ISocialSignalProvider
         var first = true;
         foreach (var sub in _subreddits.Take(3))
         {
+            // Community service with aggressive throttling: gentle pacing.
             if (!first)
-                await Task.Delay(250, ct);
+                await Task.Delay(1500, ct);
             first = false;
             var batch = await SearchSubreddit(sub, query, normalized, from, to, ct);
             all.AddRange(batch);

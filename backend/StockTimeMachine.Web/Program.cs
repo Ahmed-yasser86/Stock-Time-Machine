@@ -108,13 +108,16 @@ builder.Services.AddScoped<IMoveDetectionService, MoveDetectionService>();
 builder.Services.AddHttpClient(nameof(ArcticShiftProvider), client =>
 {
     client.Timeout = TimeSpan.FromSeconds(20);
+    // Arctic Shift 422s requests without a User-Agent (verified live).
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("StockTimeMachine/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
 builder.Services.AddSingleton<ArcticShiftProvider>(sp =>
     new ArcticShiftProvider(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(ArcticShiftProvider)),
         sp.GetRequiredService<ILogger<ArcticShiftProvider>>(),
         sp.GetRequiredService<IConfiguration>()));
-builder.Services.AddSingleton<ISocialSignalProvider, ArcticShiftProvider>();
+builder.Services.AddSingleton<ISocialSignalProvider>(sp => sp.GetRequiredService<ArcticShiftProvider>());
 
 // Finnhub: self-contained adapters (typed, factory-managed HttpClient).
 // Company-profile fallback + delayed live quotes. The token stays

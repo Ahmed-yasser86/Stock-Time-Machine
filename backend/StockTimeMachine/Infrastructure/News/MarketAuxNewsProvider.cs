@@ -94,7 +94,8 @@ public class MarketAuxNewsProvider : INewsProvider
                     Source = string.IsNullOrEmpty(source) ? "MarketAux" : $"MarketAux via {source}",
                     PublishedAt = published,
                     Url = urlVal,
-                    CompanySymbol = normalized
+                    CompanySymbol = normalized,
+                    SentimentScore = ExtractSentiment(item, normalized),
                 });
 
                 if (results.Count >= 20)
@@ -120,6 +121,26 @@ public class MarketAuxNewsProvider : INewsProvider
             _logger.LogWarning(ex, "MarketAux JSON parse failed for {Symbol}", symbol);
             return Array.Empty<NewsArticle>();
         }
+    }
+
+    // Per-entity sentiment for the requested symbol (-1..+1), null when the
+    // article carries no entity match or no score.
+    private static decimal? ExtractSentiment(JsonElement item, string symbol)
+    {
+        if (!item.TryGetProperty("entities", out var entities) || entities.ValueKind != JsonValueKind.Array)
+            return null;
+        foreach (var entity in entities.EnumerateArray())
+        {
+            var entitySymbol = entity.TryGetProperty("symbol", out var sym) ? sym.GetString() ?? "" : "";
+            if (!string.Equals(entitySymbol, symbol, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (entity.TryGetProperty("sentiment_score", out var score) &&
+                score.ValueKind == JsonValueKind.Number &&
+                score.TryGetDecimal(out var value))
+                return Math.Round(value, 4);
+            return null;
+        }
+        return null;
     }
 
     public static string DeterministicId(string url)

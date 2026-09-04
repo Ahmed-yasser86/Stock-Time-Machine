@@ -379,6 +379,7 @@ public class ProviderFixtureTests
         var single = Assert.Single(result);
         Assert.Equal("Past story", single.Title);
         Assert.Equal("mux-aaa-1", single.Id);
+        Assert.Equal(0.5m, single.SentimentScore);
         Assert.Equal("MarketAux via example.com", single.Source);
         Assert.Equal("TSLA", single.CompanySymbol);
         Assert.Equal(new DateTime(2020, 1, 10, 12, 0, 0, DateTimeKind.Utc), single.PublishedAt);

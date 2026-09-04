@@ -68,7 +68,8 @@ public class MovesController : ControllerBase
                         DateTime.SpecifyKind(f.FiledAt, DateTimeKind.Utc), f.Url)).ToList(),
                     kvp.Value.News.Select(n => new MoveNewsDto(
                         n.Title, n.Source,
-                        DateTime.SpecifyKind(n.PublishedAt, DateTimeKind.Utc), n.Url)).ToList(),
+                        DateTime.SpecifyKind(n.PublishedAt, DateTimeKind.Utc), n.Url,
+                        n.SentimentScore)).ToList(),
                     kvp.Value.Social.Select(s => new SocialSignalDto(
                         s.Provider, s.Community, s.Title, s.Excerpt, s.Url,
                         DateTime.SpecifyKind(s.CreatedAt, DateTimeKind.Utc),

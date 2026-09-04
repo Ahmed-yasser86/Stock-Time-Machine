@@ -75,14 +75,50 @@ public class MoveDetectionService : IMoveDetectionService
         var company = await _companyRepo.GetBySymbol(normalized, ct);
         var companyName = company?.Name;
 
+        // One social fetch per investigation (not per move): cheap enough for
+        // throttled community APIs, then sliced per move by post date below.
+        var socialAll = await FetchSocialWindow(normalized, companyName, scored, asOfDate, ct);
+
         foreach (var move in scored)
         {
             window.KeyMoves.Add(move);
             window.EvidenceByDate[move.Date.ToString("yyyy-MM-dd")] =
-                await BuildEvidence(normalized, companyName, selectedNewsSource, move.Date, ct);
+                await BuildEvidence(normalized, companyName, selectedNewsSource, move.Date, socialAll, ct);
         }
 
         return window;
+    }
+
+    private async Task<(List<SocialSignal> Signals, bool Failed)> FetchSocialWindow(
+        string symbol, string? companyName, List<KeyMove> moves, DateOnly asOfDate, CancellationToken ct)
+    {
+        var all = new List<SocialSignal>();
+        var failed = false;
+        if (moves.Count == 0)
+            return (all, failed);
+
+        var from = moves.Min(m => m.Date).AddDays(-3);
+        foreach (var social in _social)
+        {
+            try
+            {
+                var signals = await social.GetSignals(symbol, companyName, from, asOfDate, ct);
+                all.AddRange(signals);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Move social ({Provider}) unavailable for {Symbol}",
+                    social.ProviderName, symbol);
+                failed = true;
+            }
+        }
+
+        return (all
+            .GroupBy(s => s.Id)
+            .Select(g => g.First())
+            .OrderByDescending(s => s.Score)
+            .ToList(), failed);
     }
 
     // DB-first; live Alpha Vantage fetch only on a miss and only for CIK-backed
@@ -265,7 +301,8 @@ public class MoveDetectionService : IMoveDetectionService
     }
 
     private async Task<MoveEvidence> BuildEvidence(
-        string symbol, string? companyName, string newsSource, DateOnly moveDate, CancellationToken ct)
+        string symbol, string? companyName, string newsSource, DateOnly moveDate,
+        (List<SocialSignal> Signals, bool Failed) socialWindow, CancellationToken ct)
     {
         var evidence = new MoveEvidence();
 
@@ -307,21 +344,22 @@ public class MoveDetectionService : IMoveDetectionService
             evidence.UnavailableLayers.Add("news");
         }
 
-        foreach (var social in _social)
+        // Social comes from the single per-investigation fetch, sliced to this
+        // move's window ([moveDate-3d, moveDate] by post date). A failed fetch
+        // marks every move honestly; an empty slice means no discussion found.
+        if (socialWindow.Failed)
         {
-            try
-            {
-                var signals = await social.GetSignals(symbol, companyName, moveDate.AddDays(-3), moveDate, ct);
-                evidence.Social.AddRange(signals.Take(3));
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Move social ({Provider}) unavailable for {Symbol} on {Date}",
-                    social.ProviderName, symbol, moveDate);
-                if (!evidence.UnavailableLayers.Contains("social"))
-                    evidence.UnavailableLayers.Add("social");
-            }
+            evidence.UnavailableLayers.Add("social");
+        }
+        else
+        {
+            var from = moveDate.AddDays(-3);
+            evidence.Social = socialWindow.Signals
+                .Where(s => DateOnly.FromDateTime(s.CreatedAt) >= from &&
+                            DateOnly.FromDateTime(s.CreatedAt) <= moveDate)
+                .OrderByDescending(s => s.Score)
+                .Take(3)
+                .ToList();
         }
 
         try
