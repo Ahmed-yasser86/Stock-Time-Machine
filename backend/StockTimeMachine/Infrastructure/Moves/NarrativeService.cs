@@ -126,6 +126,103 @@ public class NarrativeService : INarrativeService
             .Take(3).Select(kv => kv.Key).ToList();
     }
 
+    public async Task<ClusterBrief?> BriefSharedThread(
+        IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
+        IReadOnlyList<string> terms, CancellationToken ct = default)
+    {
+        // Bounded shared-story brief. Matches are deterministic vocabulary
+        // overlap (≥2 shared terms, same rule as the frontend grouping); only
+        // the prose is generated, under a prompt that bans cross-company
+        // causation and joint verdicts. Total input capped to fit one pass.
+        const int MaxSharedArticles = 8;
+        const int MaxTotalChars = 60000;
+        if (symbols.Count == 0 || symbols.Count > 4 || terms.Count == 0)
+            return null;
+        if (!_gemini.IsEnabled)
+            return null;
+        try
+        {
+            var selected = NewsSources.Normalize(newsSource);
+            var wanted = new HashSet<string>(terms, StringComparer.OrdinalIgnoreCase);
+            var matched = new List<(NewsArticle Doc, string Symbol)>();
+            foreach (var raw in symbols)
+            {
+                var symbol = raw.Trim().ToUpperInvariant();
+                if (string.IsNullOrEmpty(symbol))
+                    continue;
+                HistoricalDate.Create(asOfDate);
+                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, ct);
+                foreach (var n in cached.Where(n => IsFromSource(n, selected)))
+                {
+                    var tokens = new HashSet<string>(
+                        TopicClustering.Tokenize($"{n.Title} {n.Description}"), StringComparer.OrdinalIgnoreCase);
+                    if (tokens.Intersect(wanted).Count() >= 2)
+                        matched.Add((n, symbol));
+                    if (matched.Count >= MaxSharedArticles)
+                        break;
+                }
+                if (matched.Count >= MaxSharedArticles)
+                    break;
+            }
+            if (matched.Count == 0)
+                return null;
+            var inputs = new List<(string Title, string Body)>();
+            int used = 0, fetched = 0;
+            foreach (var (d, symbol) in matched)
+            {
+                string bodyText = d.Description ?? "";
+                if (_bodies.IsEnabled && fetched < MaxFetchedBodies && !string.IsNullOrWhiteSpace(d.Url))
+                {
+                    var fb = await _bodies.FetchBodyAsync(d.Url, ct);
+                    if (fb is not null)
+                    {
+                        bodyText = fb.Markdown;
+                        fetched++;
+                    }
+                }
+                var block = $"[{symbol}] {d.Title}\n{bodyText}";
+                if (used + block.Length > MaxTotalChars)
+                    break;
+                used += block.Length;
+                if (bodyText.Length > MaxBodyChars)
+                    bodyText = bodyText.Substring(0, MaxBodyChars);
+                inputs.Add(($"[{symbol}] {d.Title}", bodyText));
+            }
+            if (inputs.Count == 0)
+                return null;
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"You are a historical research assistant. Today is {asOfDate:yyyy-MM-dd}.");
+            sb.AppendLine($"You know NOTHING that happened after this date. Never use outside knowledge.");
+            sb.AppendLine();
+            sb.AppendLine($"Below are contemporary articles from {matched.Select(m => m.Symbol).Distinct().Count()} companies' coverage, all published on or before today, grouped because they share vocabulary — NOT because the stories are proven related.");
+            sb.AppendLine();
+            sb.AppendLine("Hard rules:");
+            sb.AppendLine("- State only claims present in at least one article; cite each claim like [1], [2] (global numbers below).");
+            sb.AppendLine("- NEVER state or imply that one company's events caused another's price move.");
+            sb.AppendLine("- NEVER pool the companies into a joint verdict, recommendation, or prediction.");
+            sb.AppendLine("- Say plainly where the shared vocabulary may be coincidental.");
+            sb.AppendLine();
+            sb.AppendLine("Respond with exactly these sections:");
+            sb.AppendLine("SUMMARY: one paragraph, max 120 words, of what the coverage collectively reports.");
+            sb.AppendLine("KEY POINTS: up to 5 bullets, each cited with its company tag.");
+            sb.AppendLine("DISAGREEMENTS AND GAPS: what is contested or missing; 'none visible' if uniform.");
+            sb.AppendLine();
+            for (int i = 0; i < inputs.Count; i++)
+            {
+                sb.AppendLine($"[{i + 1}] {inputs[i].Title}");
+                if (!string.IsNullOrWhiteSpace(inputs[i].Body))
+                    sb.AppendLine(inputs[i].Body);
+                sb.AppendLine();
+            }
+            return await _gemini.SummarizeClusterAsync(sb.ToString(), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Shared-thread brief failed");
+            return null;
+        }
+    }
+
     private async Task<ClusterBrief?> BriefAsync(
         NarrativeTopicsResult result, List<NewsArticle> docs, TopicCluster topic, CancellationToken ct)
     {

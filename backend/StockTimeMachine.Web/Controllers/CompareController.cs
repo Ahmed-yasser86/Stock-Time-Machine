@@ -1,0 +1,53 @@
+using Microsoft.AspNetCore.Mvc;
+using StockTimeMachine;
+using StockTimeMachine.Web.Models.Dto;
+
+namespace StockTimeMachine.Web.Controllers;
+
+// Cross-company surface. Read-only joins over per-company caches: no new
+// providers, no pooled verdicts. The brief endpoint is opt-in AI (same
+// containment contract as cluster briefs); everything else here is
+// deterministic vocabulary overlap computed client-side from /moves +
+// /narratives, so this controller stays thin by design.
+[Route("api/timemachine/compare")]
+[ApiController]
+public class CompareController : ControllerBase
+{
+    private readonly INarrativeService _narratives;
+
+    public CompareController(INarrativeService narratives)
+    {
+        _narratives = narratives;
+    }
+
+    // Shared-story brief across picks' cached coverage. Explicit opt-in only.
+    [HttpGet("brief")]
+    public async Task<ActionResult<CompareBriefResponse>> Brief(
+        [FromQuery] string? symbols,
+        [FromQuery] string? date,
+        [FromQuery] string? newsSource,
+        [FromQuery] string? terms,
+        CancellationToken ct)
+    {
+        var picks = (symbols ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => s.ToUpperInvariant()).Distinct().Take(4).ToList();
+        if (picks.Count < 2)
+            throw new InvalidHistoricalDateException("At least two symbols are required.");
+        if (!DateOnly.TryParse(date, out var parsedDate))
+            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        var sharedTerms = (terms ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToList();
+        if (sharedTerms.Count == 0)
+            throw new InvalidHistoricalDateException("At least one shared term is required.");
+
+        var selectedNewsSource = NewsSources.Normalize(newsSource);
+        var brief = await _narratives.BriefSharedThread(picks, parsedDate, selectedNewsSource, sharedTerms, ct);
+
+        return Ok(new CompareBriefResponse(
+            Symbols: picks,
+            AsOfDate: parsedDate,
+            NewsSource: selectedNewsSource,
+            Terms: sharedTerms,
+            Brief: brief is null ? null : new ClusterBriefDto(brief.Summary, brief.KeyPoints, brief.Model)));
+    }
+}

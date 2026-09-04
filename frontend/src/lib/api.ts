@@ -1,5 +1,6 @@
 import type {
   Company,
+  CompareBriefResponse,
   LiveQuote,
   MethodologyDoc,
   MovesResponse,
@@ -72,6 +73,11 @@ export const api = {
     request<NarrativesResponse>(
       `/api/timemachine/narratives?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
         (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
+    ),
+  compareBrief: (symbols: string[], date: string, newsSource: NewsSource, terms: string[]) =>
+    request<CompareBriefResponse>(
+      `/api/timemachine/compare/brief?symbols=${encodeURIComponent(symbols.join(','))}&date=${encodeURIComponent(date)}` +
+        `&newsSource=${encodeURIComponent(newsSource)}&terms=${encodeURIComponent(terms.join(','))}`,
     ),
   methodology: () => request<MethodologyDoc>('/api/timemachine/methodology'),
   runSimulation: (body: SimulationRequest) =>

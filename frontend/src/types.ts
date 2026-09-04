@@ -229,6 +229,14 @@ export interface TopicCluster {
   brief: ClusterBrief | null;
 }
 
+export interface CompareBriefResponse {
+  symbols: string[];
+  asOfDate: string;
+  newsSource: NewsSource;
+  terms: string[];
+  brief: ClusterBrief | null;
+}
+
 export interface NarrativesResponse {
   company: CompanySummary;
   asOfDate: string;

@@ -81,6 +81,13 @@ public sealed record NarrativesResponse(
     string ClusteringMethod,
     IReadOnlyList<TopicClusterDto> Topics);
 
+public sealed record CompareBriefResponse(
+    IReadOnlyList<string> Symbols,
+    DateOnly AsOfDate,
+    string NewsSource,
+    IReadOnlyList<string> Terms,
+    ClusterBriefDto? Brief);
+
 public sealed record MovesResponse(
     CompanySummaryDto Company,
     DateOnly DecisionDate,
