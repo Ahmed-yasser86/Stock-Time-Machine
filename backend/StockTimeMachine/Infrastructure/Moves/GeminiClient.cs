@@ -18,6 +18,9 @@ public class GeminiClient : IGeminiClient
     private readonly string _apiKey;
     private readonly string _embeddingModel;
     private readonly string _summaryModel;
+    // 30k tokens/min budget shared by embeds + summaries: callers wait for
+    // budget instead of tripping quota errors mid-investigation.
+    private readonly TokenBucketRateLimiter _limiter = new(30000);
 
     public bool IsEnabled => !string.IsNullOrEmpty(_apiKey);
     public string SummaryModel => _summaryModel;
@@ -40,6 +43,7 @@ public class GeminiClient : IGeminiClient
         var vectors = new List<float[]>(texts.Count);
         foreach (var text in texts)
         {
+            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(text), ct);
             var body = new
             {
                 model = $"models/{_embeddingModel}",
@@ -66,6 +70,8 @@ public class GeminiClient : IGeminiClient
             return null;
         try
         {
+            // Reserve prompt + output ceiling so summaries share the budget honestly.
+            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(prompt) + 768, ct);
             var body = new
             {
                 generationConfig = new
