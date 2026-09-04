@@ -53,6 +53,9 @@ export function Header() {
           <NavLink to="/investigate" className={linkCls}>
             New investigation
           </NavLink>
+          <NavLink to="/compare" className={linkCls}>
+            Compare
+          </NavLink>
           <NavLink to="/methodology" className={linkCls}>
             Methodology
           </NavLink>
@@ -74,6 +77,9 @@ export function Header() {
         <nav className="border-t border-border px-4 py-2 md:hidden" aria-label="Mobile">
           <NavLink to="/investigate" className={linkCls} onClick={() => setOpen(false)}>
             <span className="block">New investigation</span>
+          </NavLink>
+          <NavLink to="/compare" className={linkCls} onClick={() => setOpen(false)}>
+            <span className="block">Compare</span>
           </NavLink>
           <NavLink to="/methodology" className={linkCls} onClick={() => setOpen(false)}>
             <span className="block">Methodology</span>

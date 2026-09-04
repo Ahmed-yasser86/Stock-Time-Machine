@@ -8,6 +8,7 @@ import Snapshot from './pages/Snapshot';
 // New screen: the 100-day moves investigation lives on its own route.
 // No existing route or screen is altered by its presence.
 import Moves from './pages/Moves';
+import Compare from './pages/Compare';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
             <Route path="/investigate" element={<Investigate />} />
             <Route path="/snapshot" element={<Snapshot />} />
             <Route path="/moves" element={<Moves />} />
+            <Route path="/compare" element={<Compare />} />
             {/* The legacy status dashboard is retired; the investigation is the product. */}
             <Route path="/dashboard" element={<Navigate to="/investigate" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
