@@ -143,6 +143,13 @@ public class GdeltCloudNewsProvider : INewsProvider
         return null;
     }
 
+    // Depth: one request per fetch regardless of page size, so take deep.
+    // sort=recent keeps the newest; downstream caps (DB Take, narratives 60,
+    // evidence 5) slice from there. Older 20/20 truncation silently dropped
+    // the tail of busy weeks (verified: MSFT weeks hold well past 20 rows).
+    private const int StoryLimit = 100;
+    private const int MaxArticles = 100;
+
     private async Task<IReadOnlyList<NewsArticle>> SearchStories(string symbol, string entityId, DateOnly cutoffDate, CancellationToken ct)
     {
         var normalized = symbol.Trim().ToUpperInvariant();
@@ -151,7 +158,7 @@ public class GdeltCloudNewsProvider : INewsProvider
         var end = cutoffDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"{_baseUrl}/api/v2/stories?entity={Uri.EscapeDataString(entityId)}&date_start={start}&date_end={end}&sort=recent&limit=20");
+            $"{_baseUrl}/api/v2/stories?entity={Uri.EscapeDataString(entityId)}&date_start={start}&date_end={end}&sort=recent&limit={StoryLimit}");
         request.Headers.Add("Authorization", "Bearer " + _apiKey);
 
         _logger.LogInformation("Fetching GDELT Cloud stories for {Symbol} between {Start} and {End}", normalized, start, end);
@@ -199,7 +206,7 @@ public class GdeltCloudNewsProvider : INewsProvider
                     CompanySymbol = normalized
                 });
 
-                if (results.Count >= 20)
+                if (results.Count >= MaxArticles)
                     return results;
             }
         }
