@@ -46,6 +46,7 @@ import {
 } from '../components/ui/table';
 import { EmptySection, ErrorState, LoadingDossier, ReconstructionProgress, type StageEvent } from '../components/StateBlocks';
 import { EvidenceStream } from '../components/EvidenceStream';
+import { GuidedTour } from '../components/GuidedTour';
 import { TemporalRuler } from '../components/TemporalRuler';
 import type { ChartMarker } from '../components/PriceChart';
 import { Skeleton } from '../components/ui/skeleton';
@@ -244,6 +245,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
 
   return (
     <div className="space-y-8">
+      <GuidedTour page="/snapshot" />
       {/* Identity + boundary */}
       <section aria-labelledby="dossier-title" className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -300,7 +302,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
       )}
 
       {/* Market context */}
-      <section aria-label="Historical market context" className="space-y-4">
+      <section aria-label="Historical market context" data-tour="boundary" className="space-y-4">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
           <h2 className="text-lg font-semibold">Historical market context</h2>
           <Link
@@ -364,7 +366,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
       </section>
 
       {/* Evidence */}
-      <section aria-label="Historical evidence" className="space-y-4">
+      <section aria-label="Historical evidence" data-tour="evidence" className="space-y-4">
         <h2 className="text-lg font-semibold">Historical evidence</h2>
         <p className="text-xs text-fg-dim">
           Every item carries its source and the date it became available. Regulatory evidence
@@ -389,7 +391,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
       </div>
 
       {/* Reveal */}
-      <section aria-label={`What happened after ${fmtDate(data.snapshotDate)}`} className="space-y-4">
+      <section aria-label={`What happened after ${fmtDate(data.snapshotDate)}`} data-tour="reveal" className="space-y-4">
         <h2 className="text-lg font-semibold">What Happened After {fmtDate(data.snapshotDate)}</h2>
         <p className="text-sm text-fg-muted">
           Post-cutoff reality — kept strictly separate from what was knowable then. You now know

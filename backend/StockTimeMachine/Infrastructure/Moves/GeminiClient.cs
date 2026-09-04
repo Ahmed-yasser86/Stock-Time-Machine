@@ -150,4 +150,70 @@ public class GeminiClient : IGeminiClient
         }
     }
 
+    public async Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default)
+    {
+        var empty = Array.Empty<NoteIssue>();
+        if (!IsEnabled)
+            return empty;
+        try
+        {
+            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(prompt) + 512, ct);
+            var body = new
+            {
+                generationConfig = new
+                {
+                    temperature = 0.0,
+                    maxOutputTokens = 512,
+                    responseMimeType = "application/json",
+                    responseJsonSchema = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            issues = new
+                            {
+                                type = "array",
+                                items = new
+                                {
+                                    type = "object",
+                                    properties = new
+                                    {
+                                        @ref = new { type = "string" },
+                                        verdict = new { type = "string" },
+                                        detail = new { type = "string" },
+                                    },
+                                    required = new[] { "ref", "verdict", "detail" },
+                                },
+                            },
+                        },
+                        required = new[] { "issues" },
+                    },
+                },
+                contents = new[] { new { parts = new[] { new { text = prompt } } } },
+            };
+            using var resp = await _http.PostAsJsonAsync(
+                $"{BaseUrl}/{_summaryModel}:generateContent?key={_apiKey}", body, ct);
+            resp.EnsureSuccessStatusCode();
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var text = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString() ?? "";
+            using var review = JsonDocument.Parse(text);
+            return review.RootElement.GetProperty("issues").EnumerateArray().Select(e => new NoteIssue
+            {
+                Ref = e.TryGetProperty("ref", out var r) ? r.GetString() ?? "" : "",
+                Verdict = e.TryGetProperty("verdict", out var v) ? v.GetString() ?? "unclear" : "unclear",
+                Detail = e.TryGetProperty("detail", out var d) ? d.GetString() ?? "" : "",
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Gemini note review failed");
+            return empty;
+        }
+    }
+
 }

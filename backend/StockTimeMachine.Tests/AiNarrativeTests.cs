@@ -13,6 +13,8 @@ public sealed class DisabledGeminiStub : IGeminiClient
         throw new InvalidOperationException("disabled");
     public Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default) =>
         Task.FromResult<ClusterBrief?>(null);
+    public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
 }
 
 public sealed class DisabledBodyStub : IArticleContentClient
@@ -43,6 +45,14 @@ public class AiNarrativeTests
                 Model = "stub-flash",
             });
         }
+        public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default)
+        {
+            SeenPrompts.Add(prompt);
+            return Task.FromResult<IReadOnlyList<NoteIssue>>(new[]
+            {
+                new NoteIssue { Ref = "move 2020-02-01", Verdict = "supported", Detail = "Stub check." },
+            });
+        }
     }
 
     private sealed class ThrowingGeminiStub : IGeminiClient
@@ -53,6 +63,8 @@ public class AiNarrativeTests
             throw new HttpRequestException("Gemini down");
         public Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default) =>
             Task.FromResult<ClusterBrief?>(null);
+        public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
     }
 
     private static StockTimeMachineDbContext NewDb() => new(
@@ -173,6 +185,105 @@ public class AiNarrativeTests
             new[] { "zzzqqq" });
 
         Assert.Null(brief);
+    }
+
+    private sealed class StubMoves : IMoveDetectionService
+    {
+        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default) =>
+            Task.FromResult(new MovesWindow
+            {
+                CompanySymbol = symbol,
+                DecisionDate = asOfDate,
+                Uncertainty = new UncertaintyIndex
+                {
+                    Score = 55.0,
+                    Components = new List<UncertaintyComponent>
+                    {
+                        new() { Name = "evidence-sparsity", Weight = 0.4, Value = 0.5, Detail = "half covered" },
+                    },
+                },
+                KeyMoves = new List<KeyMove>
+                {
+                    new() { Date = new DateOnly(2020, 2, 1), DailyReturnPct = 5.0m, Flags = new List<string> { "spike" }, SentimentDirection = "unknown" },
+                },
+            });
+    }
+
+    private static CopilotService Copilot(
+        StockTimeMachineDbContext db, IGeminiClient gemini) =>
+        new(new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new StubMoves(), gemini, new DisabledBodyStub(),
+            NullLogger<CopilotService>.Instance);
+
+    [Fact]
+    public async Task Copilot_Contrast_NeedsTwoArticles()
+    {
+        var db = NewDb();
+        var sut = Copilot(db, new FixedGeminiStub());
+
+        // Zero cached articles: null, not an error.
+        Assert.Null(await sut.ContrastArticles("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt, new[] { "x", "y" }));
+    }
+
+    [Fact]
+    public async Task Copilot_Actions_UseContainmentPrompt()
+    {
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("TSLA", new[]
+        {
+            new NewsArticle { Id = "a1", Title = "Alpha story one", Description = "Body one", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/a1", CompanySymbol = "TSLA" },
+            new NewsArticle { Id = "a2", Title = "Alpha story two", Description = "Body two", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 11), Url = "https://example.com/a2", CompanySymbol = "TSLA" },
+        });
+        await db.SecFilings.AddAsync(new SecFiling
+        {
+            CompanySymbol = "TSLA", FormType = "10-K",
+            FiledAt = new DateTime(2020, 1, 5, 0, 0, 0, DateTimeKind.Utc),
+            AccessionNumber = "acc1", Url = "https://example.com/f1", Summary = "Annual report",
+        });
+        await db.SaveChangesAsync();
+        var gemini = new FixedGeminiStub();
+        var sut = Copilot(db, gemini);
+
+        var contrast = await sut.ContrastArticles("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt, new[] { "a1", "a2" });
+        var filings = await sut.SummarizeFilings("TSLA", new DateOnly(2020, 1, 15));
+        var explain = await sut.ExplainUncertainty("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+        var gist = await sut.GistThread("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt, new[] { "a1" });
+
+        Assert.NotNull(contrast);
+        Assert.NotNull(filings);
+        Assert.NotNull(explain);
+        Assert.NotNull(gist);
+        Assert.All(gemini.SeenPrompts, p =>
+        {
+            Assert.Contains("2020-01-15", p);
+            Assert.Contains("NEVER predict", p);
+        });
+        Assert.Contains(gemini.SeenPrompts, p => p.Contains("DISAGREE"));
+        Assert.Contains(gemini.SeenPrompts, p => p.Contains("plain words"));
+    }
+
+    [Fact]
+    public async Task Copilot_Review_ReturnsVerdicts()
+    {
+        var db = NewDb();
+        var sut = Copilot(db, new FixedGeminiStub());
+
+        var issues = await sut.ReviewNote("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt,
+            "Move [move 2020-02-01] was large.");
+
+        var single = Assert.Single(issues);
+        Assert.Equal("supported", single.Verdict);
+    }
+
+    [Fact]
+    public async Task Copilot_DisabledAi_ReturnsNull()
+    {
+        var db = NewDb();
+        var sut = Copilot(db, new DisabledGeminiStub());
+
+        Assert.Null(await sut.SummarizeFilings("TSLA", new DateOnly(2020, 1, 15)));
+        Assert.Empty(await sut.ReviewNote("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt, "Note."));
     }
 
     [Fact]

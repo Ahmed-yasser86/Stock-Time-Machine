@@ -5,6 +5,7 @@ import { direction, fmtDate, fmtDateTimeUtc, fmtMoney } from '../lib/format';
 import { ReactionSparkline } from './ReactionSparkline';
 import type { KeyMove, MoveEvidence, NewsSource } from '../types';
 import { Badge } from './ui/badge';
+import { DrawerCopilot } from './DrawerCopilot';
 import { MethodLink } from './MethodLink';
 import { buttonVariants } from './ui/button';
 import { EmptySection } from './StateBlocks';
@@ -243,6 +244,15 @@ export function MoveDrawer({
           ))}
         </ul>
       )}
+
+      <h3 className="mt-4 text-sm font-semibold">Evidence copilot</h3>
+      <DrawerCopilot
+        symbol={symbol}
+        moveDate={move.date}
+        newsSource={newsSource}
+        filingCount={ev?.filings.length ?? 0}
+        newsIds={(ev?.news ?? []).map((n) => n.id)}
+      />
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Link

@@ -17,7 +17,7 @@ public sealed record MarketReactionDto(DateOnly Date, decimal Close);
 
 public sealed record MoveFilingDto(string AccessionNumber, string FormType, DateTime FiledAt, string Url);
 
-public sealed record MoveNewsDto(string Title, string Source, DateTime PublishedAt, string Url, decimal? SentimentScore);
+public sealed record MoveNewsDto(string Id, string Title, string Source, DateTime PublishedAt, string Url, decimal? SentimentScore);
 
 public sealed record SocialSignalDto(
     string Provider,
@@ -87,6 +87,19 @@ public sealed record CompareBriefResponse(
     string NewsSource,
     IReadOnlyList<string> Terms,
     ClusterBriefDto? Brief);
+
+public sealed record CopilotBriefResponse(
+    string Symbol,
+    DateOnly AsOfDate,
+    string Action,
+    ClusterBriefDto? Brief);
+
+public sealed record NoteIssueDto(string Ref, string Verdict, string Detail);
+
+public sealed record ReviewResponse(
+    string Symbol,
+    DateOnly AsOfDate,
+    IReadOnlyList<NoteIssueDto> Issues);
 
 public sealed record MovesResponse(
     CompanySummaryDto Company,

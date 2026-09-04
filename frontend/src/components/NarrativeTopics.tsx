@@ -1,5 +1,9 @@
+import { useState } from 'react';
+import { api } from '../lib/api';
 import { fmtDate } from '../lib/format';
-import type { NarrativesResponse } from '../types';
+import { whyNoThreads } from '../lib/whyEmpty';
+import type { ClusterBrief, NarrativesResponse, NewsSource } from '../types';
+import { AiBriefBlock } from './AiBriefBlock';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { MethodLink } from './MethodLink';
 import { Badge } from './ui/badge';
@@ -14,8 +18,59 @@ import { EmptySection, ErrorState } from './StateBlocks';
  * tagging, never a claim about the company. Empty cache yields an honest
  * empty state (warmed by snapshot/moves runs).
  */
+const NON_ASCII = /[^\x00-\x7F]/;
+
+/** English gist for non-English threads: explicit opt-in, same AI contract. */
+function ThreadGist({
+  symbol,
+  date,
+  newsSource,
+  articleIds,
+}: {
+  symbol: string;
+  date: string;
+  newsSource: NewsSource;
+  articleIds: string[];
+}) {
+  const [brief, setBrief] = useState<ClusterBrief | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  if (brief) return <AiBriefBlock brief={brief} context="English gist of non-English coverage" />;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setFailed(false);
+          api
+            .copilot('gist', { symbol, date, newsSource, ids: articleIds.slice(0, 5) })
+            .then((r) => {
+              if (r.brief) setBrief(r.brief);
+              else setFailed(true);
+            })
+            .catch(() => setFailed(true))
+            .finally(() => setBusy(false));
+        }}
+        className="text-xs underline decoration-dotted underline-offset-2 hover:text-fg disabled:opacity-50"
+      >
+        {busy ? 'Rendering gist…' : 'English gist'}
+      </button>
+      {failed && !busy && (
+        <p className="mt-1 text-xs text-fg-dim">No gist available — the original stands on its own.</p>
+      )}
+    </div>
+  );
+}
+
 export function NarrativeTopics({
   query,
+  symbol,
+  date,
+  newsSource,
 }: {
   query: {
     data: NarrativesResponse | undefined;
@@ -24,6 +79,9 @@ export function NarrativeTopics({
     error: unknown;
     refetch: () => void;
   };
+  symbol: string;
+  date: string;
+  newsSource: NewsSource;
 }) {
   if (query.isPending) {
     return (
@@ -69,7 +127,7 @@ export function NarrativeTopics({
         {data.topics.length === 0 ? (
           <EmptySection
             title="No narrative threads"
-            body="No cached news to cluster for this window. Run a snapshot or moves investigation first — coverage warms the cache at zero extra cost."
+            body={whyNoThreads(data.newsSource, data.articlesConsidered)}
           />
         ) : (
           <ul className="density-compact space-y-2">
@@ -84,20 +142,17 @@ export function NarrativeTopics({
                   </span>
                 </p>
                 <p className="mt-1 text-fg-muted">e.g. {t.representativeTitle}</p>
+                {NON_ASCII.test(t.representativeTitle) && !t.brief && (
+                  <ThreadGist
+                    symbol={symbol}
+                    date={date}
+                    newsSource={newsSource}
+                    articleIds={t.articleIds}
+                  />
+                )}
                 {t.brief && (
-                  <div className="mt-2 space-y-1 rounded-md bg-canvas p-2">
-                    <p className="flex flex-wrap items-center gap-2 text-xs">
-                      <Badge variant="outline">AI brief · {t.brief.model}</Badge>
-                      <span className="text-fg-dim">generated, non-deterministic — verify against the articles</span>
-                    </p>
-                    <p className="text-sm">{t.brief.summary}</p>
-                    {t.brief.keyPoints.length > 0 && (
-                      <ul className="list-disc space-y-0.5 pl-5 text-sm">
-                        {t.brief.keyPoints.map((k, j) => (
-                          <li key={j}>{k}</li>
-                        ))}
-                      </ul>
-                    )}
+                  <div className="mt-2">
+                    <AiBriefBlock brief={t.brief} context="labels name shared vocabulary" />
                   </div>
                 )}
               </li>

@@ -9,13 +9,24 @@ import Snapshot from './pages/Snapshot';
 // No existing route or screen is altered by its presence.
 import Moves from './pages/Moves';
 import Compare from './pages/Compare';
+import { StageNav } from './components/StageNav';
 
 export default function App() {
   return (
     <BrowserRouter>
       <div className="flex min-h-screen flex-col bg-bg text-fg">
         <Header />
-        <main className="surface-grain mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-surface focus:px-3 focus:py-2 focus:text-sm"
+        >
+          Skip to content
+        </a>
+        <main
+          id="main-content"
+          className="surface-grain mx-auto w-full max-w-6xl flex-1 px-4 py-8"
+        >
+          <StageNav />
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/methodology" element={<Methodology />} />
