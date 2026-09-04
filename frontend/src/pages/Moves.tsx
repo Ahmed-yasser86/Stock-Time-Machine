@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { EmptySection, ErrorState, LoadingDossier } from '../components/StateBlocks';
+import { MethodLink } from '../components/MethodLink';
 import { MoveDrawer } from '../components/MoveDrawer';
 import { MovesTimeline } from '../components/MovesTimeline';
 import { NarrativeTopics } from '../components/NarrativeTopics';
@@ -210,7 +211,7 @@ export default function Moves() {
               ))}
             </ul>
             <p className="text-xs text-fg-dim">
-              Transparent formula, no hidden inputs — see Methodology. Never investment advice.
+              Transparent formula, no hidden inputs — <MethodLink anchor="decision-uncertainty-index" /> Never investment advice.
             </p>
           </CardContent>
         </Card>

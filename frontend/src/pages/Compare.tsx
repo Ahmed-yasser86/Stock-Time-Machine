@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { EmptySection, ErrorState } from '../components/StateBlocks';
+import { MethodLink } from '../components/MethodLink';
 import { SymbolPicker } from '../components/SymbolPicker';
 
 function parseSymbols(raw: string | null): string[] {
@@ -295,7 +296,10 @@ export default function Compare() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Window stats per pick</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="text-base">Window stats per pick</CardTitle>
+                    <MethodLink anchor="key-moves-last-100-trading-days" />
+                  </div>
                   <p className="text-xs text-fg-dim">Each pick's own 100-day summary (deterministic, same engine as Lens).</p>
                 </CardHeader>
                 <CardContent className="overflow-x-auto">
@@ -395,7 +399,10 @@ export default function Compare() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Shared narrative threads</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="text-base">Shared narrative threads</CardTitle>
+                    <MethodLink anchor="narrative-topics" />
+                  </div>
                   <p className="text-xs text-fg-dim">
                     Threads from different picks sharing ≥2 label terms. Vocabulary overlap, not
                     semantic proof — open each thread in its own lens to verify.

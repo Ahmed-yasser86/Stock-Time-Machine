@@ -5,6 +5,7 @@ import { direction, fmtDate, fmtDateTimeUtc, fmtMoney } from '../lib/format';
 import { ReactionSparkline } from './ReactionSparkline';
 import type { KeyMove, MoveEvidence, NewsSource } from '../types';
 import { Badge } from './ui/badge';
+import { MethodLink } from './MethodLink';
 import { buttonVariants } from './ui/button';
 import { EmptySection } from './StateBlocks';
 
@@ -253,7 +254,8 @@ export function MoveDrawer({
       </div>
       <p className="mt-3 text-xs text-fg-dim">
         Evidence coincided with this movement; proximity in time is never presented as causation.
-        Score {move.score.toFixed(3)} of 1.00 by the published weighting.
+        Score {move.score.toFixed(3)} of 1.00 by the published weighting.{' '}
+        <MethodLink anchor="key-moves-last-100-trading-days" />
       </p>
     </aside>
   );

@@ -1,6 +1,7 @@
 import { fmtDate } from '../lib/format';
 import type { NarrativesResponse } from '../types';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { MethodLink } from './MethodLink';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
@@ -53,7 +54,10 @@ export function NarrativeTopics({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Narrative threads</CardTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-base">Narrative threads</CardTitle>
+          <MethodLink anchor="narrative-topics" />
+        </div>
         <p className="text-xs text-fg-dim">
           {data.clusteringMethod === 'gemini-embeddings'
             ? `AI-grouped threads from ${data.articlesConsidered} cached article(s) — embeddings decide membership, shared terms name each thread.`
@@ -68,7 +72,7 @@ export function NarrativeTopics({
             body="No cached news to cluster for this window. Run a snapshot or moves investigation first — coverage warms the cache at zero extra cost."
           />
         ) : (
-          <ul className="space-y-2">
+          <ul className="density-compact space-y-2">
             {data.topics.map((t, i) => (
               <li key={t.labelTerms.join('|') + i} className="rounded-lg border border-border p-3 text-sm">
                 <p className="flex flex-wrap items-center gap-2">
