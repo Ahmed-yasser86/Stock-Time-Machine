@@ -56,7 +56,9 @@ function ChartFallback() {
 }
 
 function normalizeSource(raw: string | null): NewsSource {
-  return raw === 'alphavantage' ? 'alphavantage' : 'gdelt';
+  if (raw === 'alphavantage') return 'alphavantage';
+  if (raw === 'marketaux') return 'marketaux';
+  return 'gdelt';
 }
 
 function TrendIcon({ value }: { value: number | null | undefined }) {
@@ -260,7 +262,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
         </p>
         <div className="flex flex-wrap items-center gap-2" aria-label="News source selection">
           <span className="text-xs text-fg-dim">News evidence from:</span>
-          {(['gdelt', 'alphavantage'] as NewsSource[]).map((s) => (
+          {(['gdelt', 'alphavantage', 'marketaux'] as NewsSource[]).map((s) => (
             <Button
               key={s}
               size="sm"
@@ -298,7 +300,15 @@ function Dossier({ data }: { data: SnapshotResponse }) {
 
       {/* Market context */}
       <section aria-label="Historical market context" className="space-y-4">
-        <h2 className="text-lg font-semibold">Historical market context</h2>
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <h2 className="text-lg font-semibold">Historical market context</h2>
+          <Link
+            to={`/moves?symbol=${encodeURIComponent(data.company.symbol)}&date=${data.snapshotDate}&newsSource=${currentSource}`}
+            className="text-sm text-primary underline-offset-4 hover:underline"
+          >
+            Investigate the 100 days before this date →
+          </Link>
+        </div>
         {hasMarket ? (
           <Card>
             <CardContent className="space-y-4 pt-6">

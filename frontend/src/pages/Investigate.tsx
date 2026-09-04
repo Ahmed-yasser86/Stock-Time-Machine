@@ -48,6 +48,13 @@ export default function Investigate() {
     staleTime: 5 * 60_000,
   });
   const results = search.data ?? [];
+  // Clicking the empty input shows choosable suggestions (the known quick
+  // investigations); typing switches to live search results. One visible list
+  // drives display, keyboard, and selection together.
+  const suggestions: Company[] = QUICK.map((q) => ({
+    symbol: q.symbol, name: q.name, cik: '', exchange: '', sector: '', industry: '',
+  }));
+  const visible = debounced === '' ? suggestions : results;
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -91,7 +98,10 @@ export default function Investigate() {
       </div>
 
       {/* Step 1 — company */}
-      <Card>
+      {/* overflow-visible: the card's default overflow-hidden would clip the
+          absolutely-positioned suggestion dropdown (options were in the DOM
+          but invisible to users). Scoped to this card only. */}
+      <Card className="overflow-visible">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Building2 className="size-4 text-primary" aria-hidden="true" /> 1. Find the company
@@ -103,7 +113,7 @@ export default function Investigate() {
               <Badge variant="secondary" className="font-mono text-sm">
                 {selected.symbol} · {selected.name}
               </Badge>
-              <span className="text-xs text-fg-dim">{selected.exchange}</span>
+              {selected.exchange && <span className="text-xs text-fg-dim">{selected.exchange}</span>}
               <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>
                 <X aria-hidden="true" /> Clear
               </Button>
@@ -125,17 +135,22 @@ export default function Investigate() {
                   setActiveIndex(-1);
                   setOpen(true);
                 }}
-                onFocus={() => setOpen(query.trim().length >= 1 && !selected)}
+                onFocus={() => {
+                  if (!selected) {
+                    setActiveIndex(-1);
+                    setOpen(true);
+                  }
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown' && results.length > 0) {
+                  if (e.key === 'ArrowDown' && visible.length > 0) {
                     e.preventDefault();
-                    setActiveIndex((i) => (i + 1) % results.length);
-                  } else if (e.key === 'ArrowUp' && results.length > 0) {
+                    setActiveIndex((i) => (i + 1) % visible.length);
+                  } else if (e.key === 'ArrowUp' && visible.length > 0) {
                     e.preventDefault();
-                    setActiveIndex((i) => (i - 1 + results.length) % results.length);
-                  } else if (e.key === 'Enter' && activeIndex >= 0 && results[activeIndex]) {
+                    setActiveIndex((i) => (i - 1 + visible.length) % visible.length);
+                  } else if (e.key === 'Enter' && activeIndex >= 0 && visible[activeIndex]) {
                     e.preventDefault();
-                    choose(results[activeIndex]);
+                    choose(visible[activeIndex]);
                   } else if (e.key === 'Escape') {
                     setOpen(false);
                   }
@@ -145,21 +160,26 @@ export default function Investigate() {
                 <div
                   id={listId}
                   role="listbox"
-                  aria-label="Matching companies"
+                  aria-label={debounced === '' ? 'Suggested companies' : 'Matching companies'}
                   className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-border bg-popover shadow-lg"
                 >
-                  {search.isPending && <p className="px-3 py-2 text-sm text-fg-muted">Searching…</p>}
-                  {search.isError && (
+                  {debounced === '' && (
+                    <p className="px-3 pt-2 text-xs text-fg-dim">
+                      Popular starting points — or type to search all companies.
+                    </p>
+                  )}
+                  {debounced !== '' && search.isPending && <p className="px-3 py-2 text-sm text-fg-muted">Searching…</p>}
+                  {debounced !== '' && search.isError && (
                     <p className="px-3 py-2 text-sm text-destructive">
                       {apiErrorMessage(search.error, 'Company search failed.')}
                     </p>
                   )}
-                  {search.isSuccess && results.length === 0 && (
+                  {debounced !== '' && search.isSuccess && visible.length === 0 && (
                     <p className="px-3 py-2 text-sm text-fg-muted">
                       No company found matching &lsquo;{debounced}&rsquo;. Try a different name or ticker symbol.
                     </p>
                   )}
-                  {results.map((c, i) => (
+                  {visible.map((c, i) => (
                     <button
                       key={c.symbol}
                       id={`${listId}-${i}`}
@@ -173,7 +193,7 @@ export default function Investigate() {
                       <span className="font-medium">
                         {c.name} <span className="font-mono text-fg-muted">{c.symbol}</span>
                       </span>
-                      <span className="text-xs text-fg-dim">{c.exchange}</span>
+                      {c.exchange && <span className="text-xs text-fg-dim">{c.exchange}</span>}
                     </button>
                   ))}
                 </div>

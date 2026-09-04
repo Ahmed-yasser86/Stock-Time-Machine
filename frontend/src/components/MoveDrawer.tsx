@@ -145,7 +145,14 @@ export function MoveDrawer({
                   {n.title}
                 </a>
               </p>
-              <p className="mt-1 text-xs text-fg-muted">{n.source} · Published {fmtDate(n.publishedAt)}</p>
+              <p className="mt-1 text-xs text-fg-muted">
+                {n.source} · Published {fmtDate(n.publishedAt)}
+                {n.sentimentScore !== null && n.sentimentScore !== undefined && (
+                  <span className="ml-1 rounded-full bg-accent px-1.5 py-0.5 font-mono tabular" title="Entity sentiment score from the provider, -1 to +1">
+                    {n.sentimentScore > 0 ? '+' : ''}{n.sentimentScore.toFixed(2)}
+                  </span>
+                )}
+              </p>
             </li>
           ))}
         </ul>

@@ -156,6 +156,7 @@ export interface MoveNews {
   source: string;
   publishedAt: string;
   url: string;
+  sentimentScore: number | null;
 }
 
 export interface SocialSignal {
