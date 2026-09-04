@@ -146,6 +146,37 @@ public class AiNarrativeTests
     }
 
     [Fact]
+    public void BriefBatcher_SplitsOverBudget()
+    {
+        var inputs = new[]
+        {
+            ("T1", new string('x', 100)),
+            ("T2", new string('y', 100)),
+            ("T3", new string('z', 100)),
+        };
+
+        var single = BriefBatcher.Batch(inputs, maxBatchChars: 1000);
+        var split = BriefBatcher.Batch(inputs, maxBatchChars: 150);
+
+        Assert.Single(single);
+        Assert.Equal(3, split.Count);
+        Assert.Equal(inputs.Length, split.SelectMany(b => b).Count());
+    }
+
+    [Fact]
+    public void ClusterBriefPrompt_ReduceMode_PreservesGlobalNumbering()
+    {
+        var prompt = ClusterBriefPrompt.Build("TSLA", new DateOnly(2020, 1, 15), new[]
+        {
+            ("Title three", "Body three"),
+        }, startIndex: 3, isReduce: true);
+
+        Assert.Contains("[3] Title three", prompt);
+        Assert.Contains("BATCH SUMMARIES", prompt);
+        Assert.Contains("preserve them exactly", prompt);
+    }
+
+    [Fact]
     public void ClusterBriefPrompt_ContainsCutoffAndCitations()
     {
         var prompt = ClusterBriefPrompt.Build("TSLA", new DateOnly(2020, 1, 15), new[]

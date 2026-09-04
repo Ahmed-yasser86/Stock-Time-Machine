@@ -17,6 +17,13 @@ public class MoveDetectionService : IMoveDetectionService
     private const int Rolling = 20;
     private const int MinRows = 30;
     private const int TopMoves = 5;
+    // Coverage-freeze guard: a non-empty cache must not shadow later coverage
+    // forever. When the newest cached row from the selected source is older
+    // than this many days before the latest move, one live refresh runs per
+    // investigation (scoped instance = per request), anchored at the latest
+    // move so the provider's trailing window covers the most evidence.
+    private const int NewsStaleAfterDays = 7;
+    private readonly HashSet<string> _newsRefreshed = new(StringComparer.Ordinal);
     // Retail discussion lookback per move: 7 days back from the move date.
     // A single per-investigation fetch covers [earliestMove-7d, asOf], then
     // each move slices its own [moveDate-7d, moveDate] window.
@@ -84,6 +91,10 @@ public class MoveDetectionService : IMoveDetectionService
         // One social fetch per investigation (not per move): cheap enough for
         // throttled community APIs, then sliced per move by post date below.
         var socialAll = await FetchSocialWindow(normalized, companyName, scored, asOfDate, ct);
+
+        // Stale-cache refresh before evidence: without this, the first fetch's
+        // rows shadow all later coverage (DB-first hit on any rows at all).
+        await RefreshStaleNews(normalized, companyName, selectedNewsSource, scored, ct);
 
         foreach (var move in scored)
         {
@@ -374,6 +385,36 @@ public class MoveDetectionService : IMoveDetectionService
 
         evidence.Arrival = ArrivalMap.Build(moveDate, evidence);
         return evidence;
+    }
+
+    private async Task RefreshStaleNews(
+        string symbol, string? companyName, string newsSource, List<KeyMove> moves, CancellationToken ct)
+    {
+        if (moves.Count == 0 || !_newsRefreshed.Add(symbol + "|" + newsSource))
+            return;
+        try
+        {
+            var latest = moves.Max(m => m.Date);
+            var cached = await _dataRepo.GetNewsAsOf(symbol, latest, ct);
+            var newest = cached
+                .Where(n => IsFromSource(n, newsSource))
+                .Select(n => (DateTime?)n.PublishedAt)
+                .Max();
+            if (newest is null)
+                return; // Empty: the per-move fallback already fetches live.
+            if (DateOnly.FromDateTime(newest.Value) >= latest.AddDays(-NewsStaleAfterDays))
+                return; // Fresh enough: provider's trailing window is covered.
+            var fresh = await _newsFactory.Get(newsSource).SearchAsync(symbol, companyName, latest, ct);
+            if (fresh.Count > 0)
+                await _dataRepo.StoreNews(symbol, fresh, ct);
+            _logger.LogInformation("Stale news refresh for {Symbol}: newest cached {Newest} vs latest move {Latest}, fetched {Count}",
+                symbol, newest, latest, fresh.Count);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Stale news refresh failed for {Symbol}; serving cached rows", symbol);
+        }
     }
 
     // Same source-membership rule as the snapshot engine: cached rows carry

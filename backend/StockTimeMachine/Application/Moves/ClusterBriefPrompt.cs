@@ -17,15 +17,27 @@ public static class ClusterBriefPrompt
     public static string Build(
         string companySymbol,
         DateOnly asOfDate,
-        IReadOnlyList<(string Title, string Body)> articles)
+        IReadOnlyList<(string Title, string Body)> articles,
+        int startIndex = 1,
+        bool isReduce = false)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"You are a historical research assistant. Today is {asOfDate:yyyy-MM-dd}.");
         sb.AppendLine($"You know NOTHING that happened after this date. Never use outside knowledge,");
         sb.AppendLine($"never mention events after this date, and never infer what followed.");
         sb.AppendLine();
-        sb.AppendLine($"Below are {articles.Count} contemporary articles about {companySymbol}, all published");
-        sb.AppendLine($"on or before today, all covering one story thread. Summarize what THEY report.");
+        if (isReduce)
+        {
+            sb.AppendLine($"Below are BATCH SUMMARIES (each written from a disjoint subset of contemporary");
+            sb.AppendLine($"articles about {companySymbol}, all published on or before today, all covering one");
+            sb.AppendLine($"story thread). Synthesize them into one brief under the same rules. Citations [n]");
+            sb.AppendLine($"refer to the ORIGINAL article numbers — preserve them exactly, never renumber.");
+        }
+        else
+        {
+            sb.AppendLine($"Below are {articles.Count} contemporary articles about {companySymbol}, all published");
+            sb.AppendLine($"on or before today, all covering one story thread. Summarize what THEY report.");
+        }
         sb.AppendLine();
         sb.AppendLine("Hard rules:");
         sb.AppendLine("- State only claims present in at least one article below; cite each claim like [1], [2].");
@@ -41,7 +53,7 @@ public static class ClusterBriefPrompt
         sb.AppendLine();
         for (int i = 0; i < articles.Count; i++)
         {
-            sb.AppendLine($"[{i + 1}] {articles[i].Title}");
+            sb.AppendLine($"[{startIndex + i}] {articles[i].Title}");
             if (!string.IsNullOrWhiteSpace(articles[i].Body))
                 sb.AppendLine(articles[i].Body);
             sb.AppendLine();

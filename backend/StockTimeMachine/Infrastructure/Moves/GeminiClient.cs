@@ -42,12 +42,25 @@ public class GeminiClient : IGeminiClient
             throw new InvalidOperationException("Gemini:ApiKey is not configured.");
         var vectors = new List<float[]>(texts.Count);
         foreach (var text in texts)
+            vectors.Add(await EmbedTextAsync(text, ct));
+        return vectors;
+    }
+
+    // Over-long articles are chunked and mean-pooled into one vector instead
+    // of truncated: truncation silently drops the article's tail, pooling
+    // keeps every chunk's vote. Limiter waits per chunk (queueing is pacing).
+    private async Task<float[]> EmbedTextAsync(string text, CancellationToken ct)
+    {
+        var chunks = Chunk(text).ToList();
+        var pooled = new float[0];
+        int count = 0;
+        foreach (var chunk in chunks)
         {
-            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(text), ct);
+            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(chunk), ct);
             var body = new
             {
                 model = $"models/{_embeddingModel}",
-                content = new { parts = new[] { new { text = Truncate(text) } } },
+                content = new { parts = new[] { new { text = chunk } } },
             };
             using var resp = await _http.PostAsJsonAsync(
                 $"{BaseUrl}/{_embeddingModel}:embedContent?key={_apiKey}", body, ct);
@@ -59,9 +72,28 @@ public class GeminiClient : IGeminiClient
                 .EnumerateArray()
                 .Select(e => e.GetSingle())
                 .ToArray();
-            vectors.Add(values);
+            if (count == 0)
+                pooled = new float[values.Length];
+            if (values.Length != pooled.Length)
+                throw new InvalidOperationException("Embedding dimensions changed mid-text.");
+            for (int i = 0; i < values.Length; i++)
+                pooled[i] += values[i];
+            count++;
         }
-        return vectors;
+        for (int i = 0; i < pooled.Length; i++)
+            pooled[i] /= count;
+        return pooled;
+    }
+
+    private static IEnumerable<string> Chunk(string text)
+    {
+        if (text.Length <= MaxEmbedChars)
+        {
+            yield return text;
+            yield break;
+        }
+        for (int i = 0; i < text.Length; i += MaxEmbedChars)
+            yield return text.Substring(i, Math.Min(MaxEmbedChars, text.Length - i));
     }
 
     public async Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default)
@@ -118,6 +150,4 @@ public class GeminiClient : IGeminiClient
         }
     }
 
-    private static string Truncate(string text) =>
-        text.Length <= MaxEmbedChars ? text : text.Substring(0, MaxEmbedChars);
 }
