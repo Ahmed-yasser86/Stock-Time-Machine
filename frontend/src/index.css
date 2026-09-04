@@ -84,6 +84,45 @@ html, body {
   color: #ffffff;
 }
 
+/* Compact density for data lists only — never prose. Opt-in per list. */
+.density-compact {
+  --compact-pad: 0.5rem;
+  --compact-gap: 0.375rem;
+}
+.density-compact ul, .density-compact ol { gap: var(--compact-gap); }
+.density-compact li { padding: var(--compact-pad); font-size: 0.8125rem; }
+
+/* Print: evidence bundles. Chrome hides nav, actions, and interactive chrome;
+   drawers render inline; generated-content badges stay visible. */
+@media print {
+  header, footer, nav, button, .no-print {
+    display: none !important;
+  }
+  main {
+    max-width: 100% !important;
+  }
+  aside[role='dialog'] {
+    position: static !important;
+    max-height: none !important;
+    width: 100% !important;
+    border: 1px solid #999 !important;
+    box-shadow: none !important;
+  }
+  details {
+    display: block !important;
+  }
+  details > summary {
+    list-style: none;
+  }
+  details:not([open]) > *:not(summary) {
+    display: block !important;
+  }
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;
