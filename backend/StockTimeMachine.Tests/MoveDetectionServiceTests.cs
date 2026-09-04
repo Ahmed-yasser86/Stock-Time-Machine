@@ -175,6 +175,42 @@ public class MoveDetectionServiceTests
         Assert.NotEmpty(evidence.Reaction);
     }
 
+    private sealed class CapturingSocialProvider : ISocialSignalProvider
+    {
+        public string ProviderName => "Capturing";
+        public DateOnly SeenFrom { get; private set; }
+        public Task<IReadOnlyList<SocialSignal>> GetSignals(string symbol, string? companyName, DateOnly from, DateOnly to, CancellationToken ct = default)
+        {
+            SeenFrom = from;
+            return Task.FromResult<IReadOnlyList<SocialSignal>>(new[]
+            {
+                new SocialSignal { Id = "s5", Title = "Five days before", CreatedAt = new DateTime(2020, 1, 27, 12, 0, 0, DateTimeKind.Utc), Score = 10, Url = "https://example.com/s5", CompanySymbol = "TSLA" },
+                new SocialSignal { Id = "s10", Title = "Ten days before", CreatedAt = new DateTime(2020, 1, 22, 12, 0, 0, DateTimeKind.Utc), Score = 99, Url = "https://example.com/s10", CompanySymbol = "TSLA" },
+            });
+        }
+    }
+
+    [Fact]
+    public async Task GetMoves_SocialWindow_CoversSevenDays()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var social = new CapturingSocialProvider();
+        var sut = Sut(db, av, directory,
+            new NullNewsProvider(NullLogger<NullNewsProvider>.Instance),
+            new[] { social });
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        // Move is Feb-1: fetch starts 7 days back; the 5-day-old post attaches
+        // despite outscoring nothing, the 10-day-old post stays out even with
+        // the highest score.
+        Assert.Equal(new DateOnly(2020, 1, 25), social.SeenFrom);
+        var evidence = window.EvidenceByDate.Values.First();
+        Assert.Contains(evidence.Social, s => s.Id == "s5");
+        Assert.DoesNotContain(evidence.Social, s => s.Id == "s10");
+    }
+
     [Fact]
     public async Task GetMoves_SocialFailure_MarksLayerUnavailable()
     {

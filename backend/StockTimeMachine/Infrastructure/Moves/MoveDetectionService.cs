@@ -17,6 +17,10 @@ public class MoveDetectionService : IMoveDetectionService
     private const int Rolling = 20;
     private const int MinRows = 30;
     private const int TopMoves = 5;
+    // Retail discussion lookback per move: 7 days back from the move date.
+    // A single per-investigation fetch covers [earliestMove-7d, asOf], then
+    // each move slices its own [moveDate-7d, moveDate] window.
+    public const int SocialLookbackDays = 7;
 
     private readonly ICompanyRepository _companyRepo;
     private readonly IHistoricalDataRepository _dataRepo;
@@ -109,7 +113,7 @@ public class MoveDetectionService : IMoveDetectionService
         if (moves.Count == 0)
             return (all, failed);
 
-        var from = moves.Min(m => m.Date).AddDays(-3);
+        var from = moves.Min(m => m.Date).AddDays(-SocialLookbackDays);
         foreach (var social in _social)
         {
             try
@@ -338,7 +342,7 @@ public class MoveDetectionService : IMoveDetectionService
         }
 
         // Social comes from the single per-investigation fetch, sliced to this
-        // move's window ([moveDate-3d, moveDate] by post date). A failed fetch
+        // move's window ([moveDate-7d, moveDate] by post date). A failed fetch
         // marks every move honestly; an empty slice means no discussion found.
         if (socialWindow.Failed)
         {
@@ -346,7 +350,7 @@ public class MoveDetectionService : IMoveDetectionService
         }
         else
         {
-            var from = moveDate.AddDays(-3);
+            var from = moveDate.AddDays(-SocialLookbackDays);
             evidence.Social = socialWindow.Signals
                 .Where(s => DateOnly.FromDateTime(s.CreatedAt) >= from &&
                             DateOnly.FromDateTime(s.CreatedAt) <= moveDate)
