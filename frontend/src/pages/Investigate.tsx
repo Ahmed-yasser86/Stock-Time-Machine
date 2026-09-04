@@ -5,6 +5,7 @@ import { Building2, CalendarDays, Newspaper, ShieldCheck, X } from 'lucide-react
 import { api, apiErrorMessage } from '../lib/api';
 import { fmtDate, todayLocal } from '../lib/format';
 import { newsSourceLabel, type Company, type NewsSource } from '../types';
+import { getRecentInvestigations } from '../lib/recentInvestigations';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -243,8 +244,8 @@ export default function Investigate() {
               Your choice is explicit and respected: results come from one source only, with
               source attribution on every item. Sources are never mixed or substituted.
             </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="News source">
-              {(['gdelt', 'alphavantage'] as NewsSource[]).map((s) => (
+            <div className="mt-3 grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="News source">
+              {(['gdelt', 'alphavantage', 'marketaux'] as NewsSource[]).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -261,7 +262,9 @@ export default function Investigate() {
                   <span className="mt-1 block text-xs text-fg-muted">
                     {s === 'gdelt'
                       ? 'World news archive. Broad coverage, best-effort completeness.'
-                      : 'Market-aware news feed. Finance-focused, best-effort completeness.'}
+                      : s === 'alphavantage'
+                        ? 'Market-aware news feed. Finance-focused, best-effort completeness.'
+                        : 'Entity-tagged finance news with sentiment. Recent years only.'}
                   </span>
                 </button>
               ))}
@@ -305,6 +308,27 @@ export default function Investigate() {
           ))}
         </CardContent>
       </Card>
+
+      {/* Recent investigations (session memory, local only) */}
+      {getRecentInvestigations().length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pick up where you left off</CardTitle>
+            <CardDescription>This session only — stored in your browser, never sent anywhere.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {getRecentInvestigations().map((r) => (
+              <Link
+                key={`${r.symbol}|${r.date}|${r.newsSource}`}
+                to={`/snapshot?symbol=${r.symbol}&date=${r.date}&newsSource=${r.newsSource}`}
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                {r.symbol} · {fmtDate(r.date)} · {newsSourceLabel(r.newsSource)}
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

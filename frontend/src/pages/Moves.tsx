@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { recordInvestigation } from '../lib/recentInvestigations';
 import { fmtDate, fmtPct } from '../lib/format';
 import { newsSourceLabel, type NewsSource } from '../types';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
@@ -57,14 +58,24 @@ export default function Moves() {
   const symbol = params.get('symbol')?.trim() ?? '';
   const date = params.get('date')?.trim() ?? '';
   const newsSource = normalizeSource(params.get('newsSource'));
-  const [selected, setSelected] = useState<string | null>(null);
+  // Drawer selection is URL state (`?move=YYYY-MM-DD`) so a move is shareable
+  // and survives reloads. `move` stays out of paramsKey: toggling the drawer
+  // must not reset the investigation.
+  const [selected, setSelected] = useState<string | null>(() => params.get('move'));
   const [prevKey, setPrevKey] = useState('');
   const paramsKey = `${symbol}|${date}|${newsSource}`;
   if (paramsKey !== prevKey) {
-    // New investigation: clear the open drawer during render (no effect needed).
+    // New investigation: adopt any deep-linked move during render (no effect needed).
     setPrevKey(paramsKey);
-    setSelected(null);
+    setSelected(params.get('move'));
   }
+
+  const syncMoveParam = (next: string | null) => {
+    setSelected(next);
+    const nextParams: Record<string, string> = { symbol, date, newsSource };
+    if (next) nextParams.move = next;
+    setParams(nextParams, { replace: true });
+  };
 
   const query = useQuery({
     queryKey: ['moves', symbol.toUpperCase(), date, newsSource],
@@ -87,7 +98,8 @@ export default function Moves() {
     document.title = symbol && date
       ? `${symbol.toUpperCase()} · 100 days to ${fmtDate(date)} — Stock Time Machine`
       : 'Stock Time Machine';
-  }, [symbol, date]);
+    if (symbol && date) recordInvestigation(symbol, date, newsSource);
+  }, [symbol, date, newsSource]);
 
   if (symbol === '' || date === '') {
     return (
@@ -238,7 +250,7 @@ export default function Moves() {
                   moves={data.keyMoves}
                   decisionDate={data.decisionDate}
                   selectedDate={selected}
-                  onSelect={(d) => setSelected((cur) => (cur === d ? null : d))}
+                  onSelect={(d) => syncMoveParam(selected === d ? null : d)}
                   regimes={data.regimes}
                 />
               </CardContent>
@@ -273,7 +285,8 @@ export default function Moves() {
               rank={selectedRank}
               evidence={data.evidenceByDate[selectedMove.date]}
               symbol={data.company.symbol}
-              onClose={() => setSelected(null)}
+              newsSource={newsSource}
+              onClose={() => syncMoveParam(null)}
             />
           )}
 

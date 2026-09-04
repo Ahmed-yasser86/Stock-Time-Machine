@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowDownRight, ArrowUpRight, ExternalLink, Minus, X } from 'lucide-react';
 import { direction, fmtDate, fmtDateTimeUtc, fmtMoney } from '../lib/format';
 import { ReactionSparkline } from './ReactionSparkline';
-import type { KeyMove, MoveEvidence } from '../types';
+import type { KeyMove, MoveEvidence, NewsSource } from '../types';
 import { Badge } from './ui/badge';
 import { buttonVariants } from './ui/button';
 import { EmptySection } from './StateBlocks';
@@ -30,12 +30,14 @@ export function MoveDrawer({
   rank,
   evidence,
   symbol,
+  newsSource,
   onClose,
 }: {
   move: KeyMove;
   rank: number;
   evidence: MoveEvidence | undefined;
   symbol: string;
+  newsSource: NewsSource;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -243,7 +245,7 @@ export function MoveDrawer({
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Link
-          to={`/snapshot?symbol=${encodeURIComponent(symbol)}&date=${move.date}`}
+          to={`/snapshot?symbol=${encodeURIComponent(symbol)}&date=${move.date}&newsSource=${encodeURIComponent(newsSource)}`}
           className={buttonVariants({ size: 'sm' })}
         >
           Open full dossier at {fmtDate(move.date)}
