@@ -10,6 +10,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { API_BASE, ApiError, api, apiErrorMessage } from '../lib/api';
+import { recordInvestigation } from '../lib/recentInvestigations';
 import {
   direction,
   fmtDate,
@@ -550,7 +551,8 @@ export default function Snapshot() {
     document.title = symbol && date
       ? `${symbol.toUpperCase()} · ${fmtDate(date)} — Stock Time Machine`
       : 'Stock Time Machine';
-  }, [symbol, date]);
+    if (symbol && date) recordInvestigation(symbol, date, newsSource);
+  }, [symbol, date, newsSource]);
 
   if (symbol === '' || date === '') {
     return (
