@@ -120,6 +120,22 @@ builder.Services.AddSingleton<ArcticShiftProvider>(sp =>
         sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<ISocialSignalProvider>(sp => sp.GetRequiredService<ArcticShiftProvider>());
 
+// AI narrative layer (Gemini embeddings + briefs, Jina article bodies).
+// Quarantined by design: every failure degrades to deterministic TF-IDF,
+// and keys stay server-side (Gemini:ApiKey, Jina:ApiKey).
+builder.Services.AddHttpClient(nameof(GeminiClient));
+builder.Services.AddSingleton<IGeminiClient>(sp =>
+    new GeminiClient(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(GeminiClient)),
+        sp.GetRequiredService<ILogger<GeminiClient>>(),
+        sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddHttpClient(nameof(JinaReaderClient));
+builder.Services.AddSingleton<IArticleContentClient>(sp =>
+    new JinaReaderClient(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(JinaReaderClient)),
+        sp.GetRequiredService<ILogger<JinaReaderClient>>(),
+        sp.GetRequiredService<IConfiguration>()));
+
 // Finnhub: self-contained adapters (typed, factory-managed HttpClient).
 // Company-profile fallback + delayed live quotes. The token stays
 // server-side; browsers only ever receive data, never credentials.

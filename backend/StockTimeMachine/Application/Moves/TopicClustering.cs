@@ -13,6 +13,9 @@ public class TopicCluster
     public string RepresentativeTitle { get; set; } = "";
     public DateTime? SpanStart { get; set; }
     public DateTime? SpanEnd { get; set; }
+    // AI brief when the Gemini path produced one; null on the TF-IDF path or
+    // when the model declined. Presenters must label it AI-generated.
+    public ClusterBrief? Brief { get; set; }
 }
 
 public static class TopicClustering
@@ -137,7 +140,9 @@ public static class TopicClustering
         };
     }
 
-    private static List<string> Tokenize(string text)
+    // Public so the AI path can reuse identical term vocabulary for labels:
+    // embeddings decide membership, shared terms still name the thread.
+    public static List<string> Tokenize(string text)
     {
         var tokens = new List<string>();
         var current = new System.Text.StringBuilder();

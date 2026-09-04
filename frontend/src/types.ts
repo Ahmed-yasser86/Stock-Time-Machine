@@ -214,12 +214,19 @@ export interface UncertaintyIndex {
   components: UncertaintyComponent[];
 }
 
+export interface ClusterBrief {
+  summary: string;
+  keyPoints: string[];
+  model: string;
+}
+
 export interface TopicCluster {
   labelTerms: string[];
   articleIds: string[];
   representativeTitle: string;
   spanStart: string | null;
   spanEnd: string | null;
+  brief: ClusterBrief | null;
 }
 
 export interface NarrativesResponse {
@@ -227,6 +234,7 @@ export interface NarrativesResponse {
   asOfDate: string;
   newsSource: NewsSource;
   articlesConsidered: number;
+  clusteringMethod: string;
   topics: TopicCluster[];
 }
 
