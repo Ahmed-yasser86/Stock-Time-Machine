@@ -154,8 +154,29 @@ public class NarrativeService : INarrativeService
                     bodyText = bodyText.Substring(0, MaxBodyChars);
                 inputs.Add((d.Title, bodyText));
             }
-            var prompt = ClusterBriefPrompt.Build(result.CompanySymbol, result.AsOfDate, inputs);
-            return await _gemini.SummarizeClusterAsync(prompt, ct);
+            var batches = BriefBatcher.Batch(inputs);
+            if (batches.Count == 1)
+            {
+                var prompt = ClusterBriefPrompt.Build(result.CompanySymbol, result.AsOfDate, inputs);
+                return await _gemini.SummarizeClusterAsync(prompt, ct);
+            }
+            // Map-reduce: one brief per batch (global numbering preserved),
+            // then a final synthesis over the batch briefs.
+            var mapped = new List<(string Title, string Body)>();
+            int offset = 1;
+            foreach (var batch in batches)
+            {
+                var prompt = ClusterBriefPrompt.Build(result.CompanySymbol, result.AsOfDate, batch, offset);
+                var brief = await _gemini.SummarizeClusterAsync(prompt, ct);
+                if (brief is null)
+                    return null;
+                mapped.Add(($"Batch covering articles {offset}–{offset + batch.Count - 1}",
+                    brief.Summary + " " + string.Join(" ", brief.KeyPoints)));
+                offset += batch.Count;
+            }
+            var reducePrompt = ClusterBriefPrompt.Build(
+                result.CompanySymbol, result.AsOfDate, mapped, isReduce: true);
+            return await _gemini.SummarizeClusterAsync(reducePrompt, ct);
         }
         catch (Exception ex)
         {

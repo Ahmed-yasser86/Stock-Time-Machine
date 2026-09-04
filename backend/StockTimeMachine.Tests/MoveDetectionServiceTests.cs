@@ -211,6 +211,82 @@ public class MoveDetectionServiceTests
         Assert.DoesNotContain(evidence.Social, s => s.Id == "s10");
     }
 
+    private sealed class CountingNewsProvider : INewsProvider
+    {
+        private readonly IReadOnlyList<NewsArticle> _articles;
+        public int Calls { get; private set; }
+        public CountingNewsProvider(IReadOnlyList<NewsArticle> articles) => _articles = articles;
+        public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(_articles);
+        }
+    }
+
+    [Fact]
+    public async Task GetMoves_StaleNewsCache_RefreshesOncePerInvestigation()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        // Cached row Jan-20 vs Feb-1 move: older than 7 days → stale.
+        await db.NewsArticles.AddAsync(new NewsArticle
+        {
+            Id = "old", Title = "Old news", Source = "GDELT",
+            PublishedAt = new DateTime(2020, 1, 20, 0, 0, 0, DateTimeKind.Utc),
+            Url = "https://example.com/old", CompanySymbol = "TSLA",
+        });
+        await db.SaveChangesAsync();
+        var news = new CountingNewsProvider(new[]
+        {
+            new NewsArticle { Id = "fresh", Title = "Fresh news", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 30, 0, 0, 0, DateTimeKind.Utc), Url = "https://example.com/fresh", CompanySymbol = "TSLA" },
+        });
+        var sut = Sut(db, av, directory, news);
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        // One refresh for the whole investigation despite several moves.
+        Assert.Equal(1, news.Calls);
+        var evidence = window.EvidenceByDate.Values.First();
+        Assert.Contains(evidence.News, n => n.Id == "fresh");
+    }
+
+    [Fact]
+    public async Task GetMoves_FreshNewsCache_SkipsRefresh()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        // Detected moves fall in [Jan-22, Feb-10]. Jan-20 covers every move's
+        // cutoff so the per-move empty fallback never fires; the Feb rows keep
+        // the visible-newest within 7 days of any latest move, so the
+        // staleness refresh stays quiet too.
+        await db.NewsArticles.AddRangeAsync(
+            new NewsArticle
+            {
+                Id = "early", Title = "Early news", Source = "GDELT",
+                PublishedAt = new DateTime(2020, 1, 20, 0, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/early", CompanySymbol = "TSLA",
+            },
+            new NewsArticle
+            {
+                Id = "mid", Title = "Mid news", Source = "GDELT",
+                PublishedAt = new DateTime(2020, 2, 2, 0, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/mid", CompanySymbol = "TSLA",
+            },
+            new NewsArticle
+            {
+                Id = "recent", Title = "Recent news", Source = "GDELT",
+                PublishedAt = new DateTime(2020, 2, 8, 0, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/recent", CompanySymbol = "TSLA",
+            });
+        await db.SaveChangesAsync();
+        var news = new CountingNewsProvider(Array.Empty<NewsArticle>());
+        var sut = Sut(db, av, directory, news);
+
+        await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        Assert.Equal(0, news.Calls);
+    }
+
     [Fact]
     public async Task GetMoves_SocialFailure_MarksLayerUnavailable()
     {
