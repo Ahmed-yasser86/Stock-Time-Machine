@@ -8,10 +8,17 @@ namespace StockTimeMachine;
 
 public class AlphaVantageProvider : IAlphaVantageProvider
 {
+    // Free tier = 5 calls/minute: process-wide pacing so sequential snapshot
+    // calls (prices → outcome → retry) never trip the burst policer.
+    // Configurable for tests (AlphaVantage:PaceSeconds, 0 in test config).
+    private static readonly SemaphoreSlim PaceGate = new(1, 1);
+    private static DateTime _lastRequestUtc = DateTime.MinValue;
+
     private readonly HttpClient _http;
     private readonly ILogger<AlphaVantageProvider> _logger;
     private readonly string _apiKey;
     private readonly string _baseUrl;
+    private readonly double _paceSeconds;
 
     public AlphaVantageProvider(HttpClient http, ILogger<AlphaVantageProvider> logger, IConfiguration config)
     {
@@ -20,6 +27,10 @@ public class AlphaVantageProvider : IAlphaVantageProvider
         // Server-side only. Never logged, never returned in API responses.
         _apiKey = config["AlphaVantage:ApiKey"] ?? "";
         _baseUrl = config["AlphaVantage:BaseUrl"] ?? "https://www.alphavantage.co/query";
+        _paceSeconds = double.TryParse(config["AlphaVantage:PaceSeconds"],
+            System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture, out var pace)
+            ? pace : 12;
     }
 
     public async Task<IReadOnlyList<PricePoint>> GetDailyPrices(string symbol, DateOnly? asOfDate = null, int days = 365, CancellationToken ct = default)
@@ -32,7 +43,16 @@ public class AlphaVantageProvider : IAlphaVantageProvider
 
         // Free tier: 25 req/day. compact (~100 rows) suffices for small windows;
         // full history is only requested when the caller genuinely needs more.
+        // outputsize=full is premium-gated: on denial we retry once with compact
+        // (same data, fewer rows) instead of failing the investigation.
         var outputSize = days > 100 ? "full" : "compact";
+        return await FetchSeries(symbol, asOfDate, days, outputSize, allowCompactFallback: true, ct);
+    }
+
+    private async Task<IReadOnlyList<PricePoint>> FetchSeries(
+        string symbol, DateOnly? asOfDate, int days, string outputSize, bool allowCompactFallback, CancellationToken ct)
+    {
+        await PaceAsync(ct);
         var url = $"{_baseUrl}?function=TIME_SERIES_DAILY&symbol={Uri.EscapeDataString(symbol)}&outputsize={outputSize}&apikey={_apiKey}";
         _logger.LogInformation("Fetching daily prices from Alpha Vantage for {Symbol} ({OutputSize})", symbol, outputSize);
 
@@ -69,9 +89,16 @@ public class AlphaVantageProvider : IAlphaVantageProvider
                 var message = info.GetString() ?? "";
                 _logger.LogWarning("Alpha Vantage information message for {Symbol}: {Info}", symbol, message);
                 if (message.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("calls per", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("premium", StringComparison.OrdinalIgnoreCase))
+                    message.Contains("calls per", StringComparison.OrdinalIgnoreCase))
                     throw new RateLimitExceededException("Alpha Vantage rate limit exceeded.");
+                if (allowCompactFallback && outputSize == "full" &&
+                    message.Contains("premium", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Pacing (PaceAsync) already spaces this retry; one-time cost
+                    // per symbol since the DB caches everything fetched.
+                    _logger.LogInformation("Full output denied for {Symbol}; retrying once with compact", symbol);
+                    return await FetchSeries(symbol, asOfDate, Math.Min(days, 100), "compact", allowCompactFallback: false, ct);
+                }
                 return Array.Empty<PricePoint>();
             }
 
@@ -128,6 +155,22 @@ public class AlphaVantageProvider : IAlphaVantageProvider
                 result.RemoveRange(days, result.Count - days);
 
             return result;
+        }
+    }
+
+    private async Task PaceAsync(CancellationToken ct)
+    {
+        await PaceGate.WaitAsync(ct);
+        try
+        {
+            var wait = TimeSpan.FromSeconds(_paceSeconds) - (DateTime.UtcNow - _lastRequestUtc);
+            if (wait > TimeSpan.Zero)
+                await Task.Delay(wait, ct);
+            _lastRequestUtc = DateTime.UtcNow;
+        }
+        finally
+        {
+            PaceGate.Release();
         }
     }
 

@@ -309,9 +309,11 @@ public class TimeMachineService : ITimeMachineService
     private static bool IsFromSource(NewsArticle article, string newsSource)
     {
         var source = article.Source ?? "";
-        return newsSource == NewsSources.AlphaVantage
-            ? source.Contains("Alpha Vantage", StringComparison.OrdinalIgnoreCase)
-            : source.Contains("GDELT", StringComparison.OrdinalIgnoreCase);
+        if (newsSource == NewsSources.AlphaVantage)
+            return source.Contains("Alpha Vantage", StringComparison.OrdinalIgnoreCase);
+        if (newsSource == NewsSources.MarketAux)
+            return source.Contains("MarketAux", StringComparison.OrdinalIgnoreCase);
+        return source.Contains("GDELT", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<IReadOnlyList<SecFiling>> ResolveOutcomeFilings(Company company, DateOnly asOfDate, CancellationToken ct)

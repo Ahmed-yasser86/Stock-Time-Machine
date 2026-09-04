@@ -1,0 +1,57 @@
+namespace StockTimeMachine.Web.Models.Dto;
+
+// DTOs for the moves investigation surface. Separate file (not ApiDtos.cs) so
+// the existing snapshot contract is never touched by moves work.
+public sealed record KeyMoveDto(
+    DateOnly Date,
+    decimal Close,
+    decimal DailyReturnPct,
+    double ZScore,
+    double VolumeRatio,
+    decimal FiveDayMomentumPct,
+    double Score,
+    IReadOnlyList<string> Flags);
+
+public sealed record MarketReactionDto(DateOnly Date, decimal Close);
+
+public sealed record MoveFilingDto(string AccessionNumber, string FormType, DateTime FiledAt, string Url);
+
+public sealed record MoveNewsDto(string Title, string Source, DateTime PublishedAt, string Url);
+
+public sealed record SocialSignalDto(
+    string Provider,
+    string Community,
+    string Title,
+    string Excerpt,
+    string Url,
+    DateTime CreatedAt,
+    int Score,
+    int CommentCount,
+    string? Flair);
+
+public sealed record MoveEvidenceDto(
+    IReadOnlyList<MoveFilingDto> Filings,
+    IReadOnlyList<MoveNewsDto> News,
+    IReadOnlyList<SocialSignalDto> Social,
+    IReadOnlyList<MarketReactionDto> Reaction,
+    IReadOnlyList<string> UnavailableLayers);
+
+public sealed record WindowSummaryDto(
+    int TradingDays,
+    decimal CumulativeReturnPct,
+    double Volatility,
+    decimal MaxDrawdownPct,
+    DateOnly? BestDay,
+    decimal BestDayReturnPct,
+    DateOnly? WorstDay,
+    decimal WorstDayReturnPct,
+    bool SufficientHistory);
+
+public sealed record MovesResponse(
+    CompanySummaryDto Company,
+    DateOnly DecisionDate,
+    string NewsSource,
+    WindowSummaryDto Summary,
+    IReadOnlyList<KeyMoveDto> KeyMoves,
+    Dictionary<string, MoveEvidenceDto> EvidenceByDate,
+    IReadOnlyList<PricePointDto> WindowPrices);

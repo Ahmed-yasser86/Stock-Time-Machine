@@ -85,6 +85,15 @@ builder.Services.AddSingleton<GdeltCloudNewsProvider>(sp =>
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(GdeltCloudNewsProvider)),
         sp.GetRequiredService<ILogger<GdeltCloudNewsProvider>>(),
         sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddHttpClient(nameof(MarketAuxNewsProvider), client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(25);
+});
+builder.Services.AddSingleton<MarketAuxNewsProvider>(sp =>
+    new MarketAuxNewsProvider(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(MarketAuxNewsProvider)),
+        sp.GetRequiredService<ILogger<MarketAuxNewsProvider>>(),
+        sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<INewsProviderFactory, NewsProviderFactory>();
 
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
@@ -92,6 +101,20 @@ builder.Services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>(
 builder.Services.AddSingleton<ICompanyDirectory, JsonCompanyDirectory>();
 builder.Services.AddScoped<ITimeMachineService, TimeMachineService>();
 builder.Services.AddScoped<ISimulationService, SimulationService>();
+builder.Services.AddScoped<IMoveDetectionService, MoveDetectionService>();
+
+// Retail-discussion surface (Arctic Shift: keyless community Reddit archive).
+// Best-effort per move; failures degrade to honest per-layer empty states.
+builder.Services.AddHttpClient(nameof(ArcticShiftProvider), client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
+builder.Services.AddSingleton<ArcticShiftProvider>(sp =>
+    new ArcticShiftProvider(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(ArcticShiftProvider)),
+        sp.GetRequiredService<ILogger<ArcticShiftProvider>>(),
+        sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<ISocialSignalProvider, ArcticShiftProvider>();
 
 // Finnhub: self-contained adapters (typed, factory-managed HttpClient).
 // Company-profile fallback + delayed live quotes. The token stays

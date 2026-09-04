@@ -329,9 +329,12 @@ public class InvestigationBehaviorTests
         var gdelt = new GdeltNewsProvider(new HttpClient(), NullLogger<GdeltNewsProvider>.Instance, Config(null));
         var gdeltCloud = new GdeltCloudNewsProvider(new HttpClient(), NullLogger<GdeltCloudNewsProvider>.Instance, Config(null));
         var avNews = new AlphaVantageNewsProvider(new HttpClient(), NullLogger<AlphaVantageNewsProvider>.Instance, Config(null));
-        var factory = new NewsProviderFactory(gdelt, gdeltCloud, avNews, Config("alphavantage"));
+        var marketAux = new MarketAuxNewsProvider(new HttpClient(), NullLogger<MarketAuxNewsProvider>.Instance, Config(null));
+        var factory = new NewsProviderFactory(gdelt, gdeltCloud, avNews, marketAux, Config("alphavantage"));
 
         Assert.Same(avNews, factory.Get("alphavantage"));
+        Assert.Same(marketAux, factory.Get("marketaux"));
+        Assert.Same(marketAux, factory.Get("MarketAux"));
         // No Cloud key in test config: "gdelt" falls back to the Project provider.
         Assert.Same(gdelt, factory.Get("gdelt"));
         Assert.Same(gdelt, factory.Get("bogus"));
@@ -344,7 +347,7 @@ public class InvestigationBehaviorTests
         }).Build();
         var cloudFactory = new NewsProviderFactory(gdelt,
             new GdeltCloudNewsProvider(new HttpClient(), NullLogger<GdeltCloudNewsProvider>.Instance, cloudConfig),
-            avNews, cloudConfig);
+            avNews, marketAux, cloudConfig);
         // Key present: "gdelt" resolves to authenticated Cloud transport.
         Assert.IsType<GdeltCloudNewsProvider>(cloudFactory.Get("gdelt"));
         Assert.IsType<GdeltCloudNewsProvider>(cloudFactory.Default());

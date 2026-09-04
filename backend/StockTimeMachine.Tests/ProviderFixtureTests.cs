@@ -18,7 +18,8 @@ public class ProviderFixtureTests
     }
 
     private static IConfiguration AlphaConfig() =>
-        Config(("AlphaVantage:ApiKey", "test"), ("AlphaVantage:BaseUrl", "https://www.alphavantage.co/query"));
+        Config(("AlphaVantage:ApiKey", "test"), ("AlphaVantage:BaseUrl", "https://www.alphavantage.co/query"),
+            ("AlphaVantage:PaceSeconds", "0"));
 
     private static IConfiguration SecConfig() =>
         Config(("SecEdgar:BaseUrl", "https://data.sec.gov"));
@@ -64,16 +65,35 @@ public class ProviderFixtureTests
     }
 
     [Fact]
-    public async Task AlphaVantage_PremiumInformation_ThrowsRateLimit()
+    public async Task AlphaVantage_PremiumDenialOnFull_RetriesCompactOnce()
+    {
+        // Free keys are denied outputsize=full ("premium feature"): the provider
+        // retries once with compact, then serves those rows.
+        var handler = new RoutedHttpMessageHandler()
+            .When(r => r.RequestUri!.Query.Contains("outputsize=full"),
+                """{"Information": "The outputsize=full parameter value is a premium feature."}""")
+            .When(r => r.RequestUri!.Query.Contains("outputsize=compact"), DailySeries);
+        var provider = new AlphaVantageProvider(
+            new HttpClient(handler),
+            NullLogger<AlphaVantageProvider>.Instance, AlphaConfig());
+
+        var result = await provider.GetDailyPrices("TSLA", new DateOnly(2020, 1, 15), 365);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(2, handler.Calls);
+    }
+
+    [Fact]
+    public async Task AlphaVantage_PremiumDenialOnCompact_ReturnsEmpty()
     {
         var provider = new AlphaVantageProvider(
             new HttpClient(new StubHttpMessageHandler(
                 """{"Information": "This is a premium endpoint."}""")),
             NullLogger<AlphaVantageProvider>.Instance, AlphaConfig());
 
-        // "premium" is treated as a quota signal by the provider.
-        await Assert.ThrowsAsync<RateLimitExceededException>(
-            () => provider.GetDailyPrices("TSLA", new DateOnly(2020, 1, 15), 30));
+        // Compact is free-tier: a premium notice here means something else —
+        // honest empty, not a fabricated rate-limit error.
+        Assert.Empty(await provider.GetDailyPrices("TSLA", new DateOnly(2020, 1, 15), 30));
     }
 
     [Fact]
@@ -276,6 +296,124 @@ public class ProviderFixtureTests
         var provider = CloudProvider(handler);
 
         Assert.Empty(await provider.SearchAsync("MSFT", new DateOnly(2020, 1, 15)));
+    }
+
+    private static IConfiguration ArcticConfig(bool enabled = true) =>
+        Config(("Social:ArcticShift:BaseUrl", "https://arctic-shift.photon-reddit.com"),
+            ("Social:ArcticShift:Enabled", enabled ? "true" : "false"),
+            ("Social:ArcticShift:Subreddits", "wallstreetbets,stocks"));
+
+    private const string ArcticPosts = """
+        {"data": [
+          {"id": "p1", "title": "TSLA moon", "selftext": "To the moon!",
+           "permalink": "/r/wallstreetbets/comments/p1/x/", "created_utc": 1579132800,
+           "score": 500, "num_comments": 120, "link_flair_text": "Gain"},
+          {"id": "p2", "title": "Old post", "selftext": "",
+           "permalink": "/r/wallstreetbets/comments/p2/x/", "created_utc": 1577836800,
+           "score": 10, "num_comments": 2, "link_flair_text": null},
+          {"id": "", "title": "Undated", "selftext": "",
+           "permalink": "/r/wallstreetbets/comments/p3/x/",
+           "score": 5, "num_comments": 0, "link_flair_text": null}
+        ]}
+        """;
+
+    [Fact]
+    public async Task ArcticShift_FiltersWindow_DropsUndated()
+    {
+        // 1579132800 = 2020-01-16 UTC; 1577836800 = 2020-01-01 UTC.
+        var provider = new ArcticShiftProvider(
+            new HttpClient(new StubHttpMessageHandler(ArcticPosts)),
+            NullLogger<ArcticShiftProvider>.Instance, ArcticConfig());
+
+        var result = await provider.GetSignals("TSLA", "Tesla, Inc.",
+            new DateOnly(2020, 1, 10), new DateOnly(2020, 1, 20));
+
+        var single = Assert.Single(result);
+        Assert.Equal("TSLA moon", single.Title);
+        Assert.Equal("r/wallstreetbets", single.Community);
+        Assert.Equal("Gain", single.Flair);
+        Assert.Equal("https://www.reddit.com/r/wallstreetbets/comments/p1/x/", single.Url);
+        Assert.Equal("TSLA", single.CompanySymbol);
+    }
+
+    [Fact]
+    public async Task ArcticShift_Disabled_ReturnsEmpty()
+    {
+        var provider = new ArcticShiftProvider(
+            new HttpClient(new StubHttpMessageHandler("SHOULD-NOT-BE-CALLED", System.Net.HttpStatusCode.InternalServerError)),
+            NullLogger<ArcticShiftProvider>.Instance, ArcticConfig(enabled: false));
+
+        Assert.Empty(await provider.GetSignals("TSLA", null,
+            new DateOnly(2020, 1, 10), new DateOnly(2020, 1, 20)));
+    }
+
+    private static IConfiguration MarketAuxConfig() =>
+        Config(("MarketAux:ApiKey", "test-key"), ("MarketAux:BaseUrl", "https://api.marketaux.com"));
+
+    private const string MarketAuxFeed = """
+        {"meta": {"found": 3, "returned": 3, "limit": 3, "page": 1}, "data": [
+          {"uuid": "aaa-1", "title": "Past story", "description": "d", "snippet": "s",
+           "url": "https://example.com/past", "language": "en",
+           "published_at": "2020-01-10T12:00:00.000000Z", "source": "example.com",
+           "entities": [{"symbol": "TSLA", "sentiment_score": 0.5}]},
+          {"uuid": "bbb-2", "title": "Future story", "description": "d", "snippet": "s",
+           "url": "https://example.com/future", "language": "en",
+           "published_at": "2020-02-01T12:00:00.000000Z", "source": "example.com",
+           "entities": []},
+          {"uuid": "ccc-3", "title": "", "description": "d", "snippet": "s",
+           "url": "https://example.com/empty", "language": "en",
+           "published_at": "2020-01-10T12:00:00.000000Z", "source": "example.com",
+           "entities": []}
+        ]}
+        """;
+
+    [Fact]
+    public async Task MarketAux_MapsFeed_FiltersFuture_SetsIdentity()
+    {
+        var provider = new MarketAuxNewsProvider(
+            new HttpClient(new StubHttpMessageHandler(MarketAuxFeed)),
+            NullLogger<MarketAuxNewsProvider>.Instance, MarketAuxConfig());
+
+        var result = await provider.SearchAsync("tsla", new DateOnly(2020, 1, 15));
+
+        var single = Assert.Single(result);
+        Assert.Equal("Past story", single.Title);
+        Assert.Equal("mux-aaa-1", single.Id);
+        Assert.Equal("MarketAux via example.com", single.Source);
+        Assert.Equal("TSLA", single.CompanySymbol);
+        Assert.Equal(new DateTime(2020, 1, 10, 12, 0, 0, DateTimeKind.Utc), single.PublishedAt);
+    }
+
+    [Fact]
+    public async Task MarketAux_NoKey_ReturnsEmpty()
+    {
+        var provider = new MarketAuxNewsProvider(
+            new HttpClient(new StubHttpMessageHandler("SHOULD-NOT-BE-CALLED", System.Net.HttpStatusCode.InternalServerError)),
+            NullLogger<MarketAuxNewsProvider>.Instance, Config());
+
+        Assert.False(provider.IsConfigured);
+        Assert.Empty(await provider.SearchAsync("TSLA", new DateOnly(2020, 1, 15)));
+    }
+
+    [Fact]
+    public async Task MarketAux_Http429_ThrowsRateLimit()
+    {
+        var provider = new MarketAuxNewsProvider(
+            new HttpClient(new StubHttpMessageHandler("{}", System.Net.HttpStatusCode.TooManyRequests)),
+            NullLogger<MarketAuxNewsProvider>.Instance, MarketAuxConfig());
+
+        await Assert.ThrowsAsync<RateLimitExceededException>(
+            () => provider.SearchAsync("TSLA", new DateOnly(2020, 1, 15)));
+    }
+
+    [Fact]
+    public async Task MarketAux_EmptyData_ReturnsEmpty()
+    {
+        var provider = new MarketAuxNewsProvider(
+            new HttpClient(new StubHttpMessageHandler("""{"meta": {"found": 0}, "data": []}""")),
+            NullLogger<MarketAuxNewsProvider>.Instance, MarketAuxConfig());
+
+        Assert.Empty(await provider.SearchAsync("TSLA", new DateOnly(2020, 1, 15)));
     }
 
     [Fact]
