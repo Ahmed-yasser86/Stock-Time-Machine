@@ -75,7 +75,7 @@ export interface CompanySummary {
   sector: string;
 }
 
-export type NewsSource = 'gdelt' | 'alphavantage';
+export type NewsSource = 'gdelt' | 'alphavantage' | 'marketaux';
 
 export interface SnapshotResponse {
   company: CompanySummary;
@@ -128,6 +128,79 @@ export interface ProblemDetails {
   traceId?: string;
 }
 
+export interface KeyMove {
+  date: string;
+  close: number;
+  dailyReturnPct: number;
+  zScore: number;
+  volumeRatio: number;
+  fiveDayMomentumPct: number;
+  score: number;
+  flags: string[];
+}
+
+export interface MarketReaction {
+  date: string;
+  close: number;
+}
+
+export interface MoveFiling {
+  accessionNumber: string;
+  formType: string;
+  filedAt: string;
+  url: string;
+}
+
+export interface MoveNews {
+  title: string;
+  source: string;
+  publishedAt: string;
+  url: string;
+}
+
+export interface SocialSignal {
+  id: string;
+  provider: string;
+  community: string;
+  title: string;
+  excerpt: string;
+  url: string;
+  createdAt: string;
+  score: number;
+  commentCount: number;
+  flair: string | null;
+}
+
+export interface MoveEvidence {
+  filings: MoveFiling[];
+  news: MoveNews[];
+  social: SocialSignal[];
+  reaction: MarketReaction[];
+  unavailableLayers: string[];
+}
+
+export interface WindowSummary {
+  tradingDays: number;
+  cumulativeReturnPct: number;
+  volatility: number;
+  maxDrawdownPct: number;
+  bestDay: string | null;
+  bestDayReturnPct: number;
+  worstDay: string | null;
+  worstDayReturnPct: number;
+  sufficientHistory: boolean;
+}
+
+export interface MovesResponse {
+  company: CompanySummary;
+  decisionDate: string;
+  newsSource: NewsSource;
+  summary: WindowSummary;
+  keyMoves: KeyMove[];
+  evidenceByDate: Record<string, MoveEvidence>;
+  windowPrices: PricePoint[];
+}
+
 export const NEWS_COVERAGE_DISCLAIMER =
   'News coverage is best-effort and may be incomplete. Absence of coverage does not mean absence of events.';
 
@@ -135,5 +208,7 @@ export const SIMULATION_DISCLAIMER =
   'This simulation uses raw historical closing prices. Stock splits and dividend payments are not accounted for in this calculation. This is not investment advice.';
 
 export function newsSourceLabel(source: NewsSource | string): string {
-  return source === 'alphavantage' ? 'Alpha Vantage' : 'GDELT';
+  if (source === 'alphavantage') return 'Alpha Vantage';
+  if (source === 'marketaux') return 'MarketAux';
+  return 'GDELT';
 }

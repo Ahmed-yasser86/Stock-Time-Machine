@@ -2,6 +2,7 @@ import type {
   Company,
   LiveQuote,
   MethodologyDoc,
+  MovesResponse,
   NewsSource,
   ProblemDetails,
   SimulationRequest,
@@ -61,6 +62,11 @@ export const api = {
     ),
   quote: (symbol: string) =>
     request<LiveQuote>(`/api/timemachine/quote?symbol=${encodeURIComponent(symbol)}`),
+  moves: (symbol: string, date: string, newsSource?: NewsSource) =>
+    request<MovesResponse>(
+      `/api/timemachine/moves?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
+        (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
+    ),
   methodology: () => request<MethodologyDoc>('/api/timemachine/methodology'),
   runSimulation: (body: SimulationRequest) =>
     request<SimulationResponse>('/api/timemachine/simulation', {
