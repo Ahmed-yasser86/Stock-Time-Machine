@@ -21,4 +21,7 @@ public interface IGeminiClient
     // Brief for one pre-clustered thread. Returns null when the model declines
     // or the response is unusable — never throws for content reasons.
     Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default);
+    // Structured review of a user note: one verdict per cited claim. Empty
+    // (not null) when the model declines — reviewers report, never conclude.
+    Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default);
 }

@@ -10,8 +10,11 @@ import { Badge } from '../components/ui/badge';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { EmptySection, ErrorState, LoadingDossier } from '../components/StateBlocks';
+import { AiBriefBlock } from '../components/AiBriefBlock';
 import { ConcludeNote } from '../components/ConcludeNote';
+import { GuidedTour } from '../components/GuidedTour';
 import { MethodLink } from '../components/MethodLink';
+import { NextSteps } from '../components/NextSteps';
 import { MoveDrawer } from '../components/MoveDrawer';
 import { MovesTimeline } from '../components/MovesTimeline';
 import { NarrativeTopics } from '../components/NarrativeTopics';
@@ -26,6 +29,53 @@ function normalizeSource(raw: string | null): NewsSource {
  * Staged progress for the two-phase analysis. Step states only — never fake
  * percentages: each step is waiting, active, or done.
  */
+/**
+ * Plain-words explainer for the uncertainty score. Numbers come from the
+ * deterministic engine; the copilot only translates them — no new math.
+ */
+function UncertaintyExplainer({
+  symbol,
+  date,
+  newsSource,
+}: {
+  symbol: string;
+  date: string;
+  newsSource: NewsSource;
+}) {
+  const [brief, setBrief] = useState<import('../types').ClusterBrief | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  if (brief) return <AiBriefBlock brief={brief} context="plain-words reading of the measured components" />;
+
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setFailed(false);
+          api
+            .copilot('explain-uncertainty', { symbol, date, newsSource })
+            .then((r) => {
+              if (r.brief) setBrief(r.brief);
+              else setFailed(true);
+            })
+            .catch(() => setFailed(true))
+            .finally(() => setBusy(false));
+        }}
+        className="text-xs underline decoration-dotted underline-offset-2 hover:text-fg disabled:opacity-50"
+      >
+        {busy ? 'Explaining…' : 'Explain this score in plain words'}
+      </button>
+      {failed && !busy && (
+        <p className="mt-1 text-xs text-fg-dim">No explainer available — the components above are the full story.</p>
+      )}
+    </div>
+  );
+}
+
 function AnalysisProgress({ movesDone, threadsDone }: { movesDone: boolean; threadsDone: boolean }) {
   const steps = [
     {
@@ -147,6 +197,7 @@ export default function Moves() {
 
   return (
     <div className="space-y-8">
+      <GuidedTour page="/moves" />
       <section aria-labelledby="moves-title" className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <h1 id="moves-title" className="font-display text-3xl font-semibold tracking-tight">
@@ -190,7 +241,7 @@ export default function Moves() {
         </div>
       )}
 
-      <section aria-label="Decision uncertainty" className="space-y-2">
+      <section aria-label="Decision uncertainty" data-tour="uncertainty" className="space-y-2">
         <Card>
           <CardContent className="space-y-2 pt-6">
             <div className="flex flex-wrap items-baseline gap-x-3">
@@ -214,6 +265,7 @@ export default function Moves() {
             <p className="text-xs text-fg-dim">
               Transparent formula, no hidden inputs — <MethodLink anchor="decision-uncertainty-index" /> Never investment advice.
             </p>
+            <UncertaintyExplainer symbol={symbol} date={data.decisionDate} newsSource={newsSource} />
           </CardContent>
         </Card>
       </section>
@@ -230,7 +282,7 @@ export default function Moves() {
         />
       ) : (
         <>
-          <section aria-label="Window summary" className="space-y-4">
+          <section aria-label="Window summary" data-tour="timeline" className="space-y-4">
             <Card>
               <CardContent className="space-y-4 pt-6">
                 <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
@@ -259,7 +311,7 @@ export default function Moves() {
             </Card>
           </section>
 
-          <section aria-label="Narrative threads" className="space-y-2">
+          <section aria-label="Narrative threads" data-tour="threads" className="space-y-2">
             <NarrativeTopics
               query={{
                 data: narrativesQuery.data,
@@ -268,6 +320,9 @@ export default function Moves() {
                 error: narrativesQuery.error,
                 refetch: () => narrativesQuery.refetch(),
               }}
+              symbol={symbol}
+              date={data.decisionDate}
+              newsSource={newsSource}
             />
           </section>
 
@@ -299,9 +354,16 @@ export default function Moves() {
             Figures use raw closes; splits and dividends are not adjusted.
           </p>
 
-          <section aria-label="Conclude" className="space-y-2">
+          <section aria-label="Suggested next steps" className="space-y-2">
+            <NextSteps data={data} newsSource={newsSource} />
+          </section>
+
+          <section aria-label="Conclude" id="conclude" className="space-y-2 scroll-mt-20">
             <ConcludeNote
               storageKey={`stm:note:${data.company.symbol}|${data.decisionDate}|${newsSource}`}
+              symbol={data.company.symbol}
+              date={data.decisionDate}
+              newsSource={newsSource}
               citations={[
                 ...data.keyMoves.map((m, i) => ({
                   id: `move ${m.date}`,

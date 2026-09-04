@@ -153,6 +153,7 @@ export interface MoveFiling {
 }
 
 export interface MoveNews {
+  id: string;
   title: string;
   source: string;
   publishedAt: string;
@@ -235,6 +236,25 @@ export interface CompareBriefResponse {
   newsSource: NewsSource;
   terms: string[];
   brief: ClusterBrief | null;
+}
+
+export interface CopilotBriefResponse {
+  symbol: string;
+  asOfDate: string;
+  action: string;
+  brief: ClusterBrief | null;
+}
+
+export interface NoteIssue {
+  ref: string;
+  verdict: string;
+  detail: string;
+}
+
+export interface ReviewResponse {
+  symbol: string;
+  asOfDate: string;
+  issues: NoteIssue[];
 }
 
 export interface NarrativesResponse {

@@ -105,7 +105,7 @@ public class MovesController : ControllerBase
                         f.AccessionNumber, f.FormType,
                         DateTime.SpecifyKind(f.FiledAt, DateTimeKind.Utc), f.Url)).ToList(),
                     kvp.Value.News.Select(n => new MoveNewsDto(
-                        n.Title, n.Source,
+                        n.Id, n.Title, n.Source,
                         DateTime.SpecifyKind(n.PublishedAt, DateTimeKind.Utc), n.Url,
                         n.SentimentScore)).ToList(),
                     kvp.Value.Social.Select(s => new SocialSignalDto(

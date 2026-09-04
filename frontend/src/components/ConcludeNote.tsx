@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { api } from '../lib/api';
+import type { NewsSource, NoteIssue } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
@@ -11,9 +13,15 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 export function ConcludeNote({
   storageKey,
   citations,
+  symbol,
+  date,
+  newsSource,
 }: {
   storageKey: string;
   citations: { id: string; label: string }[];
+  symbol: string;
+  date: string;
+  newsSource: NewsSource;
 }) {
   const [text, setText] = useState(() => {
     try {
@@ -23,6 +31,20 @@ export function ConcludeNote({
     }
   });
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [issues, setIssues] = useState<NoteIssue[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkFailed, setCheckFailed] = useState(false);
+
+  const check = () => {
+    setChecking(true);
+    setCheckFailed(false);
+    setIssues(null);
+    api
+      .reviewNote({ symbol, date, newsSource, note: text })
+      .then((r) => setIssues(r.issues))
+      .catch(() => setCheckFailed(true))
+      .finally(() => setChecking(false));
+  };
 
   const save = () => {
     try {
@@ -74,9 +96,12 @@ export function ConcludeNote({
           placeholder="e.g. Move 2026-06-26 [move 2026-06-26] coincided with the heaviest news layer [thread data · center · microsoft]…"
           className="w-full rounded-lg border border-border bg-surface p-3 text-sm"
         />
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" onClick={save}>
             Save note
+          </Button>
+          <Button size="sm" variant="outline" onClick={check} disabled={checking || text.trim() === ''}>
+            {checking ? 'Checking…' : 'Check my citations'}
           </Button>
           {savedAt ? (
             <span className="text-xs text-fg-dim">Saved {savedAt} — this browser only.</span>
@@ -84,6 +109,41 @@ export function ConcludeNote({
             <span className="text-xs text-fg-dim">Unsaved changes.</span>
           )}
         </div>
+        {checkFailed && !checking && (
+          <p className="text-xs text-fg-dim">
+            Citation check unavailable — re-read your chips against the evidence above.
+          </p>
+        )}
+        {issues && (
+          <div className="space-y-1 rounded-md border border-border p-2" aria-label="Citation check results">
+            <p className="text-xs text-fg-dim">
+              Reviewer report — checks your claims against the evidence ledger. It reviews; it never rewrites.
+            </p>
+            {issues.length === 0 ? (
+              <p className="text-sm">No cited claims found to check. Add citations with the chips above.</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {issues.map((iss, i) => (
+                  <li key={i} className="flex flex-wrap gap-x-2">
+                    <span className="font-mono">[{iss.ref}]</span>
+                    <strong
+                      className={
+                        iss.verdict === 'supported'
+                          ? 'text-gain'
+                          : iss.verdict === 'unsupported'
+                            ? 'text-loss'
+                            : 'text-fg-muted'
+                      }
+                    >
+                      {iss.verdict}
+                    </strong>
+                    <span className="text-fg-muted">{iss.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

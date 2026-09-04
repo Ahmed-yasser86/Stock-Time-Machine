@@ -1,7 +1,9 @@
 import type {
   Company,
   CompareBriefResponse,
+  CopilotBriefResponse,
   LiveQuote,
+  ReviewResponse,
   MethodologyDoc,
   MovesResponse,
   NarrativesResponse,
@@ -79,6 +81,21 @@ export const api = {
       `/api/timemachine/compare/brief?symbols=${encodeURIComponent(symbols.join(','))}&date=${encodeURIComponent(date)}` +
         `&newsSource=${encodeURIComponent(newsSource)}&terms=${encodeURIComponent(terms.join(','))}`,
     ),
+  copilot: (
+    action: 'filings-summary' | 'contrast' | 'explain-uncertainty' | 'gist',
+    body: { symbol: string; date: string; newsSource?: NewsSource; ids?: string[] },
+  ) =>
+    request<CopilotBriefResponse>(`/api/timemachine/copilot/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  reviewNote: (body: { symbol: string; date: string; newsSource?: NewsSource; note: string }) =>
+    request<ReviewResponse>('/api/timemachine/copilot/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    }),
   methodology: () => request<MethodologyDoc>('/api/timemachine/methodology'),
   runSimulation: (body: SimulationRequest) =>
     request<SimulationResponse>('/api/timemachine/simulation', {
