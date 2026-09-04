@@ -60,18 +60,25 @@ public sealed record UncertaintyComponentDto(string Name, double Weight, double 
 
 public sealed record UncertaintyIndexDto(double Score, IReadOnlyList<UncertaintyComponentDto> Components);
 
+public sealed record ClusterBriefDto(
+    string Summary,
+    IReadOnlyList<string> KeyPoints,
+    string Model);
+
 public sealed record TopicClusterDto(
     IReadOnlyList<string> LabelTerms,
     IReadOnlyList<string> ArticleIds,
     string RepresentativeTitle,
     DateTime? SpanStart,
-    DateTime? SpanEnd);
+    DateTime? SpanEnd,
+    ClusterBriefDto? Brief);
 
 public sealed record NarrativesResponse(
     CompanySummaryDto Company,
     DateOnly AsOfDate,
     string NewsSource,
     int ArticlesConsidered,
+    string ClusteringMethod,
     IReadOnlyList<TopicClusterDto> Topics);
 
 public sealed record MovesResponse(

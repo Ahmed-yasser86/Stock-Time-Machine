@@ -50,9 +50,12 @@ public class MovesController : ControllerBase
             AsOfDate: result.AsOfDate,
             NewsSource: result.NewsSource,
             ArticlesConsidered: result.ArticlesConsidered,
+            ClusteringMethod: result.ClusteringMethod,
             Topics: result.Topics.Select(t => new TopicClusterDto(
                 t.LabelTerms, t.ArticleIds, t.RepresentativeTitle,
-                t.SpanStart, t.SpanEnd)).ToList()));
+                t.SpanStart, t.SpanEnd,
+                t.Brief is null ? null : new ClusterBriefDto(
+                    t.Brief.Summary, t.Brief.KeyPoints, t.Brief.Model))).ToList()));
     }
 
     // Last-100-trading-days investigation window: ranked key movements, each

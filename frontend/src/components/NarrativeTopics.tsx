@@ -56,8 +56,10 @@ export function NarrativeTopics({
       <CardHeader>
         <CardTitle className="text-base">Narrative threads</CardTitle>
         <p className="text-xs text-fg-dim">
-          Keyword-overlap clusters from {data.articlesConsidered} cached article(s) — top terms
-          label each thread, not machine understanding.
+          {data.clusteringMethod === 'gemini-embeddings'
+            ? `AI-grouped threads from ${data.articlesConsidered} cached article(s) — embeddings decide membership, shared terms name each thread.`
+            : `Keyword-overlap clusters from ${data.articlesConsidered} cached article(s) — top terms
+          label each thread, not machine understanding.`}
         </p>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -79,6 +81,22 @@ export function NarrativeTopics({
                   </span>
                 </p>
                 <p className="mt-1 text-fg-muted">e.g. {t.representativeTitle}</p>
+                {t.brief && (
+                  <div className="mt-2 space-y-1 rounded-md bg-canvas p-2">
+                    <p className="flex flex-wrap items-center gap-2 text-xs">
+                      <Badge variant="outline">AI brief · {t.brief.model}</Badge>
+                      <span className="text-fg-dim">generated, non-deterministic — verify against the articles</span>
+                    </p>
+                    <p className="text-sm">{t.brief.summary}</p>
+                    {t.brief.keyPoints.length > 0 && (
+                      <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                        {t.brief.keyPoints.map((k, j) => (
+                          <li key={j}>{k}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
