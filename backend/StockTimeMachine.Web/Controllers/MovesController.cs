@@ -75,7 +75,9 @@ public class MovesController : ControllerBase
                         DateTime.SpecifyKind(s.CreatedAt, DateTimeKind.Utc),
                         s.Score, s.CommentCount, s.Flair)).ToList(),
                     kvp.Value.Reaction.Select(r => new MarketReactionDto(r.Date, r.Close)).ToList(),
-                    kvp.Value.UnavailableLayers))));
+                    kvp.Value.UnavailableLayers,
+                    kvp.Value.Arrival.Select(a => new ArrivalEntryDto(
+                        a.Layer, a.FirstSeen, a.State, a.LagHours, a.Detail)).ToList()))));
     }
 
     private CompanySummaryDto MapCompany(string symbol)

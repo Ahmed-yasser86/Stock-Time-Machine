@@ -29,12 +29,20 @@ public sealed record SocialSignalDto(
     int CommentCount,
     string? Flair);
 
+public sealed record ArrivalEntryDto(
+    string Layer,
+    DateTime? FirstSeen,
+    string State,
+    double? LagHours,
+    string Detail);
+
 public sealed record MoveEvidenceDto(
     IReadOnlyList<MoveFilingDto> Filings,
     IReadOnlyList<MoveNewsDto> News,
     IReadOnlyList<SocialSignalDto> Social,
     IReadOnlyList<MarketReactionDto> Reaction,
-    IReadOnlyList<string> UnavailableLayers);
+    IReadOnlyList<string> UnavailableLayers,
+    IReadOnlyList<ArrivalEntryDto> Arrival);
 
 public sealed record WindowSummaryDto(
     int TradingDays,

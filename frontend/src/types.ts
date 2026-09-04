@@ -172,12 +172,21 @@ export interface SocialSignal {
   flair: string | null;
 }
 
+export interface ArrivalEntry {
+  layer: string;
+  firstSeen: string | null;
+  state: 'observed' | 'silent' | string;
+  lagHours: number | null;
+  detail: string;
+}
+
 export interface MoveEvidence {
   filings: MoveFiling[];
   news: MoveNews[];
   social: SocialSignal[];
   reaction: MarketReaction[];
   unavailableLayers: string[];
+  arrival: ArrivalEntry[];
 }
 
 export interface WindowSummary {

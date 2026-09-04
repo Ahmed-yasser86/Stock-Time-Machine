@@ -375,6 +375,7 @@ public class MoveDetectionService : IMoveDetectionService
             _logger.LogWarning(ex, "Move reaction unavailable for {Symbol} on {Date}", symbol, moveDate);
         }
 
+        evidence.Arrival = ArrivalMap.Build(moveDate, evidence);
         return evidence;
     }
 

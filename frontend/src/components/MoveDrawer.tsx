@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownRight, ArrowUpRight, ExternalLink, Minus, X } from 'lucide-react';
-import { direction, fmtDate, fmtMoney } from '../lib/format';
+import { direction, fmtDate, fmtDateTimeUtc, fmtMoney } from '../lib/format';
 import type { KeyMove, MoveEvidence } from '../types';
 import { Badge } from './ui/badge';
 import { buttonVariants } from './ui/button';
@@ -94,6 +94,43 @@ export function MoveDrawer({
             <Badge key={f} variant="secondary" title={FLAG_LABELS[f] ?? f}>{f}</Badge>
           ))}
         </div>
+      )}
+
+      <h3 className="mt-4 text-sm font-semibold">How information arrived</h3>
+      {!ev || ev.arrival.length === 0 ? (
+        <p className="mt-1 text-sm text-fg-muted">Arrival data unavailable for this movement.</p>
+      ) : (
+        <ol className="mt-1 space-y-1.5">
+          {ev.arrival.map((a) => (
+            <li key={a.layer} className="flex items-start gap-2 text-sm">
+              <span
+                aria-hidden="true"
+                className={`mt-1.5 size-2 shrink-0 rounded-full ${
+                  a.state === 'observed' ? 'bg-primary' : 'border border-fg-dim bg-transparent'
+                }`}
+              />
+              <div>
+                <p className="font-medium capitalize">
+                  {a.layer}
+                  <span className="sr-only">: {a.state === 'observed' ? 'observed' : 'no evidence'}</span>
+                </p>
+                {a.state === 'observed' && a.firstSeen ? (
+                  <p className="text-xs text-fg-muted">
+                    First seen {fmtDateTimeUtc(a.firstSeen)}
+                    {a.lagHours !== null && a.lagHours > 0
+                      ? ` (+${a.lagHours}h after earliest)`
+                      : ' (earliest)'}
+                    {a.detail ? ` — ${a.detail}` : ''}
+                  </p>
+                ) : (
+                  <p className="text-xs text-fg-dim">
+                    No evidence in this layer before the movement — unknown, not absent.
+                  </p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
       )}
 
       <h3 className="mt-4 text-sm font-semibold">Market reaction after this move</h3>

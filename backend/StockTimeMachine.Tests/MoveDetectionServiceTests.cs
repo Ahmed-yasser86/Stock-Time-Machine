@@ -87,6 +87,20 @@ public class MoveDetectionServiceTests
     }
 
     [Fact]
+    public async Task GetMoves_AttachesArrivalMap()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var sut = Sut(db, av, directory, new NullNewsProvider(NullLogger<NullNewsProvider>.Instance));
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        var first = window.EvidenceByDate.Values.First();
+        Assert.Contains(first.Arrival, a => a.Layer == "market" && a.State == "observed");
+        Assert.DoesNotContain(first.Arrival, a => a.State != "observed" && a.State != "silent");
+    }
+
+    [Fact]
     public async Task GetMoves_IsDeterministic()
     {
         var (db, av, directory) = BuildDb();

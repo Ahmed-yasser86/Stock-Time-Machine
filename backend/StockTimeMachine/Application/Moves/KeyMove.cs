@@ -42,6 +42,7 @@ public class MoveEvidence
     public List<SocialSignal> Social { get; set; } = new();
     public List<MarketReaction> Reaction { get; set; } = new();
     public List<string> UnavailableLayers { get; set; } = new();
+    public List<ArrivalEntry> Arrival { get; set; } = new();
 }
 
 // Window-level investor context for the 100 trading days before the decision.
