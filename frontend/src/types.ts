@@ -272,6 +272,10 @@ export interface ReviewResponse {
   issues: NoteIssue[];
 }
 
+export interface MovesJobResponse {
+  jobId: string;
+}
+
 export interface ExplainerResponse {
   question: string;
   answer: string;

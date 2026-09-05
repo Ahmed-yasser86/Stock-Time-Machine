@@ -103,6 +103,8 @@ builder.Services.AddScoped<ITimeMachineService, TimeMachineService>();
 builder.Services.AddScoped<ISimulationService, SimulationService>();
 builder.Services.AddScoped<IMoveDetectionService, MoveDetectionService>();
 builder.Services.AddScoped<INarrativeService, NarrativeService>();
+builder.Services.AddScoped<IInvestigationJobStore, InvestigationJobStore>();
+builder.Services.AddSingleton<IInvestigationJobRunner, InvestigationJobRunner>();
 builder.Services.AddScoped<ICopilotService, CopilotService>();
 
 // Retail-discussion surface (Arctic Shift: keyless community Reddit archive).
