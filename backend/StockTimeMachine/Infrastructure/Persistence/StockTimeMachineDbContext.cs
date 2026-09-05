@@ -48,7 +48,10 @@ public class StockTimeMachineDbContext : DbContext
             e.Property(n => n.Source).HasMaxLength(100);
             e.Property(n => n.Url).HasMaxLength(500);
             e.Property(n => n.CompanySymbol).HasMaxLength(10);
-            e.Ignore(n => n.SentimentScore);
+            // Scores persist with cached rows: sentiment divergence and the
+            // dispersion term read from cache, so dropping scores at the DB
+            // boundary silently zeroed them (every window read "unknown").
+            e.Property(n => n.SentimentScore).HasPrecision(18, 4);
             e.HasIndex(n => new { n.CompanySymbol, n.PublishedAt });
         });
 

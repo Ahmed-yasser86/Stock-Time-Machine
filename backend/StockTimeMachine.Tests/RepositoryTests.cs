@@ -203,6 +203,24 @@ public class HistoricalDataRepositoryTests
     }
 
     [Fact]
+    public async Task StoreNews_PersistsSentimentScores()
+    {
+        using var db = CreateDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+
+        await repo.StoreNews("TSLA", new List<NewsArticle>
+        {
+            new() { Id = "s1", Title = "Scored", Source = "MarketAux", PublishedAt = new DateTime(2020, 1, 10, 0, 0, 0, DateTimeKind.Utc), Url = "https://example.com/s1", CompanySymbol = "TSLA", SentimentScore = 0.42m },
+            new() { Id = "s2", Title = "Unscored", Source = "MarketAux", PublishedAt = new DateTime(2020, 1, 11, 0, 0, 0, DateTimeKind.Utc), Url = "https://example.com/s2", CompanySymbol = "TSLA", SentimentScore = null },
+        });
+
+        var rows = await repo.GetNewsAsOf("TSLA", new DateOnly(2020, 1, 15), NewsSources.MarketAux);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(0.42m, rows.First(n => n.Id == "s1").SentimentScore);
+        Assert.Null(rows.First(n => n.Id == "s2").SentimentScore);
+    }
+
+    [Fact]
     public async Task GetPricesAfter_ShouldReturnOnlyFuturePrices()
     {
         using var db = CreateDb();
