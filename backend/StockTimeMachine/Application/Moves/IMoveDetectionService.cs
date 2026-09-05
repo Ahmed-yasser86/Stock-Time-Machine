@@ -7,5 +7,5 @@ public interface IMoveDetectionService
     // Never throws for provider failures (layers degrade to honest empty);
     // throws InvalidHistoricalDateException for bad input and
     // HistoricalDataNotFoundException when history is insufficient.
-    Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default);
+    Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null);
 }

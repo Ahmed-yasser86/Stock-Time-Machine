@@ -29,7 +29,7 @@ public class NarrativeService : INarrativeService
         _logger = logger;
     }
 
-    public async Task<NarrativeTopicsResult> GetTopics(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)
+    public async Task<NarrativeTopicsResult> GetTopics(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null)
     {
         if (string.IsNullOrWhiteSpace(symbol))
             throw new InvalidHistoricalDateException("Symbol is required.");
@@ -49,25 +49,36 @@ public class NarrativeService : INarrativeService
         };
 
         if (articles.Count == 0)
+        {
+            progress?.Report(new SnapshotProgress("clustering", "complete", "no cached articles", 0));
             return result;
+        }
 
-        if (_gemini.IsEnabled && await TryAiPath(result, articles, ct))
+        progress?.Report(new SnapshotProgress("clustering", "started", $"{articles.Count} cached articles"));
+        if (_gemini.IsEnabled && await TryAiPath(result, articles, progress, ct))
             return result;
 
         result.Topics = TopicClustering.Cluster(articles);
         result.ClusteringMethod = "tf-idf-fallback";
+        progress?.Report(new SnapshotProgress("clustering", "complete",
+            $"TF-IDF fallback: {result.Topics.Count} threads", result.Topics.Count));
         return result;
     }
 
     // True only when embeddings clustered end to end. Brief failures do NOT
     // fail the path: threads keep embedding clusters with labels-only briefs.
     private async Task<bool> TryAiPath(
-        NarrativeTopicsResult result, List<NewsArticle> articles, CancellationToken ct)
+        NarrativeTopicsResult result, List<NewsArticle> articles,
+        IProgress<SnapshotProgress>? progress, CancellationToken ct)
     {
         try
         {
             var docs = articles.Take(TopicClustering.MaxArticles).ToList();
-            var vectors = await EmbedCached(docs, ct);
+            progress?.Report(new SnapshotProgress("embedding", "started",
+                $"0 of {docs.Count} articles embedded"));
+            var vectors = await EmbedCached(docs,
+                (done, total) => progress?.Report(new SnapshotProgress("embedding", "started",
+                    $"{done} of {total} articles embedded")), ct);
             var mergeSimilarities = new List<double>();
             var rejectedTop = new List<double>();
             var rejectedPairs = new List<string>();
@@ -79,14 +90,27 @@ public class NarrativeService : INarrativeService
                 string.Join(", ", rejectedTop.Select(s => s.ToString("F3"))),
                 string.Join(" ;; ", rejectedPairs));
             var topics = memberLists.Select(members => ToCluster(members, docs, vectors)).ToList();
+            progress?.Report(new SnapshotProgress("embedding", "complete",
+                $"{docs.Count} of {docs.Count} articles embedded", docs.Count));
+            progress?.Report(new SnapshotProgress("clustering", "complete",
+                $"{topics.Count} threads (embeddings)", topics.Count));
 
-            foreach (var topic in topics
+            var briefed = topics
                 .Where(t => t.ArticleIds.Count > 1)
                 .OrderByDescending(t => t.ArticleIds.Count)
-                .Take(MaxBriefedClusters))
+                .Take(MaxBriefedClusters)
+                .ToList();
+            int b = 0;
+            foreach (var topic in briefed)
             {
+                progress?.Report(new SnapshotProgress("briefing", "started",
+                    $"thread {++b} of {briefed.Count}: {topic.LabelTerms.FirstOrDefault() ?? "thread"}"));
                 topic.Brief = await BriefAsync(result, docs, topic, ct);
             }
+            if (briefed.Count > 0)
+                progress?.Report(new SnapshotProgress("briefing", "complete",
+                    $"{briefed.Count(b => b.Brief is not null)} of {briefed.Count} briefs written",
+                    briefed.Count));
 
             result.Topics = topics;
             result.ClusteringMethod = "gemini-embeddings";
@@ -103,11 +127,13 @@ public class NarrativeService : INarrativeService
     // re-spending quota. Keyed by article id + embedding model, so a model
     // change cleanly misses instead of mixing vector spaces. A corrupt cached
     // row is treated as a miss, never fatal.
-    private async Task<IReadOnlyList<float[]>> EmbedCached(List<NewsArticle> docs, CancellationToken ct)
+    private async Task<IReadOnlyList<float[]>> EmbedCached(
+        List<NewsArticle> docs, Action<int, int>? onProgress, CancellationToken ct)
     {
         var model = _gemini.EmbeddingModel;
         var vectors = new float[docs.Count][];
         var missingIdx = new List<int>();
+        int done = 0;
         for (int i = 0; i < docs.Count; i++)
         {
             float[]? hit = null;
@@ -122,14 +148,20 @@ public class NarrativeService : INarrativeService
                 _logger.LogDebug(ex, "Embedding cache read miss for {Article}", docs[i].Id);
             }
             if (hit is { Length: > 0 })
+            {
                 vectors[i] = hit;
+                onProgress?.Invoke(++done, docs.Count);
+            }
             else
+            {
                 missingIdx.Add(i);
+            }
         }
         if (missingIdx.Count > 0)
         {
             var fresh = await _gemini.EmbedAsync(
                 missingIdx.Select(i => $"{docs[i].Title} {docs[i].Description}").ToList(), ct);
+            onProgress?.Invoke(docs.Count, docs.Count);
             for (int k = 0; k < missingIdx.Count; k++)
             {
                 vectors[missingIdx[k]] = fresh[k];
@@ -300,7 +332,7 @@ public class NarrativeService : INarrativeService
                 var docs = cached.Where(n => IsFromSource(n, selected)).Take(MaxDocsPerSymbol).ToList();
                 if (docs.Count == 0)
                     return empty;
-                var vectors = await EmbedCached(docs, ct);
+                var vectors = await EmbedCached(docs, null, ct);
                 perSymbol.Add((symbol, docs, vectors));
             }
             var (aSym, aDocs, aVec) = perSymbol[0];

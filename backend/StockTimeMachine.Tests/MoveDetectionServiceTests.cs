@@ -341,6 +341,35 @@ public class MoveDetectionServiceTests
     }
 
     [Fact]
+    public async Task GetMoves_Progress_ReportsDetectionAndEvidence()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var sut = Sut(db, av, directory,
+            new NullNewsProvider(NullLogger<NullNewsProvider>.Instance));
+        var stages = new List<SnapshotProgress>();
+        var progress = new Progress<SnapshotProgress>(s => { lock (stages) stages.Add(s); });
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20), progress: progress);
+
+        Assert.NotEmpty(window.KeyMoves);
+        for (int i = 0; i < 50; i++)
+        {
+            lock (stages)
+            {
+                if (stages.Any(s => s.Stage == "evidence" && s.State == "complete"))
+                    break;
+            }
+            await Task.Delay(100);
+        }
+        Assert.Contains(stages, s => s.Stage == "detecting" && s.State == "started");
+        Assert.Contains(stages, s => s.Stage == "detecting" && s.State == "complete");
+        Assert.Equal(window.KeyMoves.Count,
+            stages.Count(s => s.Stage == "evidence" && s.State == "started"));
+        Assert.Contains(stages, s => s.Stage == "evidence" && s.State == "complete");
+    }
+
+    [Fact]
     public async Task GetMoves_ProviderFailure_FetchesOncePerInvestigation()
     {
         var (db, av, directory) = BuildDb();

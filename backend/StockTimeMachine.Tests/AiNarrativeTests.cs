@@ -196,7 +196,7 @@ public class AiNarrativeTests
 
     private sealed class StubMoves : IMoveDetectionService
     {
-        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default) =>
+        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null) =>
             Task.FromResult(new MovesWindow
             {
                 CompanySymbol = symbol,
@@ -450,6 +450,49 @@ public class AiNarrativeTests
         Assert.NotNull(row);
         Assert.Equal("[0.1,0.2]", row!.VectorJson);
         Assert.Null(await repo.GetEmbedding("x", "other-model"));
+    }
+
+    [Fact]
+    public async Task NarrativeService_Progress_ReportsEmbeddingAndBriefing()
+    {
+        var db = NewDb();
+        await SeedPair(db);
+        var gemini = new FixedGeminiStub();
+        var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            gemini, new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+        var stages = new List<SnapshotProgress>();
+        var progress = new Progress<SnapshotProgress>(s => stages.Add(s));
+
+        var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt, progress: progress);
+
+        Assert.Equal("gemini-embeddings", result.ClusteringMethod);
+        // Progress<T> posts callbacks asynchronously: poll briefly.
+        for (int i = 0; i < 50 && !stages.Any(s => s.Stage == "briefing" && s.State == "complete"); i++)
+            await Task.Delay(100);
+        Assert.Contains(stages, s => s.Stage == "clustering" && s.State == "started");
+        Assert.Contains(stages, s => s.Stage == "embedding" && s.State == "complete");
+        Assert.Contains(stages, s => s.Stage == "clustering" && s.State == "complete");
+        Assert.Contains(stages, s => s.Stage == "briefing" && s.State == "started");
+        Assert.Contains(stages, s => s.Stage == "briefing" && s.State == "complete");
+    }
+
+    [Fact]
+    public async Task NarrativeService_Progress_EmptyCache_ReportsComplete()
+    {
+        var db = NewDb();
+        var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new DisabledGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+        var stages = new List<SnapshotProgress>();
+        var progress = new Progress<SnapshotProgress>(s => stages.Add(s));
+
+        var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt, progress: progress);
+
+        Assert.Empty(result.Topics);
+        for (int i = 0; i < 50 && !stages.Any(s => s.Stage == "clustering"); i++)
+            await Task.Delay(100);
+        Assert.Contains(stages, s => s.Stage == "clustering" && s.State == "complete");
     }
 
     [Fact]
