@@ -54,6 +54,31 @@ public class AlphaVantageNewsProviderTests
     }
 
     [Fact]
+    public async Task SearchAsync_ParsesOverallSentimentScore()
+    {
+        var json = """
+        {
+          "feed": [
+            { "title": "Scored article", "summary": "s", "url": "https://example.com/scored", "source": "Example", "time_published": "20200110T120000", "overall_sentiment_score": "0.35" },
+            { "title": "Unscored article", "summary": "s", "url": "https://example.com/unscored", "source": "Example", "time_published": "20200110T120000" },
+            { "title": "Bad score article", "summary": "s", "url": "https://example.com/bad", "source": "Example", "time_published": "20200110T120000", "overall_sentiment_score": "not-a-number" }
+          ]
+        }
+        """;
+        var provider = new AlphaVantageNewsProvider(
+            new HttpClient(new StubHttpMessageHandler(json)),
+            NullLogger<AlphaVantageNewsProvider>.Instance,
+            ConfigWithKey());
+
+        var result = await provider.SearchAsync("tsla", new DateOnly(2020, 1, 15));
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal(0.35m, result.First(n => n.Title == "Scored article").SentimentScore);
+        Assert.Null(result.First(n => n.Title == "Unscored article").SentimentScore);
+        Assert.Null(result.First(n => n.Title == "Bad score article").SentimentScore);
+    }
+
+    [Fact]
     public void DeterministicIds_AreStable()
     {
         Assert.Equal(

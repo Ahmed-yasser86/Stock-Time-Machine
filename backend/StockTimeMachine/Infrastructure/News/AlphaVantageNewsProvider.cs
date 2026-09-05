@@ -78,6 +78,14 @@ public class AlphaVantageNewsProvider : INewsProvider
                 if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(articleUrl))
                     continue;
 
+                // overall_sentiment_score is article-level (-1..1); rows without
+                // it stay null (ignored, never zero-filled) downstream.
+                decimal? sentiment = null;
+                if (item.TryGetProperty("overall_sentiment_score", out var os) &&
+                    decimal.TryParse(os.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+                    parsed >= -1 && parsed <= 1)
+                    sentiment = parsed;
+
                 results.Add(new NewsArticle
                 {
                     Id = DeterministicId(articleUrl),
@@ -86,7 +94,8 @@ public class AlphaVantageNewsProvider : INewsProvider
                     Source = string.IsNullOrEmpty(source) ? "Alpha Vantage" : $"Alpha Vantage via {source}",
                     PublishedAt = published,
                     Url = articleUrl,
-                    CompanySymbol = normalizedSymbol
+                    CompanySymbol = normalizedSymbol,
+                    SentimentScore = sentiment
                 });
             }
 
