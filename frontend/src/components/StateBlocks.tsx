@@ -45,14 +45,24 @@ export const RECONSTRUCTION_STAGES: { key: string; label: string }[] = [
  * stage streamed from the backend: queued → started → complete / failed /
  * skipped. A failed step shows its failure — never a success mark.
  */
-export function ReconstructionProgress({ stages }: { stages: StageEvent[] }) {
+export function ReconstructionProgress({
+  stages,
+  defs = RECONSTRUCTION_STAGES,
+  title = 'Reconstructing the information environment…',
+  footnote = 'Real data is being assembled from Alpha Vantage, SEC EDGAR, and your selected news source.',
+}: {
+  stages: StageEvent[];
+  defs?: { key: string; label: string }[];
+  title?: string;
+  footnote?: string;
+}) {
   const byKey = new Map(stages.map((s) => [s.stage, s]));
   return (
     <Card>
       <CardContent className="space-y-3 pt-6">
-        <p className="text-sm font-medium">Reconstructing the information environment…</p>
+        <p className="text-sm font-medium">{title}</p>
         <ol className="space-y-2" aria-live="polite">
-          {RECONSTRUCTION_STAGES.map(({ key, label }) => {
+          {defs.map(({ key, label }) => {
             const state = byKey.get(key)?.state ?? 'queued';
             const detail = byKey.get(key)?.detail;
             return (
@@ -76,7 +86,7 @@ export function ReconstructionProgress({ stages }: { stages: StageEvent[] }) {
             );
           })}
         </ol>
-        <p className="text-xs text-fg-dim">Real data is being assembled from Alpha Vantage, SEC EDGAR, and your selected news source.</p>
+        <p className="text-xs text-fg-dim">{footnote}</p>
       </CardContent>
     </Card>
   );

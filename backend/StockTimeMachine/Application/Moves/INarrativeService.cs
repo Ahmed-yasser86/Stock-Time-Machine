@@ -19,7 +19,7 @@ public interface INarrativeService
     // cache yields empty topics — an honest reflection of coverage.
     // AI path (Gemini embeddings + per-thread briefs) is attempted first when
     // configured; any failure degrades to the deterministic TF-IDF path.
-    Task<NarrativeTopicsResult> GetTopics(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default);
+    Task<NarrativeTopicsResult> GetTopics(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null);
 
     // Cross-pick shared-story brief: articles matching the shared terms across
     // the given symbols' caches, briefed as ONE story with per-article

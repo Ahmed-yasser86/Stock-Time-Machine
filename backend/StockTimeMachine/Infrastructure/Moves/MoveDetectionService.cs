@@ -60,11 +60,12 @@ public class MoveDetectionService : IMoveDetectionService
         _logger = logger;
     }
 
-    public async Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default)
+    public async Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null)
     {
         if (string.IsNullOrWhiteSpace(symbol))
             throw new InvalidHistoricalDateException("Symbol is required.");
         HistoricalDate.Create(asOfDate);
+        progress?.Report(new SnapshotProgress("detecting", "started"));
 
         var normalized = symbol.Trim().ToUpperInvariant();
         var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
@@ -80,6 +81,8 @@ public class MoveDetectionService : IMoveDetectionService
         {
             window.Summary = new WindowSummary { TradingDays = rows.Count, SufficientHistory = false };
             window.Uncertainty = UncertaintyIndexCalculator.Calculate(window);
+            progress?.Report(new SnapshotProgress("detecting", "complete",
+                $"insufficient history ({rows.Count} days)", rows.Count));
             return window;
         }
 
@@ -97,16 +100,25 @@ public class MoveDetectionService : IMoveDetectionService
         // throttled community APIs, then sliced per move by post date below.
         var socialAll = await FetchSocialWindow(normalized, companyName, scored, asOfDate, ct);
 
+        progress?.Report(new SnapshotProgress("detecting", "complete",
+            $"{scored.Count} key movements", scored.Count));
+
         // Stale-cache refresh before evidence: without this, the first fetch's
         // rows shadow all later coverage (DB-first hit on any rows at all).
         await RefreshStaleNews(normalized, companyName, selectedNewsSource, scored, ct);
 
+        int done = 0;
         foreach (var move in scored)
         {
+            progress?.Report(new SnapshotProgress("evidence", "started",
+                $"move {move.Date:yyyy-MM-dd} ({++done} of {scored.Count})"));
             window.KeyMoves.Add(move);
             window.EvidenceByDate[move.Date.ToString("yyyy-MM-dd")] =
                 await BuildEvidence(normalized, companyName, selectedNewsSource, move.Date, socialAll, ct);
         }
+        if (scored.Count > 0)
+            progress?.Report(new SnapshotProgress("evidence", "complete",
+                $"{scored.Count} moves with evidence", scored.Count));
 
         foreach (var move in window.KeyMoves)
         {

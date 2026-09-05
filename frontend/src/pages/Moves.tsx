@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { API_BASE, ApiError, api } from '../lib/api';
 import { recordInvestigation } from '../lib/recentInvestigations';
 import { fmtDate, fmtPct } from '../lib/format';
 import { whyNoMoves } from '../lib/whyEmpty';
-import { newsSourceLabel, type NewsSource } from '../types';
+import { newsSourceLabel, type MovesResponse, type NarrativesResponse, type NewsSource } from '../types';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { EmptySection, ErrorState, LoadingDossier } from '../components/StateBlocks';
+import { EmptySection, ErrorState, LoadingDossier, ReconstructionProgress, type StageEvent } from '../components/StateBlocks';
 import { AiBriefBlock } from '../components/AiBriefBlock';
 import { ConcludeNote } from '../components/ConcludeNote';
 import { CutoffRule } from '../components/CutoffRule';
@@ -28,10 +27,92 @@ function normalizeSource(raw: string | null): NewsSource {
   return 'gdelt';
 }
 
+const MOVES_STAGES = [
+  { key: 'detecting', label: 'Detecting key movements' },
+  { key: 'evidence', label: 'Attaching evidence to each move' },
+  { key: 'embedding', label: 'Embedding articles for grouping' },
+  { key: 'clustering', label: 'Clustering narrative threads' },
+  { key: 'briefing', label: 'Writing AI briefs for the largest threads' },
+];
+
 /**
- * Staged progress for the two-phase analysis. Step states only — never fake
- * percentages: each step is waiting, active, or done.
+ * Live moves investigation stream: stage events (detecting → per-move
+ * evidence → embedding counts → threads → per-thread briefs) then the full
+ * `moves` and `narratives` payloads. Mirrors useSnapshotStream.
  */
+function useMovesStream(symbol: string, date: string, newsSource: NewsSource, nonce: number) {
+  const [stages, setStages] = useState<StageEvent[]>([]);
+  const [moves, setMoves] = useState<MovesResponse | null>(null);
+  const [narratives, setNarratives] = useState<NarrativesResponse | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (symbol === '' || date === '') return;
+    setStages([]);
+    setMoves(null);
+    setNarratives(null);
+    setError(null);
+
+    const url =
+      `${API_BASE}/api/timemachine/moves/stream?symbol=${encodeURIComponent(symbol)}` +
+      `&date=${encodeURIComponent(date)}&newsSource=${encodeURIComponent(newsSource)}`;
+    const es = new EventSource(url);
+    let settled = false;
+
+    const onStage = (e: Event) => {
+      try {
+        const s = JSON.parse((e as MessageEvent).data) as StageEvent;
+        setStages((prev) => [...prev.filter((p) => p.stage !== s.stage), s]);
+      } catch {
+        /* ignore malformed stage frames */
+      }
+    };
+    const onMoves = (e: Event) => {
+      try {
+        setMoves(JSON.parse((e as MessageEvent).data) as MovesResponse);
+      } catch {
+        setError(new Error('The moves response could not be read.'));
+        es.close();
+      }
+    };
+    const onNarratives = (e: Event) => {
+      try {
+        setNarratives(JSON.parse((e as MessageEvent).data) as NarrativesResponse);
+        settled = true;
+      } catch {
+        setError(new Error('The narratives response could not be read.'));
+      } finally {
+        es.close();
+      }
+    };
+    const onError = (e: Event) => {
+      if (e instanceof MessageEvent && e.data) {
+        try {
+          const problem = JSON.parse(e.data) as { detail?: string };
+          setError(new ApiError(problem.detail ?? 'Request failed', 500, problem));
+        } catch {
+          setError(new Error('Request failed'));
+        }
+        es.close();
+      } else if (!settled) {
+        setError(new ApiError('The investigation service is unreachable. Check that the backend is running and try again.', 0, null));
+        es.close();
+      }
+    };
+
+    es.addEventListener('stage', onStage);
+    es.addEventListener('moves', onMoves);
+    es.addEventListener('narratives', onNarratives);
+    es.addEventListener('error', onError);
+    return () => {
+      settled = true;
+      es.close();
+    };
+  }, [symbol, date, newsSource, nonce]);
+
+  return { stages, moves, narratives, error };
+}
+
 /**
  * Plain-words explainer for the uncertainty score. Numbers come from the
  * deterministic engine; the copilot only translates them — no new math.
@@ -79,35 +160,6 @@ function UncertaintyExplainer({
   );
 }
 
-function AnalysisProgress({ movesDone, threadsDone }: { movesDone: boolean; threadsDone: boolean }) {
-  const steps = [
-    {
-      label: 'Detecting key movements',
-      hint: 'deterministic scan of the 100 trading days',
-      state: movesDone ? 'done' : 'active',
-    },
-    {
-      label: 'Clustering threads & writing AI briefs',
-      hint: 'embeddings, article fetches, summaries — can take up to a minute',
-      state: !movesDone ? 'waiting' : threadsDone ? 'done' : 'active',
-    },
-  ] as const;
-  return (
-    <ol aria-label="Analysis progress" className="space-y-1 text-sm">
-      {steps.map((s) => (
-        <li key={s.label} className="flex items-baseline gap-2" aria-current={s.state === 'active' ? 'step' : undefined}>
-          <span aria-hidden="true">{s.state === 'done' ? '✓' : s.state === 'active' ? '◌' : '·'}</span>
-          <span className={s.state === 'waiting' ? 'text-fg-dim' : 'text-fg'}>
-            {s.label}
-            <span className="text-xs text-fg-dim"> — {s.hint}</span>
-            {s.state === 'active' ? '…' : ''}
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 export default function Moves() {
   const [params, setParams] = useSearchParams();
   const symbol = params.get('symbol')?.trim() ?? '';
@@ -132,22 +184,8 @@ export default function Moves() {
     setParams(nextParams, { replace: true });
   };
 
-  const query = useQuery({
-    queryKey: ['moves', symbol.toUpperCase(), date, newsSource],
-    queryFn: () => api.moves(symbol, date, newsSource),
-    enabled: symbol !== '' && date !== '',
-    staleTime: 5 * 60_000,
-  });
-
-  // Owned here (not inside NarrativeTopics) so the page can stage progress:
-  // moves first, threads + AI briefs second. Narratives run only after moves
-  // succeed, against the same decision date the moves call resolved.
-  const narrativesQuery = useQuery({
-    queryKey: ['narratives', symbol.toUpperCase(), date, newsSource],
-    queryFn: () => api.narratives(symbol, date, newsSource),
-    enabled: query.isSuccess,
-    staleTime: 5 * 60_000,
-  });
+  const [nonce, setNonce] = useState(0);
+  const stream = useMovesStream(symbol, date, newsSource, nonce);
 
   useEffect(() => {
     document.title = symbol && date
@@ -170,30 +208,41 @@ export default function Moves() {
     );
   }
 
-  if (query.isPending) {
+  if (!stream.moves) {
     return (
       <div className="space-y-4" aria-busy="true">
         <p className="text-sm text-fg-muted">
           Analyzing the 100 trading days before {fmtDate(date)}…
         </p>
-        <AnalysisProgress movesDone={false} threadsDone={false} />
-        <LoadingDossier />
+        <ReconstructionProgress
+          stages={stream.stages}
+          defs={MOVES_STAGES}
+          title="Detecting movements, attaching evidence, clustering threads — live."
+          footnote="Every row is a real pipeline step: deterministic detection, per-move evidence, embeddings with live counts, then AI briefs."
+        />
+        {stream.error ? (
+          <ErrorState
+            error={stream.error}
+            fallback="The 100-day analysis could not be completed."
+            onRetry={() => setNonce((n) => n + 1)}
+            backTo="/investigate"
+          />
+        ) : (
+          <LoadingDossier />
+        )}
       </div>
     );
   }
 
-  if (query.isError) {
-    return (
-      <ErrorState
-        error={query.error}
-        fallback="The 100-day analysis could not be completed."
-        onRetry={() => query.refetch()}
-        backTo="/investigate"
-      />
-    );
-  }
-
-  const data = query.data;
+  const data = stream.moves;
+  // Threads stream in after moves: keep the section live until they arrive.
+  const threadsView = {
+    data: stream.narratives ?? undefined,
+    isPending: !stream.narratives && !stream.error,
+    isError: !!stream.error && !stream.narratives,
+    error: stream.error,
+    refetch: () => setNonce((n) => n + 1),
+  };
   const s = data.summary;
   const selectedMove = data.keyMoves.find((m) => m.date === selected) ?? null;
   const selectedRank = selectedMove ? data.keyMoves.indexOf(selectedMove) + 1 : 0;
@@ -247,9 +296,14 @@ export default function Moves() {
         </div>
       </section>
 
-      {narrativesQuery.isPending && (
+      {!stream.narratives && !stream.error && (
         <div aria-busy="true">
-          <AnalysisProgress movesDone={true} threadsDone={false} />
+          <ReconstructionProgress
+            stages={stream.stages}
+            defs={MOVES_STAGES}
+            title="Moves are in — now clustering threads and writing briefs, live."
+            footnote="Embeddings report live counts; briefs arrive per thread."
+          />
         </div>
       )}
 
@@ -325,13 +379,7 @@ export default function Moves() {
 
           <section aria-label="Narrative threads" data-tour="threads" className="space-y-2">
             <NarrativeTopics
-              query={{
-                data: narrativesQuery.data,
-                isPending: narrativesQuery.isPending,
-                isError: narrativesQuery.isError,
-                error: narrativesQuery.error,
-                refetch: () => narrativesQuery.refetch(),
-              }}
+              query={threadsView}
               symbol={symbol}
               date={data.decisionDate}
               newsSource={newsSource}
@@ -378,7 +426,7 @@ export default function Moves() {
                   id: `move ${m.date}`,
                   label: `#${i + 1} ${m.date} ${m.dailyReturnPct.toFixed(2)}%`,
                 })),
-                ...(narrativesQuery.data?.topics.map((t) => ({
+                ...(stream.narratives?.topics.map((t) => ({
                   id: `thread ${t.labelTerms.join(' · ')}`,
                   label: t.representativeTitle,
                 })) ?? []),
