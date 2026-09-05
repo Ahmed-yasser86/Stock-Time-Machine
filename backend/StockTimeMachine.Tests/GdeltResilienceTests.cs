@@ -49,7 +49,8 @@ public class GdeltResilienceTests
 
         var single = Assert.Single(result);
         Assert.Equal("Past article", single.Title);
-        Assert.Equal(4, handler.Calls); // 2 throttled + resolve + stories
+        // 2 throttled resolves + resolve + one stories call per traversed day.
+        Assert.Equal(3 + 8, handler.Calls);
     }
 
     [Fact]

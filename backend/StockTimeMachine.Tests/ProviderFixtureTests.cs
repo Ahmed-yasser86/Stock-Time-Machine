@@ -248,9 +248,13 @@ public class ProviderFixtureTests
     [Fact]
     public async Task GdeltCloud_MapsStories_FiltersFuture_SetsIdentity()
     {
+        // Per-day traversal: the fixture answers only for the story's own day.
         var handler = new RoutedHttpMessageHandler()
             .When(r => r.RequestUri!.AbsolutePath.EndsWith("/search"), CloudSearch)
-            .When(r => r.RequestUri!.AbsolutePath.EndsWith("/stories"), CloudStories);
+            .When(r => r.RequestUri!.AbsolutePath.EndsWith("/stories") &&
+                r.RequestUri.Query.Contains("date_start=2020-01-10"), CloudStories)
+            .When(r => r.RequestUri!.AbsolutePath.EndsWith("/stories"),
+                """{"success": true, "data": []}""");
         var provider = CloudProvider(handler);
 
         var result = await provider.SearchAsync("msft", new DateOnly(2020, 1, 15));
@@ -262,7 +266,7 @@ public class ProviderFixtureTests
         Assert.Equal("MSFT", single.CompanySymbol);
         Assert.Equal(new DateTime(2020, 1, 10, 0, 0, 0, DateTimeKind.Utc), single.PublishedAt);
         Assert.False(string.IsNullOrEmpty(single.Id));
-        Assert.Equal(2, handler.Calls);
+        Assert.Equal(9, handler.Calls); // 1 resolve + 8 traversed days
     }
 
     private const string CloudSearchNoTicker = """
@@ -278,14 +282,17 @@ public class ProviderFixtureTests
             .When(r => r.RequestUri!.AbsolutePath.EndsWith("/search") && r.RequestUri.Query.Contains("q=Microsoft"),
                 CloudSearch)
             .When(r => r.RequestUri!.AbsolutePath.EndsWith("/search"), CloudSearchNoTicker)
-            .When(r => r.RequestUri!.AbsolutePath.EndsWith("/stories"), CloudStories);
+            .When(r => r.RequestUri!.AbsolutePath.EndsWith("/stories") &&
+                r.RequestUri.Query.Contains("date_start=2020-01-10"), CloudStories)
+            .When(r => r.RequestUri!.AbsolutePath.EndsWith("/stories"),
+                """{"success": true, "data": []}""");
         var provider = CloudProvider(handler);
 
         var result = await provider.SearchAsync("MSFT", "Microsoft Corporation", new DateOnly(2020, 1, 15));
 
         var single = Assert.Single(result);
         Assert.Equal("Past article", single.Title);
-        Assert.Equal(2, handler.Calls); // name search resolves; symbol fallback skipped; then stories
+        Assert.Equal(9, handler.Calls); // name search resolves; symbol fallback skipped; 8 traversed days
     }
 
     [Fact]

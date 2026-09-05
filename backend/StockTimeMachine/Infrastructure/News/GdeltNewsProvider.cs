@@ -17,9 +17,7 @@ public class GdeltNewsProvider : INewsProvider
     // (environment variable Gdelt__ApiKey), never logged, never sent to browsers.
     // When absent, the keyless GDELT Project API is used.
     private readonly string _cloudApiKey;
-    private readonly int _minIntervalMs;
-    private readonly SemaphoreSlim _paceGate = new(1, 1);
-    private DateTime _lastCallUtc = DateTime.MinValue;
+    private readonly AdaptiveRateLimiter _limiter;
 
     public GdeltNewsProvider(HttpClient http, ILogger<GdeltNewsProvider> logger, IConfiguration config)
     {
@@ -28,7 +26,7 @@ public class GdeltNewsProvider : INewsProvider
         _config = config;
         _baseUrl = (config["Gdelt:BaseUrl"] ?? "https://api.gdeltproject.org/api/v2").TrimEnd('/');
         _cloudApiKey = config["Gdelt:ApiKey"] ?? "";
-        _minIntervalMs = int.TryParse(config["Gdelt:MinRequestIntervalMs"], out var ms) && ms >= 0 ? ms : 3000;
+        _limiter = RateLimiterRegistry.Get("gdelt", config);
     }
 
     public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default) =>
@@ -36,40 +34,79 @@ public class GdeltNewsProvider : INewsProvider
             ct2 => SearchCoreAsync(symbol, cutoffDate, ct2),
             _logger, $"GDELT Project {symbol}", _config, ct);
 
-    private async Task PaceAsync(CancellationToken ct)
-    {
-        TimeSpan wait;
-        await _paceGate.WaitAsync(ct);
-        try
-        {
-            var now = DateTime.UtcNow;
-            var next = _lastCallUtc + TimeSpan.FromMilliseconds(_minIntervalMs);
-            wait = next > now ? next - now : TimeSpan.Zero;
-            _lastCallUtc = now + wait;
-        }
-        finally
-        {
-            _paceGate.Release();
-        }
-        if (wait > TimeSpan.Zero)
-            await Task.Delay(wait, ct);
-    }
+    // Interval-complete retrieval, same contract as the Cloud provider: the
+    // trailing window is traversed one deterministic day at a time so a
+    // single maxrows-bounded query cannot starve quieter days. Keyless tier
+    // stays at 20 rows/day; days merged, deduped by article id, newest-first.
+    private const int WindowDaysBack = 7;
+    private const int DayMaxRows = 20;
 
     private async Task<IReadOnlyList<NewsArticle>> SearchCoreAsync(string symbol, DateOnly cutoffDate, CancellationToken ct)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(cutoffDate);
-        var start = cutoffDate.AddDays(-7).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-        var end = cutoffDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         var query = Uri.EscapeDataString(symbol);
+        var days = Enumerable.Range(0, WindowDaysBack + 1)
+            .Select(i => cutoffDate.AddDays(-WindowDaysBack + i))
+            .ToList();
+
+        var results = new List<NewsArticle>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var failedDays = new List<DateOnly>();
+        foreach (var day in days)
+        {
+            await _limiter.AcquireAsync(0, ct);
+            try
+            {
+                foreach (var article in await FetchDay(query, symbol, day, cutoff, ct))
+                {
+                    if (seen.Add(article.Id))
+                        results.Add(article);
+                }
+            }
+            catch (RateLimitExceededException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Genuine cancellation propagates; provider timeouts (OCE
+                // with a live token) still degrade per-day below.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failedDays.Add(day);
+                _logger.LogWarning(ex, "GDELT day {Day} failed for {Symbol}; keeping other days", day, symbol);
+            }
+        }
+
+        var represented = results
+            .Select(n => DateOnly.FromDateTime(n.PublishedAt)).Distinct().OrderBy(d => d).ToList();
+        _logger.LogInformation(
+            "GDELT coverage for {Symbol}: requested [{Start}..{End}], traversed {Traversed}/{Total} days, {Articles} articles, represented [{Represented}], failed [{Failed}]",
+            symbol, days.First(), days.Last(), days.Count - failedDays.Count, days.Count, results.Count,
+            string.Join(",", represented), string.Join(",", failedDays));
+
+        return results
+            .OrderByDescending(n => n.PublishedAt)
+            .ThenBy(n => n.Id)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<NewsArticle>> FetchDay(
+        string query, string symbol, DateOnly day, DateTime cutoff, CancellationToken ct)
+    {
+        // Explicit full-day bounds (HHMMSS): date-only bounds are ambiguous
+        // in the DOC API and could collapse a day to an empty instant.
+        // Client-side cutoff filtering below still enforces the boundary.
+        var from = day.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + "000000";
+        var to = day.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + "235959";
 
         // Quoted multi-word queries reduce false positives (e.g. ticker "V").
-        var url = $"{_baseUrl}/doc/search?query={query}&format=json&startdatetime={start}&enddatetime={end}&maxrows=20&sort=datedesc";
+        var url = $"{_baseUrl}/doc/search?query={query}&format=json&startdatetime={from}&enddatetime={to}&maxrows={DayMaxRows}&sort=datedesc";
         if (!string.IsNullOrEmpty(_cloudApiKey))
             url += $"&key={Uri.EscapeDataString(_cloudApiKey)}";
 
-        _logger.LogInformation("Fetching news from GDELT for {Symbol} between {Start} and {End}", symbol, start, end);
-
-        await PaceAsync(ct);
         try
         {
             using var response = await _http.GetAsync(url, ct);
