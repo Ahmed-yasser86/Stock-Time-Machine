@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '../lib/api';
 import { buttonVariants } from '../components/ui/button';
+import { MethodologyExplainer } from '../components/MethodologyExplainer';
 import { Skeleton } from '../components/ui/skeleton';
 import { ErrorState } from '../components/StateBlocks';
 
@@ -76,6 +77,8 @@ export default function Methodology() {
           ))}
         </div>
       )}
+
+      <MethodologyExplainer />
 
       <Link to="/investigate" className={buttonVariants({ variant: 'outline' })}>
         <ArrowLeft aria-hidden="true" /> Start an investigation

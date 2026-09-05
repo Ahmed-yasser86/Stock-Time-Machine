@@ -109,6 +109,12 @@ public sealed record CopilotBriefResponse(
 
 public sealed record NoteIssueDto(string Ref, string Verdict, string Detail);
 
+public sealed record ExplainerResponse(
+    string Question,
+    string Answer,
+    IReadOnlyList<string> CitedSections,
+    string Model);
+
 public sealed record ReviewResponse(
     string Symbol,
     DateOnly AsOfDate,

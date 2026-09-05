@@ -28,4 +28,15 @@ public interface ICopilotService
     // link labels) are supplied by the caller; the model only phrases, never
     // invents routes — every link stays frontend-owned.
     Task<ClusterBrief?> SuggestNextSteps(string symbol, DateOnly asOfDate, string? newsSource, IReadOnlyList<string> gaps, CancellationToken ct = default);
+    // Grounded methodology Q&A: answers ONLY from the methodology sections
+    // retrieved for the question plus caller-supplied facts. Out-of-scope
+    // questions get the exact refusal sentence, never an invented answer.
+    Task<MethodologyAnswer?> ExplainMethodology(string question, string? facts, CancellationToken ct = default);
+}
+
+public class MethodologyAnswer
+{
+    public string Answer { get; set; } = "";
+    public List<string> CitedSections { get; set; } = new();
+    public string Model { get; set; } = "";
 }
