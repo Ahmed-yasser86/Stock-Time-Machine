@@ -24,4 +24,8 @@ public interface ICopilotService
     Task<ClusterBrief?> GistThread(string symbol, DateOnly asOfDate, string? newsSource, IReadOnlyList<string> articleIds, CancellationToken ct = default);
     // Review the user's conclusion note: one verdict per [ref] claim.
     Task<IReadOnlyList<NoteIssue>> ReviewNote(string symbol, DateOnly asOfDate, string? newsSource, string note, CancellationToken ct = default);
+    // Phrase deterministic gap pointers as next steps. The gaps (with their
+    // link labels) are supplied by the caller; the model only phrases, never
+    // invents routes — every link stays frontend-owned.
+    Task<ClusterBrief?> SuggestNextSteps(string symbol, DateOnly asOfDate, string? newsSource, IReadOnlyList<string> gaps, CancellationToken ct = default);
 }

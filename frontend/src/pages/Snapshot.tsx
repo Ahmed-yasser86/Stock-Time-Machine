@@ -110,7 +110,7 @@ function Simulation({
   const usedLatestExit = result && !exit;
 
   return (
-    <Card aria-label="Hypothetical investment simulation">
+    <Card aria-label="Hypothetical investment simulation" id="simulator" className="scroll-mt-20">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <FlaskConical className="size-4 text-primary" aria-hidden="true" /> Hypothetical outcome calculator
@@ -379,6 +379,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
           disclosures={data.corporateDisclosures}
           news={data.news}
           newsSource={currentSource}
+          asOfDate={data.snapshotDate}
         />
       </section>
 

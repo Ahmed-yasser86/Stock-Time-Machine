@@ -287,6 +287,44 @@ public class MoveDetectionServiceTests
         Assert.Equal(0, news.Calls);
     }
 
+    private sealed class ThrowingAfterRepository : IHistoricalDataRepository
+    {
+        private readonly IHistoricalDataRepository _inner;
+        public ThrowingAfterRepository(IHistoricalDataRepository inner) => _inner = inner;
+        public Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string s, DateOnly d, CancellationToken ct = default) => _inner.GetNewsAsOf(s, d, ct);
+        public Task<IReadOnlyList<SecFiling>> GetFilingsAsOf(string s, DateOnly d, CancellationToken ct = default) => _inner.GetFilingsAsOf(s, d, ct);
+        public Task<IReadOnlyList<PricePoint>> GetPricesAsOf(string s, DateOnly d, int days = 30, CancellationToken ct = default) => _inner.GetPricesAsOf(s, d, days, ct);
+        public Task<IReadOnlyList<PricePoint>> GetPriceRange(string s, DateOnly f, DateOnly t, CancellationToken ct = default) => _inner.GetPriceRange(s, f, t, ct);
+        public Task<IReadOnlyList<PricePoint>> GetPricesAfter(string s, DateOnly d, int days = 30, CancellationToken ct = default) =>
+            throw new InvalidOperationException("prices-after down");
+        public Task<IReadOnlyList<SecFiling>> GetFilingsAfter(string s, DateOnly d, int days = 30, CancellationToken ct = default) => _inner.GetFilingsAfter(s, d, days, ct);
+        public Task StorePrices(string s, IEnumerable<PricePoint> p, CancellationToken ct = default) => _inner.StorePrices(s, p, ct);
+        public Task StoreNews(string s, IEnumerable<NewsArticle> n, CancellationToken ct = default) => _inner.StoreNews(s, n, ct);
+        public Task StoreFilings(string s, IEnumerable<SecFiling> f, CancellationToken ct = default) => _inner.StoreFilings(s, f, ct);
+    }
+
+    [Fact]
+    public async Task GetMoves_ReactionFailure_MarksLayerUnavailable()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var throwing = new ThrowingAfterRepository(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance));
+        var sut = new MoveDetectionService(
+            new CompanyRepository(db, NullLogger<CompanyRepository>.Instance),
+            throwing, av.Object, directory,
+            new FixedNewsProviderFactory(new NullNewsProvider(NullLogger<NullNewsProvider>.Instance)),
+            Array.Empty<ISocialSignalProvider>(),
+            NullLogger<MoveDetectionService>.Instance);
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        Assert.NotEmpty(window.KeyMoves);
+        var evidence = window.EvidenceByDate.Values.First();
+        Assert.Contains("reaction", evidence.UnavailableLayers);
+        Assert.Empty(evidence.Reaction);
+    }
+
     [Fact]
     public async Task GetMoves_SocialFailure_MarksLayerUnavailable()
     {

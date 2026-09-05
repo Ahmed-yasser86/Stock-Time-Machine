@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { MovesResponse, NewsSource } from '../types';
+import { api } from '../lib/api';
+import type { ClusterBrief, MovesResponse, NewsSource } from '../types';
+import { AiBriefBlock } from './AiBriefBlock';
+import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
 /**
@@ -44,17 +48,42 @@ export function NextSteps({
     label: 'Open Compare',
   });
 
+  const [brief, setBrief] = useState<ClusterBrief | null>(null);
+  const [busy, setBusy] = useState(false);
+
   if (suggestions.length === 0) return null;
+
+  const explain = () => {
+    setBusy(true);
+    api
+      .copilot('suggest', {
+        symbol,
+        date,
+        newsSource,
+        gaps: suggestions.map((s) => `${s.text} [${s.label}]`),
+      })
+      .then((r) => {
+        if (r.brief) setBrief(r.brief);
+      })
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Suggested next steps</CardTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-base">Suggested next steps</CardTitle>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={explain}>
+            {busy ? 'Phrasing…' : 'Phrase as brief'}
+          </Button>
+        </div>
         <p className="text-xs text-fg-dim">
           Computed from this window's coverage — deterministic pointers, not advice.
         </p>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-2">
+        {brief && <AiBriefBlock brief={brief} context="phrasing of the pointers below" />}
         <ul className="space-y-2 text-sm">
           {suggestions.map((s, i) => (
             <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">

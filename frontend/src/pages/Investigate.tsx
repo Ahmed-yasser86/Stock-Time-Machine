@@ -306,7 +306,7 @@ export default function Investigate() {
           {QUICK.map((q) => (
             <Link
               key={q.symbol + q.date}
-              to={`/snapshot?symbol=${q.symbol}&date=${q.date}`}
+              to={`/snapshot?symbol=${q.symbol}&date=${q.date}&newsSource=gdelt`}
               className={buttonVariants({ variant: 'outline', size: 'sm' })}
             >
               {q.symbol} · {fmtDate(q.date)}

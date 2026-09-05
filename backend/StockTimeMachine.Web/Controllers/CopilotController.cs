@@ -72,6 +72,19 @@ public class CopilotController : ControllerBase
         return Ok(new CopilotBriefResponse(symbol.ToUpperInvariant(), asOf, "gist", Map(brief)));
     }
 
+    [HttpPost("suggest")]
+    public async Task<ActionResult<CopilotBriefResponse>> Suggest([FromBody] SuggestRequest req, CancellationToken ct)
+    {
+        var (symbol, asOf, source) = Parse(new CopilotRequest(req.Symbol, req.Date, req.NewsSource, null, null));
+        var gaps = (req.Gaps ?? Array.Empty<string>()).Where(g => !string.IsNullOrWhiteSpace(g)).Take(5).ToList();
+        if (gaps.Count == 0)
+            throw new InvalidHistoricalDateException("At least one gap pointer is required.");
+        var brief = await _copilot.SuggestNextSteps(symbol, asOf, source, gaps, ct);
+        return Ok(new CopilotBriefResponse(symbol.ToUpperInvariant(), asOf, "suggest", Map(brief)));
+    }
+
+    public sealed record SuggestRequest(string? Symbol, string? Date, string? NewsSource, IReadOnlyList<string>? Gaps);
+
     [HttpPost("review")]
     public async Task<ActionResult<ReviewResponse>> Review([FromBody] CopilotRequest req, CancellationToken ct)
     {

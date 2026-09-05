@@ -165,6 +165,39 @@ public class CopilotService : ICopilotService
         }
     }
 
+    public async Task<ClusterBrief?> SuggestNextSteps(string symbol, DateOnly asOfDate, string? newsSource, IReadOnlyList<string> gaps, CancellationToken ct = default)
+    {
+        try
+        {
+            var normalized = Require(symbol, asOfDate);
+            if (!_gemini.IsEnabled)
+                return null;
+            var items = gaps.Where(g => !string.IsNullOrWhiteSpace(g)).Take(5).ToList();
+            if (items.Count == 0)
+                return null;
+            var sb = Header(normalized, asOfDate);
+            sb.AppendLine($"Below are {items.Count} deterministic coverage pointers for this investigation (each already links to its remedy in the UI). Phrase each as one actionable next step, max 25 words.");
+            sb.AppendLine("Hard rules:");
+            sb.AppendLine("- Phrase ONLY the items below. Never invent new suggestions, routes, or links.");
+            sb.AppendLine("- Preserve any [bracketed labels] verbatim.");
+            sb.AppendLine("- NEVER predict, advise investments, or recommend positions.");
+            sb.AppendLine();
+            sb.AppendLine("Respond with exactly these sections:");
+            sb.AppendLine("SUMMARY: one sentence saying what to do first and why.");
+            sb.AppendLine("KEY POINTS: one bullet per item below, in order.");
+            sb.AppendLine("DISAGREEMENTS AND GAPS: 'none visible' (pointers are facts, not claims).");
+            sb.AppendLine();
+            for (int i = 0; i < items.Count; i++)
+                sb.AppendLine($"[{i + 1}] {items[i]}");
+            return await _gemini.SummarizeClusterAsync(sb.ToString(), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Copilot suggest failed");
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<NoteIssue>> ReviewNote(string symbol, DateOnly asOfDate, string? newsSource, string note, CancellationToken ct = default)
     {
         var empty = Array.Empty<NoteIssue>();

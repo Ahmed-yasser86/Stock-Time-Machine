@@ -88,6 +88,19 @@ public sealed record CompareBriefResponse(
     IReadOnlyList<string> Terms,
     ClusterBriefDto? Brief);
 
+public sealed record CrossThreadPairDto(
+    string ASymbol,
+    string ATitle,
+    string BSymbol,
+    string BTitle,
+    double Similarity);
+
+public sealed record CompareThreadsResponse(
+    IReadOnlyList<string> Symbols,
+    DateOnly AsOfDate,
+    string NewsSource,
+    IReadOnlyList<CrossThreadPairDto> Pairs);
+
 public sealed record CopilotBriefResponse(
     string Symbol,
     DateOnly AsOfDate,

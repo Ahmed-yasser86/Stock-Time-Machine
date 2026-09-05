@@ -28,4 +28,20 @@ public interface INarrativeService
     Task<ClusterBrief?> BriefSharedThread(
         IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
         IReadOnlyList<string> terms, CancellationToken ct = default);
+
+    // Cross-pick thread similarity: per-symbol embedding clusters joined by
+    // max-pairwise cosine across picks. Deterministic given the vectors;
+    // vectors themselves are model-generated. Empty when AI is off.
+    Task<IReadOnlyList<CrossThreadPair>> CrossThreadSimilarity(
+        IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
+        CancellationToken ct = default);
+}
+
+public class CrossThreadPair
+{
+    public string ASymbol { get; set; } = "";
+    public string ATitle { get; set; } = "";
+    public string BSymbol { get; set; } = "";
+    public string BTitle { get; set; } = "";
+    public double Similarity { get; set; }
 }

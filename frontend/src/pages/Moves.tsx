@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { recordInvestigation } from '../lib/recentInvestigations';
 import { fmtDate, fmtPct } from '../lib/format';
+import { whyNoMoves } from '../lib/whyEmpty';
 import { newsSourceLabel, type NewsSource } from '../types';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -340,10 +341,7 @@ export default function Moves() {
           {data.keyMoves.length === 0 && (
             <Alert>
               <AlertTitle>No standout movements</AlertTitle>
-              <AlertDescription>
-                Nothing in this window cleared the significance bar — an unusually calm market
-                is itself information about the decision context.
-              </AlertDescription>
+              <AlertDescription>{whyNoMoves()}</AlertDescription>
             </Alert>
           )}
 

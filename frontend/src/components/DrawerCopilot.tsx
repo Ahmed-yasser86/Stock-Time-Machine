@@ -26,7 +26,7 @@ export function DrawerCopilot({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const run = async (action: 'filings-summary' | 'contrast') => {
+  const run = async (action: 'filings-summary' | 'contrast' | 'explain-uncertainty') => {
     setBusy(true);
     setFailed(false);
     setBrief(null);
@@ -39,7 +39,13 @@ export function DrawerCopilot({
       });
       if (res.brief) {
         setBrief(res.brief);
-        setKind(action === 'contrast' ? 'article contrast' : 'filing summary');
+        setKind(
+          action === 'contrast'
+            ? 'article contrast'
+            : action === 'explain-uncertainty'
+              ? 'uncertainty reading for this window'
+              : 'filing summary',
+        );
       } else {
         setFailed(true);
       }
@@ -63,6 +69,9 @@ export function DrawerCopilot({
             Contrast articles
           </Button>
         )}
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => run('explain-uncertainty')}>
+          Explain window uncertainty
+        </Button>
       </div>
       {busy && (
         <p className="text-xs text-fg-dim" aria-busy="true">

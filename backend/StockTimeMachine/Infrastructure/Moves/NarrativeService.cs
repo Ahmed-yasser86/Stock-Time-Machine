@@ -223,6 +223,64 @@ public class NarrativeService : INarrativeService
         }
     }
 
+    public async Task<IReadOnlyList<CrossThreadPair>> CrossThreadSimilarity(
+        IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
+        CancellationToken ct = default)
+    {
+        const int MaxDocsPerSymbol = 30;
+        const double PairThreshold = 0.70;
+        const int MaxPairs = 10;
+        var empty = Array.Empty<CrossThreadPair>();
+        var picks = symbols.Select(s => s.Trim().ToUpperInvariant())
+            .Where(s => s.Length > 0).Distinct().Take(2).ToList();
+        if (picks.Count != 2 || !_gemini.IsEnabled)
+            return empty;
+        try
+        {
+            HistoricalDate.Create(asOfDate);
+            var selected = NewsSources.Normalize(newsSource);
+            var perSymbol = new List<(string Symbol, List<NewsArticle> Docs, IReadOnlyList<float[]> Vectors)>();
+            foreach (var symbol in picks)
+            {
+                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, ct);
+                var docs = cached.Where(n => IsFromSource(n, selected)).Take(MaxDocsPerSymbol).ToList();
+                if (docs.Count == 0)
+                    return empty;
+                var vectors = await _gemini.EmbedAsync(
+                    docs.Select(d => $"{d.Title} {d.Description}").ToList(), ct);
+                perSymbol.Add((symbol, docs, vectors));
+            }
+            var (aSym, aDocs, aVec) = perSymbol[0];
+            var (bSym, bDocs, bVec) = perSymbol[1];
+            var aClusters = EmbeddingClustering.Cluster(aVec);
+            var bClusters = EmbeddingClustering.Cluster(bVec);
+            var pairs = new List<CrossThreadPair>();
+            foreach (var ac in aClusters)
+                foreach (var bc in bClusters)
+                {
+                    double best = 0;
+                    foreach (var i in ac)
+                        foreach (var j in bc)
+                            best = Math.Max(best, EmbeddingClustering.Cosine(aVec[i], bVec[j]));
+                    if (best >= PairThreshold)
+                        pairs.Add(new CrossThreadPair
+                        {
+                            ASymbol = aSym,
+                            ATitle = aDocs[ac.MaxBy(k => aDocs[k].Title.Length)].Title,
+                            BSymbol = bSym,
+                            BTitle = bDocs[bc.MaxBy(k => bDocs[k].Title.Length)].Title,
+                            Similarity = Math.Round(best, 3),
+                        });
+                }
+            return pairs.OrderByDescending(p => p.Similarity).Take(MaxPairs).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cross-thread similarity failed");
+            return empty;
+        }
+    }
+
     private async Task<ClusterBrief?> BriefAsync(
         NarrativeTopicsResult result, List<NewsArticle> docs, TopicCluster topic, CancellationToken ct)
     {

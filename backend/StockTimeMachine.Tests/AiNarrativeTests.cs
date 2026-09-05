@@ -287,6 +287,69 @@ public class AiNarrativeTests
     }
 
     [Fact]
+    public async Task CrossThreadSimilarity_PairsRankedByCosine()
+    {
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("AAA", new[]
+        {
+            new NewsArticle { Id = "a1", Title = "Alpha one", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/a1", CompanySymbol = "AAA" },
+            new NewsArticle { Id = "a2", Title = "Alpha two", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 11), Url = "https://example.com/a2", CompanySymbol = "AAA" },
+        });
+        await repo.StoreNews("BBB", new[]
+        {
+            new NewsArticle { Id = "b1", Title = "Beta one", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/b1", CompanySymbol = "BBB" },
+            new NewsArticle { Id = "b2", Title = "Beta two", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 12), Url = "https://example.com/b2", CompanySymbol = "BBB" },
+        });
+        var sut = new NarrativeService(repo, new FixedGeminiStub(),
+            new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+
+        var pairs = await sut.CrossThreadSimilarity(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        // Alternating stub vectors pair index-to-index at cosine 1.0.
+        Assert.Equal(2, pairs.Count);
+        Assert.All(pairs, p => Assert.Equal(1.0, p.Similarity));
+        Assert.Contains(pairs, p => p.ASymbol == "AAA" && p.BSymbol == "BBB");
+    }
+
+    [Fact]
+    public async Task CrossThreadSimilarity_DisabledAi_ReturnsEmpty()
+    {
+        var db = NewDb();
+        var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new DisabledGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+
+        Assert.Empty(await sut.CrossThreadSimilarity(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt));
+    }
+
+    [Fact]
+    public async Task Copilot_Suggest_PhrasesSuppliedGaps()
+    {
+        var db = NewDb();
+        var gemini = new FixedGeminiStub();
+        var sut = Copilot(db, gemini);
+
+        var brief = await sut.SuggestNextSteps("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt,
+            new[] { "No news for 2 moves [Retry with MarketAux]" });
+
+        Assert.NotNull(brief);
+        Assert.Contains(gemini.SeenPrompts, p => p.Contains("No news for 2 moves") && p.Contains("Never invent"));
+    }
+
+    [Fact]
+    public async Task Copilot_Suggest_EmptyGaps_ReturnsNull()
+    {
+        var db = NewDb();
+        var sut = Copilot(db, new FixedGeminiStub());
+
+        Assert.Null(await sut.SuggestNextSteps("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt,
+            Array.Empty<string>()));
+    }
+
+    [Fact]
     public void EmbeddingClustering_IdenticalVectorsMerge_OrthogonalDoNot()
     {
         var topics = EmbeddingClustering.Cluster(new[]
