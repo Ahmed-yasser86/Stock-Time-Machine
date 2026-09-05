@@ -226,6 +226,77 @@ public class GdeltCoverageTests
             ["Gdelt:BaseUrl"] = "https://api.gdeltproject.org/api/v2",
         }).Build();
 
+    private static IConfiguration MarketAuxTestConfig() =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["MarketAux:ApiKey"] = "test-key",
+            ["MarketAux:BaseUrl"] = "https://api.marketaux.com",
+        }).Build();
+
+    private static string MarketAuxArticles(params (string Title, string Uuid, string Date)[] articles)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("{\"data\": [");
+        bool first = true;
+        foreach (var (title, uuid, date) in articles)
+        {
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append("{\"uuid\": \"" + uuid + "\", \"title\": \"" + title + "\", \"description\": \"d\", \"snippet\": \"s\", \"url\": \"https://example.com/" + uuid + "\", \"language\": \"en\", \"published_at\": \"" + date + "T12:00:00.000000Z\", \"source\": \"example.com\", \"entities\": []}");
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    private sealed class RecordingMarketAuxHandler : HttpMessageHandler
+    {
+        public List<string> QueriedRanges { get; } = new();
+        private readonly Func<string, string> _articlesFor;
+        public RecordingMarketAuxHandler(Func<string, string> articlesFor) => _articlesFor = articlesFor;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!.ToString();
+            var after = System.Text.RegularExpressions.Regex.Match(uri, @"published_after=(\d{4}-\d{2}-\d{2})").Groups[1].Value;
+            lock (QueriedRanges)
+                QueriedRanges.Add(after);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_articlesFor(after)),
+            });
+        }
+    }
+
+    [Fact]
+    public async Task MarketAux_MultiDayMerge_CoversWholeWindow()
+    {
+        var handler = new RecordingMarketAuxHandler(day => day switch
+        {
+            "2026-06-25" => MarketAuxArticles(
+                ("M1", "m1", "2026-06-25"),
+                ("M2", "m2", "2026-06-25")),
+            "2026-06-28" => MarketAuxArticles(
+                ("M3", "m3", "2026-06-28")),
+            _ => MarketAuxArticles(),
+        });
+        var provider = new MarketAuxNewsProvider(
+            new HttpClient(handler), NullLogger<MarketAuxNewsProvider>.Instance, MarketAuxTestConfig());
+
+        var rows = await provider.SearchAsync("MSFT", new DateOnly(2026, 7, 2));
+
+        // Requested [06-25..07-02]: all 8 days queried contiguously...
+        Assert.Equal(8, handler.QueriedRanges.Count);
+        var ordered = handler.QueriedRanges.OrderBy(r => r).ToList();
+        for (int i = 1; i < ordered.Count; i++)
+            Assert.Equal(DateOnly.ParseExact(ordered[i - 1], "yyyy-MM-dd").AddDays(1),
+                DateOnly.ParseExact(ordered[i], "yyyy-MM-dd"));
+        // ...and articles from scattered days all survive.
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(
+            new[] { new DateOnly(2026, 6, 25), new DateOnly(2026, 6, 28) },
+            rows.Select(n => DateOnly.FromDateTime(n.PublishedAt)).Distinct().OrderBy(d => d));
+    }
+
     private static string ProjectArticles(params (string Title, string Url, string Date)[] articles)
     {
         var sb = new System.Text.StringBuilder();
