@@ -5,10 +5,11 @@ import { newsSourceLabel, type NewsSource } from '../types';
  * reasons are facts about source, cutoff, and counts the caller already has.
  * Each entry pairs the explanation with the concrete remedy.
  */
-export function whyNoThreads(newsSource: NewsSource, articlesConsidered: number): string {
+export function whyNoThreads(newsSource: NewsSource, articlesConsidered: number, asOfDate?: string): string {
   if (articlesConsidered === 0) {
+    const scope = asOfDate ? ` at or before ${asOfDate}` : ' for this window';
     return (
-      `No cached ${newsSourceLabel(newsSource)} articles exist for this window, so there is ` +
+      `No cached ${newsSourceLabel(newsSource)} articles exist${scope}, so there is ` +
       `nothing to cluster. Run a snapshot or moves investigation first — coverage warms the ` +
       `cache at zero extra cost.`
     );

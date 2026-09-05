@@ -170,6 +170,39 @@ public class HistoricalDataRepositoryTests
     }
 
     [Fact]
+    public async Task GetNewsAsOf_SourceFiltered_BypassesOtherSourceBurst()
+    {
+        using var db = CreateDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+
+        // 55 newest Alpha Vantage rows push 3 older GDELT rows out of the
+        // legacy top-50 read; the source-filtered read must still find them.
+        var articles = new List<NewsArticle>();
+        for (int i = 0; i < 3; i++)
+            articles.Add(new NewsArticle
+            {
+                Id = $"g{i}", Title = $"G {i}", Source = "GDELT Cloud",
+                PublishedAt = new DateTime(2020, 1, 5 + i, 0, 0, 0, DateTimeKind.Utc),
+                Url = $"https://example.com/g{i}", CompanySymbol = "TSLA",
+            });
+        for (int i = 0; i < 55; i++)
+            articles.Add(new NewsArticle
+            {
+                Id = $"a{i}", Title = $"A {i}", Source = "Alpha Vantage",
+                PublishedAt = new DateTime(2020, 2, 1 + (i % 27), 0, 0, 0, DateTimeKind.Utc),
+                Url = $"https://example.com/a{i}", CompanySymbol = "TSLA",
+            });
+        await repo.StoreNews("TSLA", articles);
+
+        var legacy = await repo.GetNewsAsOf("TSLA", new DateOnly(2020, 3, 1));
+        Assert.DoesNotContain(legacy, n => n.Source.Contains("GDELT"));
+
+        var filtered = await repo.GetNewsAsOf("TSLA", new DateOnly(2020, 3, 1), NewsSources.Gdelt);
+        Assert.Equal(3, filtered.Count);
+        Assert.All(filtered, n => Assert.Contains("GDELT", n.Source));
+    }
+
+    [Fact]
     public async Task GetPricesAfter_ShouldReturnOnlyFuturePrices()
     {
         using var db = CreateDb();

@@ -289,8 +289,8 @@ public class TimeMachineService : ITimeMachineService
 
     private async Task<IReadOnlyList<NewsArticle>> ResolveNews(string symbol, string? companyName, string newsSource, DateOnly asOfDate, CancellationToken ct)
     {
-        var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, ct);
-        var fromSelectedSource = cached.Where(n => IsFromSource(n, newsSource)).ToList();
+        var fromSelectedSource = (await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct))
+            .Where(n => IsFromSource(n, newsSource)).ToList();
         if (fromSelectedSource.Count > 0)
             return fromSelectedSource;
 
@@ -299,7 +299,7 @@ public class TimeMachineService : ITimeMachineService
         if (fresh.Count > 0)
         {
             await _dataRepo.StoreNews(symbol, fresh, ct);
-            var reread = await _dataRepo.GetNewsAsOf(symbol, asOfDate, ct);
+            var reread = await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
             return reread.Where(n => IsFromSource(n, newsSource)).ToList();
         }
 

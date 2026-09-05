@@ -329,9 +329,11 @@ public class MoveDetectionService : IMoveDetectionService
         try
         {
             // DB-first (free-tier discipline): the snapshot engine's news cache
-            // serves repeat windows at zero provider cost.
-            var cached = await _dataRepo.GetNewsAsOf(symbol, moveDate, ct);
-            var fromSource = cached.Where(n => IsFromSource(n, newsSource)).ToList();
+            // serves repeat windows at zero provider cost. Source-filtered
+            // inside the query so another source's burst can't push this
+            // source's rows out of the read window.
+            var fromSource = (await _dataRepo.GetNewsAsOf(symbol, moveDate, newsSource, ct))
+                .Where(n => IsFromSource(n, newsSource)).ToList();
             if (fromSource.Count == 0)
             {
                 var provider = _newsFactory.Get(newsSource);
@@ -339,7 +341,7 @@ public class MoveDetectionService : IMoveDetectionService
                 if (fresh.Count > 0)
                 {
                     await _dataRepo.StoreNews(symbol, fresh, ct);
-                    var reread = await _dataRepo.GetNewsAsOf(symbol, moveDate, ct);
+                    var reread = await _dataRepo.GetNewsAsOf(symbol, moveDate, newsSource, ct);
                     fromSource = reread.Where(n => IsFromSource(n, newsSource)).ToList();
                 }
             }
@@ -396,7 +398,7 @@ public class MoveDetectionService : IMoveDetectionService
         try
         {
             var latest = moves.Max(m => m.Date);
-            var cached = await _dataRepo.GetNewsAsOf(symbol, latest, ct);
+            var cached = await _dataRepo.GetNewsAsOf(symbol, latest, newsSource, ct);
             var newest = cached
                 .Where(n => IsFromSource(n, newsSource))
                 .Select(n => (DateTime?)n.PublishedAt)

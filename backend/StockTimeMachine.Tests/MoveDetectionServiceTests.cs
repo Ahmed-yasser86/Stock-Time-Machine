@@ -292,6 +292,7 @@ public class MoveDetectionServiceTests
         private readonly IHistoricalDataRepository _inner;
         public ThrowingAfterRepository(IHistoricalDataRepository inner) => _inner = inner;
         public Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string s, DateOnly d, CancellationToken ct = default) => _inner.GetNewsAsOf(s, d, ct);
+        public Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string s, DateOnly d, string? source, CancellationToken ct = default) => _inner.GetNewsAsOf(s, d, source, ct);
         public Task<IReadOnlyList<SecFiling>> GetFilingsAsOf(string s, DateOnly d, CancellationToken ct = default) => _inner.GetFilingsAsOf(s, d, ct);
         public Task<IReadOnlyList<PricePoint>> GetPricesAsOf(string s, DateOnly d, int days = 30, CancellationToken ct = default) => _inner.GetPricesAsOf(s, d, days, ct);
         public Task<IReadOnlyList<PricePoint>> GetPriceRange(string s, DateOnly f, DateOnly t, CancellationToken ct = default) => _inner.GetPriceRange(s, f, t, ct);

@@ -37,8 +37,8 @@ public class NarrativeService : INarrativeService
 
         var normalized = symbol.Trim().ToUpperInvariant();
         var selected = NewsSources.Normalize(newsSource);
-        var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, ct);
-        var articles = cached.Where(n => IsFromSource(n, selected)).ToList();
+        var articles = (await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct))
+            .Where(n => IsFromSource(n, selected)).ToList();
 
         var result = new NarrativeTopicsResult
         {
@@ -151,7 +151,7 @@ public class NarrativeService : INarrativeService
                 if (string.IsNullOrEmpty(symbol))
                     continue;
                 HistoricalDate.Create(asOfDate);
-                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, ct);
+                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, selected, ct);
                 foreach (var n in cached.Where(n => IsFromSource(n, selected)))
                 {
                     var tokens = new HashSet<string>(
@@ -242,7 +242,7 @@ public class NarrativeService : INarrativeService
             var perSymbol = new List<(string Symbol, List<NewsArticle> Docs, IReadOnlyList<float[]> Vectors)>();
             foreach (var symbol in picks)
             {
-                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, ct);
+                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, selected, ct);
                 var docs = cached.Where(n => IsFromSource(n, selected)).Take(MaxDocsPerSymbol).ToList();
                 if (docs.Count == 0)
                     return empty;
