@@ -4,6 +4,7 @@ import type {
   CompareThreadsResponse,
   CopilotBriefResponse,
   ExplainerResponse,
+  MovesJobResponse,
   LiveQuote,
   ReviewResponse,
   MethodologyDoc,
@@ -68,6 +69,12 @@ export const api = {
     ),
   quote: (symbol: string) =>
     request<LiveQuote>(`/api/timemachine/quote?symbol=${encodeURIComponent(symbol)}`),
+  createMovesJob: (body: { symbol: string; date: string; newsSource?: NewsSource }) =>
+    request<MovesJobResponse>('/api/timemachine/moves/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    }),
   moves: (symbol: string, date: string, newsSource?: NewsSource) =>
     request<MovesResponse>(
       `/api/timemachine/moves?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +

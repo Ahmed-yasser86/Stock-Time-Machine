@@ -17,6 +17,8 @@ public class MovesController : ControllerBase
     private readonly INarrativeService _narratives;
     private readonly ICompanyDirectory _directory;
     private readonly INewsProviderFactory _newsFactory;
+    private readonly IInvestigationJobStore _jobs;
+    private readonly IInvestigationJobRunner _runner;
     private readonly ILogger<MovesController> _logger;
 
     public MovesController(
@@ -24,13 +26,145 @@ public class MovesController : ControllerBase
         INarrativeService narratives,
         ICompanyDirectory directory,
         INewsProviderFactory newsFactory,
+        IInvestigationJobStore jobs,
+        IInvestigationJobRunner runner,
         ILogger<MovesController> logger)
     {
         _moves = moves;
         _narratives = narratives;
         _directory = directory;
         _newsFactory = newsFactory;
+        _jobs = jobs;
+        _runner = runner;
         _logger = logger;
+    }
+
+    public sealed record CreateJobRequest(string? Symbol, string? Date, string? NewsSource);
+    public sealed record CreateJobResponse(string JobId);
+
+    // Persisted background run: the timer starts now, the pipeline runs
+    // detached from any connection, and the client follows via stream/{id}.
+    [HttpPost("moves/jobs")]
+    public async Task<ActionResult<CreateJobResponse>> CreateJob([FromBody] CreateJobRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        if (!DateOnly.TryParse(req.Date, out var parsedDate))
+            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        HistoricalDate.Create(parsedDate);
+
+        var id = await _runner.StartAsync(req.Symbol, parsedDate, req.NewsSource ?? _newsFactory.DefaultSource, ct);
+        return Ok(new CreateJobResponse(id));
+    }
+
+    // Stream a persisted run: full history first (reconnect-safe), then live
+    // tail by polling, heartbeat comments every 20s, finals on completion.
+    // Disconnecting changes nothing — the job runs on. Unknown ids get an
+    // error event so the client starts a fresh job instead.
+    [HttpGet("moves/stream/{jobId}")]
+    public async Task StreamJob([FromRoute] string jobId, CancellationToken ct)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+
+        async Task WriteEvent(string name, object payload)
+        {
+            var json = JsonSerializer.Serialize(payload, MovesStreamJson);
+            await Response.WriteAsync($"event: {name}\ndata: {json}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
+
+        async Task Heartbeat()
+        {
+            await Response.WriteAsync(": heartbeat\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
+
+        var job = await _jobs.GetAsync(jobId, ct);
+        if (job is null)
+        {
+            await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+            return;
+        }
+        if (job.Status == JobStatuses.Running && DateTime.UtcNow - job.CreatedAtUtc > _runner.Timeout)
+        {
+            await _jobs.ReapStaleAsync(_runner.Timeout, ct);
+            job = await _jobs.GetAsync(jobId, ct);
+        }
+        if (job is null)
+        {
+            await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+            return;
+        }
+
+        int sent = 0;
+        var lastBeat = DateTime.UtcNow;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            foreach (var stage in job.Stages.Skip(sent))
+            {
+                await WriteEvent("stage", new
+                {
+                    stage = stage.Stage,
+                    state = stage.State,
+                    detail = stage.Detail,
+                    count = stage.Count
+                });
+                sent++;
+            }
+            if (JobStatuses.IsTerminal(job.Status))
+            {
+                if (job.Status == JobStatuses.Complete && job.MovesJson is not null && job.NarrativesJson is not null)
+                {
+                    var window = JsonSerializer.Deserialize<MovesWindow>(job.MovesJson, MovesStreamJson);
+                    var topics = JsonSerializer.Deserialize<NarrativeTopicsResult>(job.NarrativesJson, MovesStreamJson);
+                    if (window is not null)
+                        await WriteEvent("moves", MapMoves(window));
+                    if (topics is not null)
+                        await WriteEvent("narratives", MapNarratives(topics));
+                }
+                else
+                {
+                    var detail = job.Status == JobStatuses.Timeout
+                        ? "The investigation exceeded its one-hour limit and was stopped."
+                        : "Something went wrong. Please try again.";
+                    await WriteEvent("error", new { detail });
+                }
+                return;
+            }
+            if (DateTime.UtcNow - lastBeat > TimeSpan.FromSeconds(20))
+            {
+                await Heartbeat();
+                lastBeat = DateTime.UtcNow;
+            }
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                // Client went away: the persisted job keeps running. Nothing
+                // to cancel, nothing to clean — just stop talking.
+                return;
+            }
+            job = await _jobs.GetAsync(jobId, ct);
+            if (job is null)
+            {
+                await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+                return;
+            }
+            if (job.Status == JobStatuses.Running && DateTime.UtcNow - job.CreatedAtUtc > _runner.Timeout)
+            {
+                await _jobs.ReapStaleAsync(_runner.Timeout, ct);
+                job = await _jobs.GetAsync(jobId, ct);
+                if (job is null)
+                {
+                    await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+                    return;
+                }
+            }
+        }
     }
 
     // Window-level narrative threads from cached news (zero quota cost).

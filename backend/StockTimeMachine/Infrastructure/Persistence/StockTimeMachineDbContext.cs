@@ -13,10 +13,27 @@ public class StockTimeMachineDbContext : DbContext
     public DbSet<SecFiling> SecFilings => Set<SecFiling>();
     public DbSet<NewsArticle> NewsArticles => Set<NewsArticle>();
     public DbSet<ArticleEmbedding> ArticleEmbeddings => Set<ArticleEmbedding>();
+    public DbSet<InvestigationJob> InvestigationJobs => Set<InvestigationJob>();
     public DbSet<PricePoint> PricePoints => Set<PricePoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<InvestigationJob>(e =>
+        {
+            e.ToTable("InvestigationJobs");
+            e.HasKey(j => j.Id);
+            e.Property(j => j.Id).HasMaxLength(64);
+            e.Property(j => j.CompanySymbol).HasMaxLength(10);
+            e.Property(j => j.NewsSource).HasMaxLength(32);
+            e.Property(j => j.Status).HasMaxLength(16);
+            e.OwnsMany(j => j.Stages, s =>
+            {
+                s.ToTable("InvestigationJobStages");
+                s.Property(x => x.Stage).HasMaxLength(32);
+                s.Property(x => x.State).HasMaxLength(16);
+            });
+        });
+
         modelBuilder.Entity<Company>(e =>
         {
             e.HasKey(c => c.Symbol);

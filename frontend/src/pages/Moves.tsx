@@ -36,10 +36,16 @@ const MOVES_STAGES = [
 ];
 
 /**
- * Live moves investigation stream: stage events (detecting → per-move
- * evidence → embedding counts → threads → per-thread briefs) then the full
- * `moves` and `narratives` payloads. Mirrors useSnapshotStream.
+ * Persisted-job moves flow: POST a background job (or reattach to the stored
+ * one for this investigation), then follow its stream. Refresh/remount
+ * reattaches to the same job_id instead of spawning duplicate work; only an
+ * explicit retry (nonce) starts a fresh job. The job outlives every
+ * connection by design — disconnects never cancel persisted runs.
  */
+function jobStorageKey(symbol: string, date: string, newsSource: NewsSource) {
+  return `stm:job:${symbol.toUpperCase()}|${date}|${newsSource}`;
+}
+
 function useMovesStream(symbol: string, date: string, newsSource: NewsSource, nonce: number) {
   const [stages, setStages] = useState<StageEvent[]>([]);
   const [moves, setMoves] = useState<MovesResponse | null>(null);
@@ -53,11 +59,10 @@ function useMovesStream(symbol: string, date: string, newsSource: NewsSource, no
     setNarratives(null);
     setError(null);
 
-    const url =
-      `${API_BASE}/api/timemachine/moves/stream?symbol=${encodeURIComponent(symbol)}` +
-      `&date=${encodeURIComponent(date)}&newsSource=${encodeURIComponent(newsSource)}`;
-    const es = new EventSource(url);
+    let cancelled = false;
+    let es: EventSource | null = null;
     let settled = false;
+    const key = jobStorageKey(symbol, date, newsSource);
 
     const onStage = (e: Event) => {
       try {
@@ -72,7 +77,7 @@ function useMovesStream(symbol: string, date: string, newsSource: NewsSource, no
         setMoves(JSON.parse((e as MessageEvent).data) as MovesResponse);
       } catch {
         setError(new Error('The moves response could not be read.'));
-        es.close();
+        if (es) es.close();
       }
     };
     const onNarratives = (e: Event) => {
@@ -82,7 +87,7 @@ function useMovesStream(symbol: string, date: string, newsSource: NewsSource, no
       } catch {
         setError(new Error('The narratives response could not be read.'));
       } finally {
-        es.close();
+        if (es) es.close();
       }
     };
     const onError = (e: Event) => {
@@ -93,20 +98,53 @@ function useMovesStream(symbol: string, date: string, newsSource: NewsSource, no
         } catch {
           setError(new Error('Request failed'));
         }
-        es.close();
+        if (es) es.close();
       } else if (!settled) {
         setError(new ApiError('The investigation service is unreachable. Check that the backend is running and try again.', 0, null));
-        es.close();
+        if (es) es.close();
       }
     };
 
-    es.addEventListener('stage', onStage);
-    es.addEventListener('moves', onMoves);
-    es.addEventListener('narratives', onNarratives);
-    es.addEventListener('error', onError);
+    const attach = (jobId: string) => {
+      if (cancelled) return;
+      try {
+        sessionStorage.setItem(key, jobId);
+      } catch {
+        /* private mode: reattach simply won't survive refresh */
+      }
+      es = new EventSource(`${API_BASE}/api/timemachine/moves/stream/${encodeURIComponent(jobId)}`);
+      es.addEventListener('stage', onStage);
+      es.addEventListener('moves', onMoves);
+      es.addEventListener('narratives', onNarratives);
+      es.addEventListener('error', onError);
+    };
+
+    const boot = async () => {
+      try {
+        let jobId: string | null = null;
+        try {
+          jobId = sessionStorage.getItem(key);
+        } catch {
+          jobId = null;
+        }
+        // Explicit retry always starts fresh; otherwise reattach.
+        if (!jobId || nonce > 0) {
+          const created = await api.createMovesJob({ symbol, date, newsSource });
+          jobId = created.jobId;
+        }
+        attach(jobId);
+      } catch (e) {
+        if (!cancelled) setError(e);
+      }
+    };
+    boot();
+
     return () => {
+      cancelled = true;
       settled = true;
-      es.close();
+      // Closing our stream changes nothing server-side: the persisted job
+      // keeps running and we reattach to it on remount.
+      if (es) es.close();
     };
   }, [symbol, date, newsSource, nonce]);
 
