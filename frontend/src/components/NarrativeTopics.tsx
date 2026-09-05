@@ -127,7 +127,7 @@ export function NarrativeTopics({
         {data.topics.length === 0 ? (
           <EmptySection
             title="No narrative threads"
-            body={whyNoThreads(data.newsSource, data.articlesConsidered)}
+            body={whyNoThreads(data.newsSource, data.articlesConsidered, fmtDate(data.asOfDate))}
           />
         ) : (
           <ul className="density-compact space-y-2">

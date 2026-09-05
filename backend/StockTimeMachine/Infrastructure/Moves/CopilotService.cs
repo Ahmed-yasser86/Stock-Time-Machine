@@ -69,7 +69,7 @@ public class CopilotService : ICopilotService
             if (!_gemini.IsEnabled)
                 return null;
             var selected = NewsSources.Normalize(newsSource);
-            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, ct);
+            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
             var docs = cached
                 .Where(n => IsFromSource(n, selected) && articleIds.Contains(n.Id))
                 .Take(MaxItems).ToList();
@@ -137,7 +137,7 @@ public class CopilotService : ICopilotService
             if (!_gemini.IsEnabled)
                 return null;
             var selected = NewsSources.Normalize(newsSource);
-            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, ct);
+            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
             var docs = cached
                 .Where(n => IsFromSource(n, selected) && articleIds.Contains(n.Id))
                 .Take(MaxItems).ToList();
@@ -247,7 +247,7 @@ public class CopilotService : ICopilotService
                 return empty;
             var selected = NewsSources.Normalize(newsSource);
             var window = await _moves.GetMoves(normalized, asOfDate, selected, ct);
-            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, ct);
+            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
             var fromSource = cached.Where(n => IsFromSource(n, selected)).Take(20).ToList();
             var sb = Header(normalized, asOfDate);
             sb.AppendLine("A user wrote the conclusion note below, citing evidence as [move YYYY-MM-DD] and [thread terms]. Check EVERY cited claim against the evidence ledger. You REVIEW — you never rewrite conclusions, never add new claims, never advise.");

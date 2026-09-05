@@ -107,6 +107,25 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)
+    {
+        var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
+        var query = _db.NewsArticles
+            .Where(n => n.CompanySymbol == companySymbol.ToUpperInvariant() && n.PublishedAt <= cutoff);
+        // Same membership rule as every service-side IsFromSource: cached rows
+        // carry their origin in Source, so per-source reads never mix providers.
+        if (newsSource == NewsSources.AlphaVantage)
+            query = query.Where(n => n.Source.Contains("Alpha Vantage"));
+        else if (newsSource == NewsSources.MarketAux)
+            query = query.Where(n => n.Source.Contains("MarketAux"));
+        else if (!string.IsNullOrEmpty(newsSource))
+            query = query.Where(n => n.Source.Contains("GDELT"));
+        return await query
+            .OrderByDescending(n => n.PublishedAt)
+            .Take(50)
+            .ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<PricePoint>> GetPriceRange(string companySymbol, DateOnly from, DateOnly to, CancellationToken ct = default)
     {
         return await _db.PricePoints
