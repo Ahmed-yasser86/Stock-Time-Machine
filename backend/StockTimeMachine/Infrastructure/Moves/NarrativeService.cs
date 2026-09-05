@@ -67,8 +67,7 @@ public class NarrativeService : INarrativeService
         try
         {
             var docs = articles.Take(TopicClustering.MaxArticles).ToList();
-            var vectors = await _gemini.EmbedAsync(
-                docs.Select(d => $"{d.Title} {d.Description}").ToList(), ct);
+            var vectors = await EmbedCached(docs, ct);
             var mergeSimilarities = new List<double>();
             var rejectedTop = new List<double>();
             var rejectedPairs = new List<string>();
@@ -98,6 +97,61 @@ public class NarrativeService : INarrativeService
             _logger.LogWarning(ex, "AI narrative path failed; falling back to TF-IDF");
             return false;
         }
+    }
+
+    // Read-through vector cache: repeat views reuse stored vectors instead of
+    // re-spending quota. Keyed by article id + embedding model, so a model
+    // change cleanly misses instead of mixing vector spaces. A corrupt cached
+    // row is treated as a miss, never fatal.
+    private async Task<IReadOnlyList<float[]>> EmbedCached(List<NewsArticle> docs, CancellationToken ct)
+    {
+        var model = _gemini.EmbeddingModel;
+        var vectors = new float[docs.Count][];
+        var missingIdx = new List<int>();
+        for (int i = 0; i < docs.Count; i++)
+        {
+            float[]? hit = null;
+            try
+            {
+                var row = await _dataRepo.GetEmbedding(docs[i].Id, model, ct);
+                if (row is not null)
+                    hit = System.Text.Json.JsonSerializer.Deserialize<float[]>(row.VectorJson);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Embedding cache read miss for {Article}", docs[i].Id);
+            }
+            if (hit is { Length: > 0 })
+                vectors[i] = hit;
+            else
+                missingIdx.Add(i);
+        }
+        if (missingIdx.Count > 0)
+        {
+            var fresh = await _gemini.EmbedAsync(
+                missingIdx.Select(i => $"{docs[i].Title} {docs[i].Description}").ToList(), ct);
+            for (int k = 0; k < missingIdx.Count; k++)
+            {
+                vectors[missingIdx[k]] = fresh[k];
+                try
+                {
+                    await _dataRepo.StoreEmbedding(new ArticleEmbedding
+                    {
+                        ArticleId = docs[missingIdx[k]].Id,
+                        Model = model,
+                        VectorJson = System.Text.Json.JsonSerializer.Serialize(fresh[k]),
+                        CachedAt = DateTime.UtcNow,
+                    }, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Embedding cache store failed for {Article}", docs[missingIdx[k]].Id);
+                }
+            }
+            _logger.LogInformation("Embedded {Fresh}/{Total} articles ({Model}); rest served from cache",
+                missingIdx.Count, docs.Count, model);
+        }
+        return vectors;
     }
 
     private TopicCluster ToCluster(List<int> members, List<NewsArticle> docs, IReadOnlyList<float[]> vectors)
@@ -246,8 +300,7 @@ public class NarrativeService : INarrativeService
                 var docs = cached.Where(n => IsFromSource(n, selected)).Take(MaxDocsPerSymbol).ToList();
                 if (docs.Count == 0)
                     return empty;
-                var vectors = await _gemini.EmbedAsync(
-                    docs.Select(d => $"{d.Title} {d.Description}").ToList(), ct);
+                var vectors = await EmbedCached(docs, ct);
                 perSymbol.Add((symbol, docs, vectors));
             }
             var (aSym, aDocs, aVec) = perSymbol[0];

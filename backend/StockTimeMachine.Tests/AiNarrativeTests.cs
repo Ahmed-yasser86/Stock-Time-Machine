@@ -9,6 +9,7 @@ public sealed class DisabledGeminiStub : IGeminiClient
 {
     public bool IsEnabled => false;
     public string SummaryModel => "stub";
+    public string EmbeddingModel => "stub-embed";
     public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default) =>
         throw new InvalidOperationException("disabled");
     public Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default) =>
@@ -30,11 +31,16 @@ public class AiNarrativeTests
     {
         public bool IsEnabled => true;
         public string SummaryModel => "stub-flash";
+        public string EmbeddingModel => "stub-embed";
         public List<string> SeenPrompts { get; } = new();
+        public int EmbedCalls { get; private set; }
         // a's ~ [1,0], b's ~ [0,1]: pairs merge within groups only.
-        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<float[]>>(texts.Select((t, i) =>
+        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
+        {
+            EmbedCalls++;
+            return Task.FromResult<IReadOnlyList<float[]>>(texts.Select((t, i) =>
                 (i % 2 == 0 ? new float[] { 1f, 0.05f } : new float[] { 0.05f, 1f })).ToList());
+        }
         public Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default)
         {
             SeenPrompts.Add(prompt);
@@ -59,6 +65,7 @@ public class AiNarrativeTests
     {
         public bool IsEnabled => true;
         public string SummaryModel => "stub";
+        public string EmbeddingModel => "stub-embed";
         public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default) =>
             throw new HttpRequestException("Gemini down");
         public Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default) =>
@@ -401,6 +408,48 @@ public class AiNarrativeTests
         var sut = Copilot(db, new DisabledGeminiStub());
 
         Assert.Null(await sut.ExplainMethodology("why empty?", null));
+    }
+
+    [Fact]
+    public async Task NarrativeService_EmbeddingCache_SecondCallSkipsProvider()
+    {
+        var db = NewDb();
+        await SeedPair(db);
+        var gemini = new FixedGeminiStub();
+        var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            gemini, new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+
+        var first = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+        var callsAfterFirst = gemini.EmbedCalls;
+        Assert.True(callsAfterFirst > 0);
+        Assert.Equal("gemini-embeddings", first.ClusteringMethod);
+
+        var second = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        Assert.Equal(callsAfterFirst, gemini.EmbedCalls);
+        Assert.Equal("gemini-embeddings", second.ClusteringMethod);
+        Assert.Equal(
+            first.Topics.Select(t => string.Join(",", t.ArticleIds)),
+            second.Topics.Select(t => string.Join(",", t.ArticleIds)));
+    }
+
+    [Fact]
+    public async Task EmbeddingRepository_Roundtrips()
+    {
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+
+        Assert.Null(await repo.GetEmbedding("x", "m"));
+        await repo.StoreEmbedding(new ArticleEmbedding
+        {
+            ArticleId = "x", Model = "m", VectorJson = "[0.1,0.2]", CachedAt = DateTime.UtcNow,
+        });
+
+        var row = await repo.GetEmbedding("x", "m");
+        Assert.NotNull(row);
+        Assert.Equal("[0.1,0.2]", row!.VectorJson);
+        Assert.Null(await repo.GetEmbedding("x", "other-model"));
     }
 
     [Fact]
