@@ -23,6 +23,9 @@ public class ArcticShiftProvider : ISocialSignalProvider
     private readonly string _baseUrl;
     private readonly bool _enabled;
     private readonly string[] _subreddits;
+    // Pacing only — deliberately NO retry (durable per-IP throttle; retrying
+    // deepens bans). Routed through the shared limiter for one rhythm.
+    private readonly AdaptiveRateLimiter _limiter;
 
     public string ProviderName => "Arctic Shift";
 
@@ -36,6 +39,7 @@ public class ArcticShiftProvider : ISocialSignalProvider
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (_subreddits.Length == 0)
             _subreddits = DefaultSubreddits;
+        _limiter = RateLimiterRegistry.Get("arctic", config);
     }
 
     public async Task<IReadOnlyList<SocialSignal>> GetSignals(
@@ -51,13 +55,10 @@ public class ArcticShiftProvider : ISocialSignalProvider
         var query = !string.IsNullOrWhiteSpace(companyName) ? companyName.Trim() : normalized;
 
         var all = new List<SocialSignal>();
-        var first = true;
         foreach (var sub in _subreddits.Take(3))
         {
-            // Community service with aggressive throttling: gentle pacing.
-            if (!first)
-                await Task.Delay(1500, ct);
-            first = false;
+            // Community service with aggressive throttling: gentle shared pacing.
+            await _limiter.AcquireAsync(0, ct);
             var batch = await SearchSubreddit(sub, query, normalized, from, to, ct);
             all.AddRange(batch);
         }

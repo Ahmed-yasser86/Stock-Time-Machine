@@ -11,6 +11,7 @@ public class GdeltNewsProvider : INewsProvider
 {
     private readonly HttpClient _http;
     private readonly ILogger<GdeltNewsProvider> _logger;
+    private readonly IConfiguration _config;
     private readonly string _baseUrl;
     // Optional GDELT Cloud credential. Server-side only: read from configuration
     // (environment variable Gdelt__ApiKey), never logged, never sent to browsers.
@@ -24,6 +25,7 @@ public class GdeltNewsProvider : INewsProvider
     {
         _http = http;
         _logger = logger;
+        _config = config;
         _baseUrl = (config["Gdelt:BaseUrl"] ?? "https://api.gdeltproject.org/api/v2").TrimEnd('/');
         _cloudApiKey = config["Gdelt:ApiKey"] ?? "";
         _minIntervalMs = int.TryParse(config["Gdelt:MinRequestIntervalMs"], out var ms) && ms >= 0 ? ms : 3000;
@@ -32,7 +34,7 @@ public class GdeltNewsProvider : INewsProvider
     public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default) =>
         GdeltResilience.ExecuteAsync(
             ct2 => SearchCoreAsync(symbol, cutoffDate, ct2),
-            _logger, $"GDELT Project {symbol}", ct);
+            _logger, $"GDELT Project {symbol}", _config, ct);
 
     private async Task PaceAsync(CancellationToken ct)
     {
@@ -73,7 +75,7 @@ public class GdeltNewsProvider : INewsProvider
             using var response = await _http.GetAsync(url, ct);
             if ((int)response.StatusCode == 429)
                 throw new RateLimitExceededException("GDELT Project rate limit exceeded.",
-                    GdeltResilience.ParseRetryAfter(response.Headers));
+                    RateLimitHeaders.ParseRetryAfter(response.Headers));
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync(ct);

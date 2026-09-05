@@ -20,6 +20,7 @@ public class MarketAuxNewsProvider : INewsProvider
     private readonly ILogger<MarketAuxNewsProvider> _logger;
     private readonly string _apiKey;
     private readonly string _baseUrl;
+    private readonly AdaptiveRateLimiter _limiter;
 
     public MarketAuxNewsProvider(HttpClient http, ILogger<MarketAuxNewsProvider> logger, IConfiguration config)
     {
@@ -27,6 +28,7 @@ public class MarketAuxNewsProvider : INewsProvider
         _logger = logger;
         _apiKey = config["MarketAux:ApiKey"] ?? "";
         _baseUrl = (config["MarketAux:BaseUrl"] ?? "https://api.marketaux.com").TrimEnd('/');
+        _limiter = RateLimiterRegistry.Get("marketaux", config);
     }
 
     public bool IsConfigured => !string.IsNullOrEmpty(_apiKey);
@@ -42,6 +44,7 @@ public class MarketAuxNewsProvider : INewsProvider
             return Array.Empty<NewsArticle>();
         }
 
+        await _limiter.AcquireAsync(0, ct);
         var normalized = symbol.Trim().ToUpperInvariant();
         var cutoff = TemporalBoundary.GetCutoffUtc(cutoffDate);
         // published_before is day-granular-safe: push a day out, then enforce the
@@ -58,8 +61,13 @@ public class MarketAuxNewsProvider : INewsProvider
         {
             using var response = await _http.GetAsync(url, ct);
             if ((int)response.StatusCode == 429)
-                throw new RateLimitExceededException("MarketAux rate limit exceeded.");
+            {
+                var retryAfter = RateLimitHeaders.ParseRetryAfter(response.Headers);
+                _limiter.ReportThrottled(retryAfter);
+                throw new RateLimitExceededException("MarketAux rate limit exceeded.", retryAfter);
+            }
             response.EnsureSuccessStatusCode();
+            _limiter.ReportSuccess();
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);

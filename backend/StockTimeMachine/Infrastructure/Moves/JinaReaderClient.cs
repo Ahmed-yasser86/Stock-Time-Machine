@@ -15,6 +15,7 @@ public class JinaReaderClient : IArticleContentClient
     private readonly HttpClient _http;
     private readonly ILogger<JinaReaderClient> _logger;
     private readonly string _apiKey;
+    private readonly AdaptiveRateLimiter _limiter;
 
     public bool IsEnabled => !string.IsNullOrEmpty(_apiKey);
 
@@ -24,12 +25,14 @@ public class JinaReaderClient : IArticleContentClient
         _logger = logger;
         _apiKey = config["Jina:ApiKey"] ?? "";
         _http.Timeout = TimeSpan.FromSeconds(45);
+        _limiter = RateLimiterRegistry.Get("jina", config);
     }
 
     public async Task<ArticleBody?> FetchBodyAsync(string articleUrl, CancellationToken ct = default)
     {
         if (!IsEnabled || string.IsNullOrWhiteSpace(articleUrl))
             return null;
+        await _limiter.AcquireAsync(0, ct);
         try
         {
             using var req = new HttpRequestMessage(

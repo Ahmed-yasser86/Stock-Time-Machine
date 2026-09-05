@@ -18,15 +18,11 @@ public class GeminiClient : IGeminiClient
     private readonly string _apiKey;
     private readonly string _embeddingModel;
     private readonly string _summaryModel;
-    // 30k tokens/min budget shared by embeds + summaries: callers wait for
-    // budget instead of tripping quota errors mid-investigation.
-    private readonly TokenBucketRateLimiter _limiter = new(30000);
-    // Request-rate pacing on top: token budget alone does not cover the
-    // free tier's requests-per-minute ceiling (observed 429s). Sequential
-    // traffic spaces itself; concurrent traffic serializes on the gate.
-    private readonly SemaphoreSlim _paceGate = new(1, 1);
-    private readonly int _minIntervalMs;
-    private DateTime _lastCallUtc = DateTime.MinValue;
+    // Global adaptive pacing: per-endpoint rhythm (embed vs generate quotas
+    // differ) over the shared mechanism. Legacy Gemini:MinRequestIntervalMs
+    // still applies as the starting delay (see RateLimiterRegistry).
+    private readonly AdaptiveRateLimiter _embedLimiter;
+    private readonly AdaptiveRateLimiter _generateLimiter;
 
     public bool IsEnabled => !string.IsNullOrEmpty(_apiKey);
     public string SummaryModel => _summaryModel;
@@ -40,37 +36,33 @@ public class GeminiClient : IGeminiClient
         _apiKey = config["Gemini:ApiKey"] ?? "";
         _embeddingModel = config["Gemini:EmbeddingModel"] ?? "gemini-embedding-2-preview";
         _summaryModel = config["Gemini:SummaryModel"] ?? "gemini-3.5-flash-lite";
-        _minIntervalMs = int.TryParse(config["Gemini:MinRequestIntervalMs"], out var ms) && ms > 0 ? ms : 2000;
+        _embedLimiter = RateLimiterRegistry.Get("gemini-embed", config);
+        _generateLimiter = RateLimiterRegistry.Get("gemini-generate", config);
         _http.Timeout = TimeSpan.FromSeconds(60);
-    }
-
-    private async Task PaceAsync(CancellationToken ct)
-    {
-        TimeSpan wait;
-        await _paceGate.WaitAsync(ct);
-        try
-        {
-            var now = DateTime.UtcNow;
-            var next = _lastCallUtc + TimeSpan.FromMilliseconds(_minIntervalMs);
-            wait = next > now ? next - now : TimeSpan.Zero;
-            _lastCallUtc = now + wait;
-        }
-        finally
-        {
-            _paceGate.Release();
-        }
-        if (wait > TimeSpan.Zero)
-            await Task.Delay(wait, ct);
     }
 
     public async Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
     {
         if (!IsEnabled)
             throw new InvalidOperationException("Gemini:ApiKey is not configured.");
-        var vectors = new List<float[]>(texts.Count);
-        foreach (var text in texts)
-            vectors.Add(await EmbedTextAsync(text, ct));
-        return vectors;
+        // True batching over the adaptive rhythm: bounded parallelism, per-start
+        // spacing, 429s requeue under a slower rhythm. Order-preserving.
+        return await _embedLimiter.ExecuteBatchAsync(
+            texts, (text, ct2) => EmbedTextAsync(text, ct2), ThrottleSignal, _logger, ct);
+    }
+
+    private static TimeSpan? ThrottleSignal(Exception ex) =>
+        ex is RateLimitExceededException throttled ? throttled.RetryAfter ?? TimeSpan.Zero : null;
+
+    private void ThrowIfThrottled(HttpResponseMessage resp, string operation)
+    {
+        if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            var retryAfter = RateLimitHeaders.ParseRetryAfter(resp.Headers);
+            _logger.LogWarning("{Operation} throttled by Gemini; adapting rhythm", operation);
+            throw new RateLimitExceededException($"Gemini {operation} rate limit exceeded.", retryAfter);
+        }
+        resp.EnsureSuccessStatusCode();
     }
 
     // Over-long articles are chunked and mean-pooled into one vector instead
@@ -83,8 +75,7 @@ public class GeminiClient : IGeminiClient
         int count = 0;
         foreach (var chunk in chunks)
         {
-            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(chunk), ct);
-            await PaceAsync(ct);
+            await _embedLimiter.AcquireAsync(AdaptiveRateLimiter.EstimateTokens(chunk), ct);
             var body = new
             {
                 model = $"models/{_embeddingModel}",
@@ -92,7 +83,7 @@ public class GeminiClient : IGeminiClient
             };
             using var resp = await _http.PostAsJsonAsync(
                 $"{BaseUrl}/{_embeddingModel}:embedContent?key={_apiKey}", body, ct);
-            resp.EnsureSuccessStatusCode();
+            ThrowIfThrottled(resp, "embed");
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
             var values = doc.RootElement
                 .GetProperty("embedding")
@@ -131,8 +122,7 @@ public class GeminiClient : IGeminiClient
         try
         {
             // Reserve prompt + output ceiling so summaries share the budget honestly.
-            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(prompt) + 768, ct);
-            await PaceAsync(ct);
+            await _generateLimiter.AcquireAsync(AdaptiveRateLimiter.EstimateTokens(prompt) + 768, ct);
             var body = new
             {
                 generationConfig = new
@@ -155,7 +145,8 @@ public class GeminiClient : IGeminiClient
             };
             using var resp = await _http.PostAsJsonAsync(
                 $"{BaseUrl}/{_summaryModel}:generateContent?key={_apiKey}", body, ct);
-            resp.EnsureSuccessStatusCode();
+            ThrowIfThrottled(resp, "generate");
+            _generateLimiter.ReportSuccess();
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
             var text = doc.RootElement
                 .GetProperty("candidates")[0]
@@ -174,6 +165,8 @@ public class GeminiClient : IGeminiClient
         }
         catch (Exception ex)
         {
+            if (ex is RateLimitExceededException throttled)
+                _generateLimiter.ReportThrottled(throttled.RetryAfter);
             _logger.LogWarning(ex, "Gemini cluster summary failed; caller falls back");
             return null;
         }
@@ -186,8 +179,7 @@ public class GeminiClient : IGeminiClient
             return empty;
         try
         {
-            await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(prompt) + 512, ct);
-            await PaceAsync(ct);
+            await _generateLimiter.AcquireAsync(AdaptiveRateLimiter.EstimateTokens(prompt) + 512, ct);
             var body = new
             {
                 generationConfig = new
@@ -223,7 +215,8 @@ public class GeminiClient : IGeminiClient
             };
             using var resp = await _http.PostAsJsonAsync(
                 $"{BaseUrl}/{_summaryModel}:generateContent?key={_apiKey}", body, ct);
-            resp.EnsureSuccessStatusCode();
+            ThrowIfThrottled(resp, "generate");
+            _generateLimiter.ReportSuccess();
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
             var text = doc.RootElement
                 .GetProperty("candidates")[0]
@@ -241,6 +234,8 @@ public class GeminiClient : IGeminiClient
         }
         catch (Exception ex)
         {
+            if (ex is RateLimitExceededException throttled)
+                _generateLimiter.ReportThrottled(throttled.RetryAfter);
             _logger.LogWarning(ex, "Gemini note review failed");
             return empty;
         }

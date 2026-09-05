@@ -8,17 +8,15 @@ namespace StockTimeMachine;
 
 public class AlphaVantageProvider : IAlphaVantageProvider
 {
-    // Free tier = 5 calls/minute: process-wide pacing so sequential snapshot
-    // calls (prices → outcome → retry) never trip the burst policer.
-    // Configurable for tests (AlphaVantage:PaceSeconds, 0 in test config).
-    private static readonly SemaphoreSlim PaceGate = new(1, 1);
-    private static DateTime _lastRequestUtc = DateTime.MinValue;
-
+    // Free tier = 5 calls/minute: global adaptive pacing (same 12s rhythm via
+    // the alphavantage policy, which still honors AlphaVantage:PaceSeconds —
+    // 0 in test config) so sequential snapshot calls never trip the burst
+    // policer. Throttles feed the shared rhythm via ReportThrottled.
     private readonly HttpClient _http;
     private readonly ILogger<AlphaVantageProvider> _logger;
     private readonly string _apiKey;
     private readonly string _baseUrl;
-    private readonly double _paceSeconds;
+    private readonly AdaptiveRateLimiter _limiter;
 
     public AlphaVantageProvider(HttpClient http, ILogger<AlphaVantageProvider> logger, IConfiguration config)
     {
@@ -27,10 +25,7 @@ public class AlphaVantageProvider : IAlphaVantageProvider
         // Server-side only. Never logged, never returned in API responses.
         _apiKey = config["AlphaVantage:ApiKey"] ?? "";
         _baseUrl = config["AlphaVantage:BaseUrl"] ?? "https://www.alphavantage.co/query";
-        _paceSeconds = double.TryParse(config["AlphaVantage:PaceSeconds"],
-            System.Globalization.NumberStyles.Number,
-            System.Globalization.CultureInfo.InvariantCulture, out var pace)
-            ? pace : 12;
+        _limiter = RateLimiterRegistry.Get("alphavantage", config);
     }
 
     public async Task<IReadOnlyList<PricePoint>> GetDailyPrices(string symbol, DateOnly? asOfDate = null, int days = 365, CancellationToken ct = default)
@@ -65,7 +60,11 @@ public class AlphaVantageProvider : IAlphaVantageProvider
             response.EnsureSuccessStatusCode();
             json = await response.Content.ReadAsStringAsync(ct);
         }
-        catch (RateLimitExceededException) { throw; }
+        catch (RateLimitExceededException ex)
+        {
+            _limiter.ReportThrottled(ex.RetryAfter);
+            throw;
+        }
         catch (OperationCanceledException) { throw; }
         catch (HttpRequestException ex)
         {
@@ -90,7 +89,10 @@ public class AlphaVantageProvider : IAlphaVantageProvider
                 _logger.LogWarning("Alpha Vantage information message for {Symbol}: {Info}", symbol, message);
                 if (message.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
                     message.Contains("calls per", StringComparison.OrdinalIgnoreCase))
+                {
+                    _limiter.ReportThrottled();
                     throw new RateLimitExceededException("Alpha Vantage rate limit exceeded.");
+                }
                 if (allowCompactFallback && outputSize == "full" &&
                     message.Contains("premium", StringComparison.OrdinalIgnoreCase))
                 {
@@ -158,21 +160,7 @@ public class AlphaVantageProvider : IAlphaVantageProvider
         }
     }
 
-    private async Task PaceAsync(CancellationToken ct)
-    {
-        await PaceGate.WaitAsync(ct);
-        try
-        {
-            var wait = TimeSpan.FromSeconds(_paceSeconds) - (DateTime.UtcNow - _lastRequestUtc);
-            if (wait > TimeSpan.Zero)
-                await Task.Delay(wait, ct);
-            _lastRequestUtc = DateTime.UtcNow;
-        }
-        finally
-        {
-            PaceGate.Release();
-        }
-    }
+    private Task PaceAsync(CancellationToken ct) => _limiter.AcquireAsync(0, ct);
 
     private static bool TryParsePrice(JsonElement data, string property, out decimal value)
     {
