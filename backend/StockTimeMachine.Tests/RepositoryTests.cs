@@ -195,7 +195,7 @@ public class HistoricalDataRepositoryTests
         await repo.StoreNews("TSLA", articles);
 
         var legacy = await repo.GetNewsAsOf("TSLA", new DateOnly(2020, 3, 1));
-        Assert.DoesNotContain(legacy, n => n.Source.Contains("GDELT"));
+        Assert.Equal(58, legacy.Count);
 
         var filtered = await repo.GetNewsAsOf("TSLA", new DateOnly(2020, 3, 1), NewsSources.Gdelt);
         Assert.Equal(3, filtered.Count);
@@ -241,6 +241,25 @@ public class HistoricalDataRepositoryTests
         Assert.Equal(2, await db.NewsArticles.CountAsync());
         var amzn = await repo.GetNewsAsOf("AMZN", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
         Assert.Equal("fresh", Assert.Single(amzn).Id);
+    }
+
+    [Fact]
+    public async Task GetNewsAsOf_ReadWindow_HoldsBusyWeeks()
+    {
+        using var db = CreateDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+
+        // 70 same-day rows: the old top-50 read amputated older days for every
+        // consumer. The read window must hold them all.
+        var articles = Enumerable.Range(0, 70).Select(i => new NewsArticle
+        {
+            Id = $"g{i}", Title = $"G {i}", Source = "GDELT Cloud",
+            PublishedAt = new DateTime(2020, 1, 10).AddHours(i), Url = $"https://example.com/g{i}", CompanySymbol = "TSLA",
+        }).ToList();
+        await repo.StoreNews("TSLA", articles);
+
+        var rows = await repo.GetNewsAsOf("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+        Assert.Equal(70, rows.Count);
     }
 
     [Fact]

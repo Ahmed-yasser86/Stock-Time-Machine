@@ -133,13 +133,19 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             .ToListAsync(ct);
     }
 
+    // Read window sized for busy weeks (verified: 58 rows on a single day):
+    // a small Take here silently amputates older days for every consumer
+    // (snapshot, moves, narratives, copilot). Downstream caps (narratives 60,
+    // evidence slices, UI expander) still bound what is shown and computed.
+    private const int ReadWindow = 200;
+
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
         return await _db.NewsArticles
             .Where(n => n.CompanySymbol == companySymbol.ToUpperInvariant() && n.PublishedAt <= cutoff)
             .OrderByDescending(n => n.PublishedAt)
-            .Take(50)
+            .Take(ReadWindow)
             .ToListAsync(ct);
     }
 
@@ -176,7 +182,7 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             query = query.Where(n => n.Source.Contains("GDELT"));
         return await query
             .OrderByDescending(n => n.PublishedAt)
-            .Take(50)
+            .Take(ReadWindow)
             .ToListAsync(ct);
     }
 
