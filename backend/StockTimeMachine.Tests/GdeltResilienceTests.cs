@@ -63,7 +63,7 @@ public class GdeltResilienceTests
 
         await Assert.ThrowsAsync<RateLimitExceededException>(
             () => provider.SearchAsync("MSFT", new DateOnly(2020, 1, 15)));
-        Assert.Equal(4, handler.Calls); // 1 initial + 3 retries, then give up
+        Assert.Equal(5, handler.Calls); // 1 initial + 4 retries (policy MaxAttempts), then give up
     }
 
     [Fact]
@@ -108,13 +108,13 @@ public class GdeltResilienceTests
     {
         using var seconds = new HttpResponseMessage();
         seconds.Headers.TryAddWithoutValidation("Retry-After", "120");
-        Assert.Equal(TimeSpan.FromSeconds(120), GdeltResilience.ParseRetryAfter(seconds.Headers));
+        Assert.Equal(TimeSpan.FromSeconds(120), RateLimitHeaders.ParseRetryAfter(seconds.Headers));
 
         using var missing = new HttpResponseMessage();
-        Assert.Null(GdeltResilience.ParseRetryAfter(missing.Headers));
+        Assert.Null(RateLimitHeaders.ParseRetryAfter(missing.Headers));
 
         using var garbage = new HttpResponseMessage();
         garbage.Headers.TryAddWithoutValidation("Retry-After", "soon");
-        Assert.Null(GdeltResilience.ParseRetryAfter(garbage.Headers));
+        Assert.Null(RateLimitHeaders.ParseRetryAfter(garbage.Headers));
     }
 }

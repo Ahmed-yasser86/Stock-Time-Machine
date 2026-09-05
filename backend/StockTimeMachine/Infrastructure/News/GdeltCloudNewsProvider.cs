@@ -25,6 +25,7 @@ public class GdeltCloudNewsProvider : INewsProvider
 {
     private readonly HttpClient _http;
     private readonly ILogger<GdeltCloudNewsProvider> _logger;
+    private readonly IConfiguration _config;
     private readonly string _apiKey;
     private readonly string _baseUrl;
     // Request pacing + throttled retries (see GdeltResilience): a throttled
@@ -37,6 +38,7 @@ public class GdeltCloudNewsProvider : INewsProvider
     {
         _http = http;
         _logger = logger;
+        _config = config;
         _apiKey = config["Gdelt:ApiKey"] ?? "";
         _baseUrl = (config["Gdelt:CloudBaseUrl"] ?? "https://gdeltcloud.com").TrimEnd('/');
         _minIntervalMs = int.TryParse(config["Gdelt:MinRequestIntervalMs"], out var ms) && ms >= 0 ? ms : 3000;
@@ -50,7 +52,7 @@ public class GdeltCloudNewsProvider : INewsProvider
     public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, string? companyName, DateOnly cutoffDate, CancellationToken ct = default) =>
         GdeltResilience.ExecuteAsync(
             ct2 => SearchCoreAsync(symbol, companyName, cutoffDate, ct2),
-            _logger, $"GDELT Cloud {symbol}", ct);
+            _logger, $"GDELT Cloud {symbol}", _config, ct);
 
     private async Task PaceAsync(CancellationToken ct)
     {
@@ -139,7 +141,7 @@ public class GdeltCloudNewsProvider : INewsProvider
         using var response = await _http.SendAsync(request, ct);
         if ((int)response.StatusCode == 429)
             throw new RateLimitExceededException("GDELT Cloud rate limit exceeded.",
-                GdeltResilience.ParseRetryAfter(response.Headers));
+                RateLimitHeaders.ParseRetryAfter(response.Headers));
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync(ct);
@@ -198,7 +200,7 @@ public class GdeltCloudNewsProvider : INewsProvider
         using var response = await _http.SendAsync(request, ct);
         if ((int)response.StatusCode == 429)
             throw new RateLimitExceededException("GDELT Cloud rate limit exceeded.",
-                GdeltResilience.ParseRetryAfter(response.Headers));
+                RateLimitHeaders.ParseRetryAfter(response.Headers));
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync(ct);
