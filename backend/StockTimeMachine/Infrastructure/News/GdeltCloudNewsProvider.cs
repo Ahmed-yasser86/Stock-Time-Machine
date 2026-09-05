@@ -177,25 +177,88 @@ public class GdeltCloudNewsProvider : INewsProvider
         return null;
     }
 
-    // Depth: one request per fetch regardless of page size, so take deep.
-    // sort=recent keeps the newest; downstream caps (DB Take, narratives 60,
-    // evidence 5) slice from there. Older 20/20 truncation silently dropped
-    // the tail of busy weeks (verified: MSFT weeks hold well past 20 rows).
-    private const int StoryLimit = 100;
-    private const int MaxArticles = 100;
+    // Interval-complete retrieval: the trailing window is traversed ONE DAY AT
+    // A TIME (deterministic, contiguous, gapless) instead of one sort=recent
+    // query whose page limit lets the busiest days starve the rest. Per-day
+    // limit 100; days merged, deduped by article id, newest-first.
+    // A 429 aborts the remaining days (rethrow — hammering a throttle helps no
+    // one; the outer resilience wrapper backs off and retries the whole
+    // fetch). Any other per-day failure degrades loudly but never voids the
+    // days that succeeded.
+    private const int WindowDaysBack = 7;
+    private const int DayLimit = 100;
 
     private async Task<IReadOnlyList<NewsArticle>> SearchStories(string symbol, string entityId, DateOnly cutoffDate, CancellationToken ct)
     {
         var normalized = symbol.Trim().ToUpperInvariant();
         var cutoff = TemporalBoundary.GetCutoffUtc(cutoffDate);
-        var start = cutoffDate.AddDays(-7).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var end = cutoffDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var days = Enumerable.Range(0, WindowDaysBack + 1)
+            .Select(i => cutoffDate.AddDays(-WindowDaysBack + i))
+            .ToList();
+        var limiter = RateLimiterRegistry.Get("gdelt", _config);
+
+        var results = new List<NewsArticle>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var perDay = new List<(DateOnly Day, int Count)>();
+        var failedDays = new List<DateOnly>();
+        foreach (var day in days)
+        {
+            await limiter.AcquireAsync(0, ct);
+            try
+            {
+                int added = 0;
+                foreach (var article in await FetchDay(symbol, entityId, day, cutoff, ct))
+                {
+                    if (seen.Add(article.Id))
+                    {
+                        results.Add(article);
+                        added++;
+                    }
+                }
+                perDay.Add((day, added));
+            }
+            catch (RateLimitExceededException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failedDays.Add(day);
+                _logger.LogWarning(ex, "GDELT Cloud day {Day} failed for {Symbol}; keeping other days", day, normalized);
+            }
+        }
+
+        // Coverage validation: requested vs traversed vs represented. A
+        // zero-row day is information (searched, nothing there); a failed day
+        // is a warning. Never conflate the two.
+        var represented = results
+            .Select(n => DateOnly.FromDateTime(n.PublishedAt)).Distinct().OrderBy(d => d).ToList();
+        var missing = days.Where(d => !represented.Contains(d)).ToList();
+        _logger.LogInformation(
+            "GDELT Cloud coverage for {Symbol}: requested [{Start}..{End}], traversed {Traversed}/{Total} days, {Articles} articles, represented [{Represented}], zero-row [{Missing}], failed [{Failed}]",
+            normalized, days.First(), days.Last(), perDay.Count, days.Count, results.Count,
+            string.Join(",", represented), string.Join(",", missing),
+            string.Join(",", failedDays));
+
+        return results
+            .OrderByDescending(n => n.PublishedAt)
+            .ThenBy(n => n.Id)
+            .ToList();
+    }
+
+    private async Task<List<NewsArticle>> FetchDay(
+        string symbol, string entityId, DateOnly day, DateTime cutoff, CancellationToken ct)
+    {
+        var normalized = symbol.Trim().ToUpperInvariant();
+        var stamp = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"{_baseUrl}/api/v2/stories?entity={Uri.EscapeDataString(entityId)}&date_start={start}&date_end={end}&sort=recent&limit={StoryLimit}");
+            $"{_baseUrl}/api/v2/stories?entity={Uri.EscapeDataString(entityId)}&date_start={stamp}&date_end={stamp}&sort=recent&limit={DayLimit}");
         request.Headers.Add("Authorization", "Bearer " + _apiKey);
-
-        _logger.LogInformation("Fetching GDELT Cloud stories for {Symbol} between {Start} and {End}", normalized, start, end);
 
         using var response = await _http.SendAsync(request, ct);
         if ((int)response.StatusCode == 429)
@@ -206,7 +269,7 @@ public class GdeltCloudNewsProvider : INewsProvider
         var json = await response.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("data", out var stories) || stories.ValueKind != JsonValueKind.Array)
-            return Array.Empty<NewsArticle>();
+            return new List<NewsArticle>();
 
         var results = new List<NewsArticle>();
         foreach (var story in stories.EnumerateArray())
@@ -241,12 +304,11 @@ public class GdeltCloudNewsProvider : INewsProvider
                     CompanySymbol = normalized
                 });
 
-                if (results.Count >= MaxArticles)
+                if (results.Count >= DayLimit)
                     return results;
             }
         }
 
-        _logger.LogInformation("Found {Count} GDELT Cloud articles for {Symbol}", results.Count, normalized);
         return results;
     }
 
