@@ -114,10 +114,9 @@ public class TimeMachineService : ITimeMachineService
             Volume = latestPrice?.Volume ?? 0,
             RecentPrices = prices.Take(30).ToList(),
             RecentFilings = filings.Take(10).ToList(),
-            // Full cache window (GetNewsAsOf already bounds at 50): the UI
-            // progressively discloses, so retrieval depth is never silently
-            // truncated at display time by the API.
-            RecentNews = news.Take(50).ToList(),
+            // No display cap at the API: the cache read is already complete,
+            // and the UI pages through everything retrieved (see expander).
+            RecentNews = news.ToList(),
             Company = company,
             OutcomePrices = outcomePrices.ToList(),
             OutcomePrice = outcomePrices.LastOrDefault()?.Close,

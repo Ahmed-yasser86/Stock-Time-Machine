@@ -133,19 +133,17 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             .ToListAsync(ct);
     }
 
-    // Read window sized for busy weeks (verified: 58 rows on a single day):
-    // a small Take here silently amputates older days for every consumer
-    // (snapshot, moves, narratives, copilot). Downstream caps (narratives 60,
-    // evidence slices, UI expander) still bound what is shown and computed.
-    private const int ReadWindow = 200;
-
+    // Reads are UNCAPPED by row count: every cached row at or before the
+    // cutoff is returned newest-first, so no consumer can silently lose older
+    // days to a Take window. Downstream stages apply their own disclosed,
+    // cost-driven bounds (narratives embedding cap, evidence slices, UI pager)
+    // instead of the read hiding rows from them.
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
         return await _db.NewsArticles
             .Where(n => n.CompanySymbol == companySymbol.ToUpperInvariant() && n.PublishedAt <= cutoff)
             .OrderByDescending(n => n.PublishedAt)
-            .Take(ReadWindow)
             .ToListAsync(ct);
     }
 
@@ -182,7 +180,6 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             query = query.Where(n => n.Source.Contains("GDELT"));
         return await query
             .OrderByDescending(n => n.PublishedAt)
-            .Take(ReadWindow)
             .ToListAsync(ct);
     }
 

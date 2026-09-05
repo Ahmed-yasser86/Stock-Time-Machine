@@ -78,6 +78,7 @@ public sealed record NarrativesResponse(
     DateOnly AsOfDate,
     string NewsSource,
     int ArticlesConsidered,
+    int ArticlesClustered,
     string ClusteringMethod,
     IReadOnlyList<TopicClusterDto> Topics);
 

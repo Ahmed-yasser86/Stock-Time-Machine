@@ -288,6 +288,7 @@ export interface NarrativesResponse {
   asOfDate: string;
   newsSource: NewsSource;
   articlesConsidered: number;
+  articlesClustered: number;
   clusteringMethod: string;
   topics: TopicCluster[];
 }

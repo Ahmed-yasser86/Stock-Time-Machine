@@ -72,7 +72,14 @@ export function EvidenceStream({
   companyName?: string;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
-  const [showAll, setShowAll] = useState(false);
+  // Client-side pager over the COMPLETE retrieved set: every row the API
+  // returned is reachable — nothing is cut, pages just protect the DOM.
+  const [page, setPage] = useState(0);
+  const pageSize = 50;
+  const pickFilter = (f: Filter) => {
+    setFilter(f);
+    setPage(0);
+  };
 
   const items: StreamItem[] = [
     ...filings.map((f) => ({
@@ -152,7 +159,7 @@ export function EvidenceStream({
           <button
             key={f}
             type="button"
-            onClick={() => setFilter(f)}
+            onClick={() => pickFilter(f)}
             aria-pressed={filter === f}
             className={`rounded-full border px-3 py-1 text-sm transition-colors ${
               filter === f
@@ -171,9 +178,10 @@ export function EvidenceStream({
         </Alert>
       )}
 
-      {items.length > 20 && !showAll && (
+      {items.length > pageSize && (
         <p className="text-xs text-fg-dim" aria-live="polite">
-          Showing 20 of {items.length} evidence items retrieved for this window.
+          Showing {(page * pageSize) + 1}–{Math.min(items.length, (page + 1) * pageSize)} of{' '}
+          {items.length} retrieved evidence items.
         </p>
       )}
       {items.length === 0 ? (
@@ -195,21 +203,34 @@ export function EvidenceStream({
       ) : (
         <>
           <ul className="density-compact evidence-rail space-y-2">
-            {(showAll ? items : items.slice(0, 20)).map((item) => (
+            {items.slice(page * pageSize, (page + 1) * pageSize).map((item) => (
               <li key={item.key} className="rounded-lg border border-border bg-surface p-3 text-sm">
                 {item.node}
               </li>
             ))}
           </ul>
-          {items.length > 20 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowAll((v) => !v)}
-              aria-expanded={showAll}
-            >
-              {showAll ? 'Show fewer' : `Show all ${items.length} retrieved items`}
-            </Button>
+          {items.length > pageSize && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+              >
+                ← Previous
+              </Button>
+              <span className="text-xs text-fg-dim" aria-live="polite">
+                Page {page + 1} of {Math.ceil(items.length / pageSize)}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={(page + 1) * pageSize >= items.length}
+              >
+                Next →
+              </Button>
+            </div>
           )}
         </>
       )}
