@@ -60,6 +60,7 @@ public class NarrativeService : INarrativeService
 
         result.Topics = TopicClustering.Cluster(articles);
         result.ClusteringMethod = "tf-idf-fallback";
+        result.ArticlesClustered = Math.Min(articles.Count, TopicClustering.MaxArticles);
         progress?.Report(new SnapshotProgress("clustering", "complete",
             $"TF-IDF fallback: {result.Topics.Count} threads", result.Topics.Count));
         return result;
@@ -114,6 +115,7 @@ public class NarrativeService : INarrativeService
 
             result.Topics = topics;
             result.ClusteringMethod = "gemini-embeddings";
+            result.ArticlesClustered = docs.Count;
             return true;
         }
         catch (Exception ex)
