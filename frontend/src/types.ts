@@ -238,6 +238,21 @@ export interface CompareBriefResponse {
   brief: ClusterBrief | null;
 }
 
+export interface CrossThreadPair {
+  aSymbol: string;
+  aTitle: string;
+  bSymbol: string;
+  bTitle: string;
+  similarity: number;
+}
+
+export interface CompareThreadsResponse {
+  symbols: string[];
+  asOfDate: string;
+  newsSource: NewsSource;
+  pairs: CrossThreadPair[];
+}
+
 export interface CopilotBriefResponse {
   symbol: string;
   asOfDate: string;

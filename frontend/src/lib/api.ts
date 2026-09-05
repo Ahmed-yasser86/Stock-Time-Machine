@@ -1,6 +1,7 @@
 import type {
   Company,
   CompareBriefResponse,
+  CompareThreadsResponse,
   CopilotBriefResponse,
   LiveQuote,
   ReviewResponse,
@@ -75,6 +76,11 @@ export const api = {
     request<NarrativesResponse>(
       `/api/timemachine/narratives?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
         (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
+    ),
+  compareThreads: (symbols: string[], date: string, newsSource: NewsSource) =>
+    request<CompareThreadsResponse>(
+      `/api/timemachine/compare/threads?symbols=${encodeURIComponent(symbols.join(','))}&date=${encodeURIComponent(date)}` +
+        `&newsSource=${encodeURIComponent(newsSource)}`,
     ),
   compareBrief: (symbols: string[], date: string, newsSource: NewsSource, terms: string[]) =>
     request<CompareBriefResponse>(

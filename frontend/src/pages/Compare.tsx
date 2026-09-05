@@ -18,6 +18,7 @@ import { MAX_COMPARE_PICKS, pickColor } from '../lib/palette';
 import type { KeyMove, MovesResponse, NewsSource, TopicCluster } from '../types';
 import { AiBriefBlock } from '../components/AiBriefBlock';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -203,6 +204,17 @@ export default function Compare() {
     }
     return agree / commonDates.length;
   })();
+
+  // Semantic thread join (primary): server-side embedding cosine across picks.
+  // Lexical vocabulary groups below remain as the deterministic fallback view
+  // and as the source of terms for opt-in shared-story briefs.
+  const threadsQuery = useQuery({
+    queryKey: ['compare-threads', picks.join(','), date, newsSource],
+    queryFn: () => api.compareThreads(picks.slice(0, 2), date, newsSource),
+    enabled: ready.length >= 2,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 
   // Cross-company threads: narratives per pick (enabled as each pick's moves
   // resolve), joined by shared label vocabulary (≥2 of 3 terms). Deterministic,
@@ -504,6 +516,64 @@ export default function Compare() {
                   </CardContent>
                 </Card>
               )}
+
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="text-base">Semantically similar threads</CardTitle>
+                    <MethodLink anchor="narrative-topics" />
+                  </div>
+                  <p className="text-xs text-fg-dim">
+                    Cross-pick thread pairs ranked by embedding cosine (≥0.70). Scores are
+                    similarity, never relatedness proofs — open both lenses to judge each pair.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {threadsQuery.isPending ? (
+                    <p className="text-sm text-fg-muted" aria-busy="true">
+                      Embedding threads per pick and joining…
+                    </p>
+                  ) : threadsQuery.isError ? (
+                    <ErrorState
+                      error={threadsQuery.error}
+                      fallback="Thread similarity could not be computed."
+                      onRetry={() => threadsQuery.refetch()}
+                    />
+                  ) : threadsQuery.data.pairs.length === 0 ? (
+                    <p className="text-sm text-fg-muted">
+                      No similar threads: these picks were covered as different stories. The
+                      vocabulary groups below still stand.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {threadsQuery.data.pairs.map((p, i) => (
+                        <li key={i} className="rounded-lg border border-border p-3 text-sm">
+                          <p className="flex flex-wrap items-center gap-2">
+                            <Badge variant="secondary" className="font-mono tabular">
+                              {p.similarity.toFixed(3)}
+                            </Badge>
+                            <span className="text-xs text-fg-dim">embedding cosine — verify, don&apos;t trust</span>
+                          </p>
+                          <div className="mt-1 flex flex-col gap-1">
+                            <Link
+                              to={`/moves?symbol=${p.aSymbol}&date=${date}&newsSource=${newsSource}`}
+                              className="underline-offset-4 hover:underline"
+                            >
+                              <span className="font-mono">{p.aSymbol}:</span> {p.aTitle}
+                            </Link>
+                            <Link
+                              to={`/moves?symbol=${p.bSymbol}&date=${date}&newsSource=${newsSource}`}
+                              className="underline-offset-4 hover:underline"
+                            >
+                              <span className="font-mono">{p.bSymbol}:</span> {p.bTitle}
+                            </Link>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader>
