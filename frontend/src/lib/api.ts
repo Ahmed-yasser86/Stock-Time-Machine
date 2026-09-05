@@ -82,8 +82,8 @@ export const api = {
         `&newsSource=${encodeURIComponent(newsSource)}&terms=${encodeURIComponent(terms.join(','))}`,
     ),
   copilot: (
-    action: 'filings-summary' | 'contrast' | 'explain-uncertainty' | 'gist',
-    body: { symbol: string; date: string; newsSource?: NewsSource; ids?: string[] },
+    action: 'filings-summary' | 'contrast' | 'explain-uncertainty' | 'gist' | 'suggest',
+    body: { symbol: string; date: string; newsSource?: NewsSource; ids?: string[]; gaps?: string[] },
   ) =>
     request<CopilotBriefResponse>(`/api/timemachine/copilot/${action}`, {
       method: 'POST',

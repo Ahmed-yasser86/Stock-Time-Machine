@@ -381,6 +381,7 @@ public class MoveDetectionService : IMoveDetectionService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Move reaction unavailable for {Symbol} on {Date}", symbol, moveDate);
+            evidence.UnavailableLayers.Add("reaction");
         }
 
         evidence.Arrival = ArrivalMap.Build(moveDate, evidence);

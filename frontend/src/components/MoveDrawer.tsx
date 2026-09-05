@@ -8,7 +8,6 @@ import { Badge } from './ui/badge';
 import { DrawerCopilot } from './DrawerCopilot';
 import { MethodLink } from './MethodLink';
 import { buttonVariants } from './ui/button';
-import { EmptySection } from './StateBlocks';
 
 const FLAG_LABELS: Record<string, string> = {
   spike: 'Unusually large up day',
@@ -173,7 +172,7 @@ export function MoveDrawer({
       ) : ev.unavailableLayers.includes('regulatory') && ev.filings.length === 0 ? (
         <div className="mt-1"><LayerNote text="Regulatory evidence unavailable for this movement." /></div>
       ) : (
-        <ul className="mt-1 space-y-2">
+        <ul className="evidence-rail mt-1 space-y-2">
           {ev.filings.map((f) => (
             <li key={f.accessionNumber} className="rounded-lg border border-border p-2 text-sm">
               <p className="flex flex-wrap items-center gap-2">
@@ -194,7 +193,7 @@ export function MoveDrawer({
           <LayerNote text="No historical news was found before this movement. This does not mean nothing happened." />
         </div>
       ) : (
-        <ul className="mt-1 space-y-2">
+        <ul className="evidence-rail mt-1 space-y-2">
           {ev.news.map((n, i) => (
             <li key={`${n.url}-${i}`} className="rounded-lg border border-border p-2 text-sm">
               <p>
@@ -223,7 +222,7 @@ export function MoveDrawer({
       ) : ev.unavailableLayers.includes('social') && ev.social.length === 0 ? (
         <div className="mt-1"><LayerNote text="Retail discussion unavailable for this movement." /></div>
       ) : (
-        <ul className="mt-1 space-y-2">
+        <ul className="evidence-rail mt-1 space-y-2">
           {social.map((s) => (
             <li key={s.id} className="rounded-lg border border-border p-2 text-sm">
               <p>
@@ -261,6 +260,12 @@ export function MoveDrawer({
         >
           Open full dossier at {fmtDate(move.date)}
         </Link>
+        <Link
+          to={`/snapshot?symbol=${encodeURIComponent(symbol)}&date=${move.date}&newsSource=${encodeURIComponent(newsSource)}#simulator`}
+          className={buttonVariants({ size: 'sm', variant: 'outline' })}
+        >
+          Simulate from {fmtDate(move.date)}
+        </Link>
       </div>
       <p className="mt-3 text-xs text-fg-dim">
         Evidence coincided with this movement; proximity in time is never presented as causation.
@@ -268,14 +273,5 @@ export function MoveDrawer({
         <MethodLink anchor="key-moves-last-100-trading-days" />
       </p>
     </aside>
-  );
-}
-
-export function MoveDrawerEmpty() {
-  return (
-    <EmptySection
-      title="Select a movement"
-      body="Choose a numbered key move on the timeline or list to investigate the evidence available at that moment."
-    />
   );
 }

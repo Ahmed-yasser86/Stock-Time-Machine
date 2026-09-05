@@ -29,8 +29,10 @@ public class CompareController : ControllerBase
         [FromQuery] string? terms,
         CancellationToken ct)
     {
+        // Two-company scope: quota is not a blocker at this size, and every
+        // shared view is designed around pairs.
         var picks = (symbols ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(s => s.ToUpperInvariant()).Distinct().Take(4).ToList();
+            .Select(s => s.ToUpperInvariant()).Distinct().Take(2).ToList();
         if (picks.Count < 2)
             throw new InvalidHistoricalDateException("At least two symbols are required.");
         if (!DateOnly.TryParse(date, out var parsedDate))
@@ -49,5 +51,32 @@ public class CompareController : ControllerBase
             NewsSource: selectedNewsSource,
             Terms: sharedTerms,
             Brief: brief is null ? null : new ClusterBriefDto(brief.Summary, brief.KeyPoints, brief.Model)));
+    }
+
+    // Cross-pick thread pairs ranked by embedding cosine. Scores are shown so
+    // users can judge each pair; titles link back to the owning lenses.
+    [HttpGet("threads")]
+    public async Task<ActionResult<CompareThreadsResponse>> Threads(
+        [FromQuery] string? symbols,
+        [FromQuery] string? date,
+        [FromQuery] string? newsSource,
+        CancellationToken ct)
+    {
+        var picks = (symbols ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => s.ToUpperInvariant()).Distinct().Take(2).ToList();
+        if (picks.Count != 2)
+            throw new InvalidHistoricalDateException("Exactly two symbols are required.");
+        if (!DateOnly.TryParse(date, out var parsedDate))
+            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+
+        var selectedNewsSource = NewsSources.Normalize(newsSource);
+        var pairs = await _narratives.CrossThreadSimilarity(picks, parsedDate, selectedNewsSource, ct);
+
+        return Ok(new CompareThreadsResponse(
+            Symbols: picks,
+            AsOfDate: parsedDate,
+            NewsSource: selectedNewsSource,
+            Pairs: pairs.Select(p => new CrossThreadPairDto(
+                p.ASymbol, p.ATitle, p.BSymbol, p.BTitle, p.Similarity)).ToList()));
     }
 }

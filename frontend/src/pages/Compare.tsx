@@ -16,8 +16,8 @@ import { api } from '../lib/api';
 import { fmtDate, fmtPct } from '../lib/format';
 import { MAX_COMPARE_PICKS, pickColor } from '../lib/palette';
 import type { KeyMove, MovesResponse, NewsSource, TopicCluster } from '../types';
+import { AiBriefBlock } from '../components/AiBriefBlock';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
-import { Badge } from '../components/ui/badge';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -107,19 +107,8 @@ function SharedGroupBrief({
 
   if (brief.isSuccess && brief.data.brief) {
     return (
-      <div className="mt-2 space-y-1 rounded-md bg-canvas p-2">
-        <p className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant="outline">AI brief · {brief.data.brief.model}</Badge>
-          <span className="text-fg-dim">shared story, per-pick citations — verify against the lenses</span>
-        </p>
-        <p className="text-sm">{brief.data.brief.summary}</p>
-        {brief.data.brief.keyPoints.length > 0 && (
-          <ul className="list-disc space-y-0.5 pl-5 text-sm">
-            {brief.data.brief.keyPoints.map((k, j) => (
-              <li key={j}>{k}</li>
-            ))}
-          </ul>
-        )}
+      <div className="mt-2">
+        <AiBriefBlock brief={brief.data.brief} context="shared story, per-pick citations — verify against the lenses" />
       </div>
     );
   }
@@ -292,9 +281,20 @@ export default function Compare() {
       ) : (
         <>
           {pending && (
-            <p className="text-sm text-fg-muted" aria-busy="true">
-              Loading {picks.length} investigation{picks.length > 1 ? 's' : ''} — each pick reuses its cached 100-day window…
-            </p>
+            <ol aria-label="Per-pick loading progress" aria-busy="true" className="space-y-1 text-sm">
+              {results.map((r, i) => (
+                <li key={picks[i]} className="flex items-baseline gap-2">
+                  <span aria-hidden="true">{r.isPending ? '◌' : r.isError ? '✕' : '✓'}</span>
+                  <span className={r.isPending ? 'text-fg' : 'text-fg-muted'}>
+                    <span className="font-mono">{picks[i]}</span>
+                    <span className="text-xs text-fg-dim">
+                      {' '}
+                      — {r.isPending ? 'detecting key movements…' : r.isError ? 'failed (isolated below)' : 'loaded'}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
           {failed.map(({ symbol, r }) => (
             <ErrorState
@@ -447,17 +447,60 @@ export default function Compare() {
               {regimeAgreement !== null && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Regime agreement</CardTitle>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CardTitle className="text-base">Regime overlap</CardTitle>
+                      <MethodLink anchor="market-regimes" />
+                    </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-2">
                     <p className="text-sm">
                       All loaded picks share the same volatility regime on{' '}
                       <strong className="font-mono tabular">
                         {(regimeAgreement * 100).toFixed(0)}%
                       </strong>{' '}
                       of {commonDates.length} shared trading days. Descriptive overlap of realized
-                      volatility — not a signal, and window-relative per pick (see Methodology).
+                      volatility — not a signal, and window-relative per pick.
                     </p>
+                    <div
+                      role="img"
+                      aria-label={`Weekly regime dots per pick: ${ready.map(({ symbol }) => symbol).join(', ')}`}
+                      className="space-y-1"
+                    >
+                      {ready.map(({ symbol, data }, i) => (
+                        <p key={symbol} className="flex items-center gap-2 text-xs">
+                          <span className="w-14 shrink-0 font-mono font-medium" style={{ borderLeft: `4px solid ${pickColor(i)}`, paddingLeft: 6 }}>
+                            {symbol}
+                          </span>
+                          <span className="flex flex-wrap gap-x-1 font-mono" aria-hidden="true">
+                            {commonDates
+                              .filter((_, di) => di % 5 === 0)
+                              .map((d) => {
+                                const r = data.regimes?.[d] ?? '?';
+                                return (
+                                  <span
+                                    key={d}
+                                    title={`${fmtDate(d)}: ${r}`}
+                                    className={
+                                      r === 'tense'
+                                        ? 'text-temporal'
+                                        : r === 'calm'
+                                          ? 'text-gain'
+                                          : r === 'normal'
+                                            ? 'text-fg-muted'
+                                            : 'text-fg-dim'
+                                    }
+                                  >
+                                    {r === 'tense' ? '●' : r === 'calm' ? '○' : r === 'normal' ? '◐' : '·'}
+                                  </span>
+                                );
+                              })}
+                          </span>
+                        </p>
+                      ))}
+                      <p className="text-[11px] text-fg-dim">
+                        Weekly samples, oldest → newest. ● tense · ◐ normal · ○ calm · · warming/unknown. Color never carries meaning alone — hover any dot for date + label.
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
               )}

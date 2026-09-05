@@ -55,6 +55,17 @@ export function ConcludeNote({
     }
   };
 
+  const clear = () => {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      /* ignore */
+    }
+    setText('');
+    setSavedAt(null);
+    setIssues(null);
+  };
+
   const insert = (id: string) => {
     setText((t) => (t.endsWith(' ') || t === '' ? t : t + ' ') + `[${id}] `);
     setSavedAt(null);
@@ -102,6 +113,9 @@ export function ConcludeNote({
           </Button>
           <Button size="sm" variant="outline" onClick={check} disabled={checking || text.trim() === ''}>
             {checking ? 'Checking…' : 'Check my citations'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clear} disabled={checking || (text === '' && !issues)}>
+            Clear
           </Button>
           {savedAt ? (
             <span className="text-xs text-fg-dim">Saved {savedAt} — this browser only.</span>

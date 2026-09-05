@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { fmtDate } from '../lib/format';
+import { whyNoNews } from '../lib/whyEmpty';
 import { NEWS_COVERAGE_DISCLAIMER, newsSourceLabel, type Disclosure, type Filing, type NewsItem, type NewsSource } from '../types';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
@@ -48,11 +49,13 @@ export function EvidenceStream({
   disclosures,
   news,
   newsSource,
+  asOfDate,
 }: {
   filings: Filing[];
   disclosures: Disclosure[];
   news: NewsItem[];
   newsSource: NewsSource;
+  asOfDate: string;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -150,7 +153,7 @@ export function EvidenceStream({
           title={filter === 'news' ? 'No historical news found' : 'Nothing in this category'}
           body={
             filter === 'news'
-              ? 'No historical news was found for this period. This does not mean nothing happened — our sources do not have full coverage for this company and date.'
+              ? whyNoNews(newsSource, fmtDate(asOfDate))
               : 'No evidence of this kind was available before the selected date.'
           }
           action={
