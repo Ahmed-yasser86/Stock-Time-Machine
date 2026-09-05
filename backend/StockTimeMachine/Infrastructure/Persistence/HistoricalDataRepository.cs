@@ -107,6 +107,24 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             .ToListAsync(ct);
     }
 
+    public async Task<ArticleEmbedding?> GetEmbedding(string articleId, string model, CancellationToken ct = default) =>
+        await _db.ArticleEmbeddings
+            .FirstOrDefaultAsync(x => x.ArticleId == articleId && x.Model == model, ct);
+
+    public async Task StoreEmbedding(ArticleEmbedding embedding, CancellationToken ct = default)
+    {
+        var existing = await _db.ArticleEmbeddings.FindAsync(new object[] { embedding.ArticleId }, ct);
+        if (existing is null)
+            await _db.ArticleEmbeddings.AddAsync(embedding, ct);
+        else
+        {
+            existing.Model = embedding.Model;
+            existing.VectorJson = embedding.VectorJson;
+            existing.CachedAt = embedding.CachedAt;
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);

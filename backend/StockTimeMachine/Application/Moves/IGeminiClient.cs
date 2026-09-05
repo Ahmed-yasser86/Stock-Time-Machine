@@ -15,6 +15,7 @@ public interface IGeminiClient
 {
     bool IsEnabled { get; }
     string SummaryModel { get; }
+    string EmbeddingModel { get; }
     // One embedding vector per text, order-preserving. Throws on any failure
     // so callers can fall back to deterministic clustering.
     Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default);

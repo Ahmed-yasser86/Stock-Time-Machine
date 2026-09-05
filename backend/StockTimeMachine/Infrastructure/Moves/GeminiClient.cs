@@ -21,9 +21,16 @@ public class GeminiClient : IGeminiClient
     // 30k tokens/min budget shared by embeds + summaries: callers wait for
     // budget instead of tripping quota errors mid-investigation.
     private readonly TokenBucketRateLimiter _limiter = new(30000);
+    // Request-rate pacing on top: token budget alone does not cover the
+    // free tier's requests-per-minute ceiling (observed 429s). Sequential
+    // traffic spaces itself; concurrent traffic serializes on the gate.
+    private readonly SemaphoreSlim _paceGate = new(1, 1);
+    private readonly int _minIntervalMs;
+    private DateTime _lastCallUtc = DateTime.MinValue;
 
     public bool IsEnabled => !string.IsNullOrEmpty(_apiKey);
     public string SummaryModel => _summaryModel;
+    public string EmbeddingModel => _embeddingModel;
 
     public GeminiClient(HttpClient http, ILogger<GeminiClient> logger, IConfiguration config)
     {
@@ -33,7 +40,27 @@ public class GeminiClient : IGeminiClient
         _apiKey = config["Gemini:ApiKey"] ?? "";
         _embeddingModel = config["Gemini:EmbeddingModel"] ?? "gemini-embedding-2-preview";
         _summaryModel = config["Gemini:SummaryModel"] ?? "gemini-3.5-flash-lite";
+        _minIntervalMs = int.TryParse(config["Gemini:MinRequestIntervalMs"], out var ms) && ms > 0 ? ms : 2000;
         _http.Timeout = TimeSpan.FromSeconds(60);
+    }
+
+    private async Task PaceAsync(CancellationToken ct)
+    {
+        TimeSpan wait;
+        await _paceGate.WaitAsync(ct);
+        try
+        {
+            var now = DateTime.UtcNow;
+            var next = _lastCallUtc + TimeSpan.FromMilliseconds(_minIntervalMs);
+            wait = next > now ? next - now : TimeSpan.Zero;
+            _lastCallUtc = now + wait;
+        }
+        finally
+        {
+            _paceGate.Release();
+        }
+        if (wait > TimeSpan.Zero)
+            await Task.Delay(wait, ct);
     }
 
     public async Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
@@ -57,6 +84,7 @@ public class GeminiClient : IGeminiClient
         foreach (var chunk in chunks)
         {
             await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(chunk), ct);
+            await PaceAsync(ct);
             var body = new
             {
                 model = $"models/{_embeddingModel}",
@@ -104,6 +132,7 @@ public class GeminiClient : IGeminiClient
         {
             // Reserve prompt + output ceiling so summaries share the budget honestly.
             await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(prompt) + 768, ct);
+            await PaceAsync(ct);
             var body = new
             {
                 generationConfig = new
@@ -158,6 +187,7 @@ public class GeminiClient : IGeminiClient
         try
         {
             await _limiter.WaitAsync(TokenBucketRateLimiter.EstimateTokens(prompt) + 512, ct);
+            await PaceAsync(ct);
             var body = new
             {
                 generationConfig = new

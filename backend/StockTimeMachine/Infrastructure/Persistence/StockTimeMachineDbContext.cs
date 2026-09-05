@@ -12,6 +12,7 @@ public class StockTimeMachineDbContext : DbContext
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<SecFiling> SecFilings => Set<SecFiling>();
     public DbSet<NewsArticle> NewsArticles => Set<NewsArticle>();
+    public DbSet<ArticleEmbedding> ArticleEmbeddings => Set<ArticleEmbedding>();
     public DbSet<PricePoint> PricePoints => Set<PricePoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -49,6 +50,13 @@ public class StockTimeMachineDbContext : DbContext
             e.Property(n => n.CompanySymbol).HasMaxLength(10);
             e.Ignore(n => n.SentimentScore);
             e.HasIndex(n => new { n.CompanySymbol, n.PublishedAt });
+        });
+
+        modelBuilder.Entity<ArticleEmbedding>(e =>
+        {
+            e.HasKey(x => x.ArticleId);
+            e.Property(x => x.ArticleId).HasMaxLength(100);
+            e.Property(x => x.Model).HasMaxLength(100);
         });
 
         modelBuilder.Entity<PricePoint>(e =>

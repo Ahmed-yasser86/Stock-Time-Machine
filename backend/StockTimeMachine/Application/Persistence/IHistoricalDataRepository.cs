@@ -13,6 +13,10 @@ public interface IHistoricalDataRepository
     // so a burst of rows from one source can never push another source's rows
     // out of the window. Null/empty source keeps the legacy unfiltered read.
     Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default);
+    // Embedding vector cache (read-through): repeat investigations reuse
+    // vectors instead of re-spending provider quota. Keyed by article + model.
+    Task<ArticleEmbedding?> GetEmbedding(string articleId, string model, CancellationToken ct = default);
+    Task StoreEmbedding(ArticleEmbedding embedding, CancellationToken ct = default);
     Task<IReadOnlyList<SecFiling>> GetFilingsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default);
     Task<IReadOnlyList<PricePoint>> GetPricesAsOf(string companySymbol, DateOnly asOfDate, int days = 30, CancellationToken ct = default);
     Task<IReadOnlyList<PricePoint>> GetPriceRange(string companySymbol, DateOnly from, DateOnly to, CancellationToken ct = default);
