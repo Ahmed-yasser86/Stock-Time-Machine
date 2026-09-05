@@ -121,6 +121,12 @@ export function NarrativeTopics({
             ? `AI-grouped threads from ${data.articlesConsidered} cached article(s) — embeddings decide membership, shared terms name each thread.`
             : `Keyword-overlap clusters from ${data.articlesConsidered} cached article(s) — top terms
           label each thread, not machine understanding.`}
+          {data.articlesConsidered > data.articlesClustered && (
+            <span>
+              {' '}Newest {data.articlesClustered} of {data.articlesConsidered} clustered — the
+              embedding budget ceiling leaves older ones out, stated here instead of silently.
+            </span>
+          )}
         </p>
       </CardHeader>
       <CardContent className="space-y-2">

@@ -193,6 +193,7 @@ public class MovesController : ControllerBase
             AsOfDate: result.AsOfDate,
             NewsSource: result.NewsSource,
             ArticlesConsidered: result.ArticlesConsidered,
+            ArticlesClustered: result.ArticlesClustered,
             ClusteringMethod: result.ClusteringMethod,
             Topics: result.Topics.Select(t => new TopicClusterDto(
                 t.LabelTerms, t.ArticleIds, t.RepresentativeTitle,

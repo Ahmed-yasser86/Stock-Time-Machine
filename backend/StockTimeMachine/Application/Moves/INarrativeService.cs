@@ -6,6 +6,7 @@ public class NarrativeTopicsResult
     public DateOnly AsOfDate { get; set; }
     public string NewsSource { get; set; } = NewsSources.Gdelt;
     public int ArticlesConsidered { get; set; }
+    public int ArticlesClustered { get; set; }
     public List<TopicCluster> Topics { get; set; } = new();
     // "gemini-embeddings" when the AI path held end to end, else
     // "tf-idf-fallback" — the UI prints whichever it was.
