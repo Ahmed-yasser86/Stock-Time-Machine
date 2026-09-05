@@ -36,6 +36,14 @@ public class MarketAuxNewsProvider : INewsProvider
     public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default) =>
         SearchAsync(symbol, companyName: null, cutoffDate, ct);
 
+    // Interval-complete retrieval: the trailing window is traversed one
+    // deterministic day at a time (limit is per-request, so one range query
+    // lets the busiest day starve the rest). Days merged, deduped by article
+    // id, newest-first. A 429 aborts remaining days; other per-day failures
+    // degrade loudly without voiding good days.
+    private const int WindowDaysBack = 7;
+    private const int DayLimit = 20;
+
     public async Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, string? companyName, DateOnly cutoffDate, CancellationToken ct = default)
     {
         if (!IsConfigured)
@@ -44,18 +52,65 @@ public class MarketAuxNewsProvider : INewsProvider
             return Array.Empty<NewsArticle>();
         }
 
-        await _limiter.AcquireAsync(0, ct);
         var normalized = symbol.Trim().ToUpperInvariant();
         var cutoff = TemporalBoundary.GetCutoffUtc(cutoffDate);
-        // published_before is day-granular-safe: push a day out, then enforce the
-        // exact cutoff client-side (defense in depth, same as other providers).
-        var after = cutoffDate.AddDays(-7).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var before = cutoffDate.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var days = Enumerable.Range(0, WindowDaysBack + 1)
+            .Select(i => cutoffDate.AddDays(-WindowDaysBack + i))
+            .ToList();
+
+        var results = new List<NewsArticle>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var failedDays = new List<DateOnly>();
+        foreach (var day in days)
+        {
+            await _limiter.AcquireAsync(0, ct);
+            try
+            {
+                foreach (var article in await FetchDay(normalized, day, cutoff, ct))
+                {
+                    if (seen.Add(article.Id))
+                        results.Add(article);
+                }
+            }
+            catch (RateLimitExceededException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failedDays.Add(day);
+                _logger.LogWarning(ex, "MarketAux day {Day} failed for {Symbol}; keeping other days", day, normalized);
+            }
+        }
+
+        var represented = results
+            .Select(n => DateOnly.FromDateTime(n.PublishedAt)).Distinct().OrderBy(d => d).ToList();
+        _logger.LogInformation(
+            "MarketAux coverage for {Symbol}: requested [{Start}..{End}], traversed {Traversed}/{Total} days, {Articles} articles, represented [{Represented}], failed [{Failed}]",
+            normalized, days.First(), days.Last(), days.Count - failedDays.Count, days.Count, results.Count,
+            string.Join(",", represented), string.Join(",", failedDays));
+
+        return results
+            .OrderByDescending(n => n.PublishedAt)
+            .ThenBy(n => n.Id)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<NewsArticle>> FetchDay(
+        string normalized, DateOnly day, DateTime cutoff, CancellationToken ct)
+    {
+        // Per-day bounds with the established +1-day overlap; the exact cutoff
+        // is enforced client-side below regardless of provider windowing.
+        var after = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var before = day.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         var url = $"{_baseUrl}/v1/news/all?symbols={Uri.EscapeDataString(normalized)}" +
                   $"&filter_entities=true&language=en&published_after={after}&published_before={before}" +
-                  $"&limit=20&api_token={Uri.EscapeDataString(_apiKey)}";
-        _logger.LogInformation("Fetching MarketAux news for {Symbol} between {Start} and {End}", normalized, after, before);
+                  $"&limit={DayLimit}&api_token={Uri.EscapeDataString(_apiKey)}";
 
         try
         {
@@ -106,27 +161,26 @@ public class MarketAuxNewsProvider : INewsProvider
                     SentimentScore = ExtractSentiment(item, normalized),
                 });
 
-                if (results.Count >= 20)
+                if (results.Count >= DayLimit)
                     break;
             }
 
-            _logger.LogInformation("Found {Count} MarketAux articles for {Symbol}", results.Count, normalized);
             return results;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (OperationCanceledException ex)
         {
-            _logger.LogWarning(ex, "MarketAux request timed out for {Symbol}", symbol);
+            _logger.LogWarning(ex, "MarketAux request timed out for {Symbol}", normalized);
             return Array.Empty<NewsArticle>();
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "MarketAux request failed for {Symbol}", symbol);
+            _logger.LogWarning(ex, "MarketAux request failed for {Symbol}", normalized);
             return Array.Empty<NewsArticle>();
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "MarketAux JSON parse failed for {Symbol}", symbol);
+            _logger.LogWarning(ex, "MarketAux JSON parse failed for {Symbol}", normalized);
             return Array.Empty<NewsArticle>();
         }
     }

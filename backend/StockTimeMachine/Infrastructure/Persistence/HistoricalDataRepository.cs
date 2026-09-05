@@ -57,21 +57,57 @@ public class HistoricalDataRepository : IHistoricalDataRepository
     public async Task StoreNews(string companySymbol, IEnumerable<NewsArticle> articles, CancellationToken ct = default)
     {
         var symbol = companySymbol.ToUpperInvariant();
-        var existing = await _db.NewsArticles
-            .Where(n => n.CompanySymbol == symbol)
-            .Select(n => n.Id)
-            .ToListAsync(ct);
-        var existingSet = new HashSet<string>(existing, StringComparer.Ordinal);
+        // Article ids are content hashes: GLOBAL, not per-symbol. The same URL
+        // fetched under two symbols (shared/syndicated coverage) must not PK-
+        // collide and void the whole batch — dedupe globally, first fetch wins
+        // ownership. Reads stay symbol-partitioned as before.
+        var incoming = articles.Where(a => !string.IsNullOrEmpty(a.Id)).ToList();
+        if (incoming.Count == 0) return;
+        var wanted = new HashSet<string>(incoming.Select(a => a.Id), StringComparer.Ordinal);
+        var existingSet = new HashSet<string>(
+            await _db.NewsArticles.Where(n => wanted.Contains(n.Id)).Select(n => n.Id).ToListAsync(ct),
+            StringComparer.Ordinal);
 
-        var fresh = articles
-            .Where(a => !string.IsNullOrEmpty(a.Id) && !existingSet.Contains(a.Id))
+        var fresh = incoming
+            .Where(a => !existingSet.Contains(a.Id))
             .Select(a => { a.CompanySymbol = symbol; return a; })
             .ToList();
         if (fresh.Count == 0) return;
 
         _db.NewsArticles.AddRange(fresh);
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Stored {Count} news articles for {Symbol}", fresh.Count, symbol);
+        int stored;
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+            stored = fresh.Count;
+        }
+        catch (DbUpdateException ex)
+        {
+            // Concurrent jobs can still race the check above: fall back to
+            // row-by-row insertion, skipping conflicts, so one duplicate never
+            // voids the batch. Tracker is reset first (failed SaveChanges
+            // leaves it unusable).
+            _logger.LogWarning(ex, "News batch insert collided for {Symbol}; retrying row-by-row", symbol);
+            foreach (var entry in _db.ChangeTracker.Entries().ToList())
+                entry.State = EntityState.Detached;
+            stored = 0;
+            foreach (var article in fresh)
+            {
+                try
+                {
+                    _db.NewsArticles.Add(article);
+                    await _db.SaveChangesAsync(ct);
+                    stored++;
+                }
+                catch (DbUpdateException dup)
+                {
+                    _logger.LogDebug(dup, "Skipping duplicate article {Id}", article.Id);
+                    foreach (var entry in _db.ChangeTracker.Entries().ToList())
+                        entry.State = EntityState.Detached;
+                }
+            }
+        }
+        _logger.LogInformation("Stored {Count} news articles for {Symbol}", stored, symbol);
     }
 
     public async Task<IReadOnlyList<SecFiling>> GetFilingsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default)

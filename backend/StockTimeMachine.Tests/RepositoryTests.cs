@@ -221,6 +221,29 @@ public class HistoricalDataRepositoryTests
     }
 
     [Fact]
+    public async Task StoreNews_SkipsGloballyDuplicateIds()
+    {
+        using var db = CreateDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+
+        // Same URL fetched under two symbols: global content identity wins,
+        // first fetch keeps ownership — and the batch must NOT explode.
+        await repo.StoreNews("MSFT", new List<NewsArticle>
+        {
+            new() { Id = "shared", Title = "Shared", Source = "GDELT Cloud", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/shared", CompanySymbol = "MSFT" },
+        });
+        await repo.StoreNews("AMZN", new List<NewsArticle>
+        {
+            new() { Id = "shared", Title = "Shared", Source = "GDELT Cloud", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/shared", CompanySymbol = "AMZN" },
+            new() { Id = "fresh", Title = "Fresh", Source = "GDELT Cloud", PublishedAt = new DateTime(2020, 1, 11), Url = "https://example.com/fresh", CompanySymbol = "AMZN" },
+        });
+
+        Assert.Equal(2, await db.NewsArticles.CountAsync());
+        var amzn = await repo.GetNewsAsOf("AMZN", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+        Assert.Equal("fresh", Assert.Single(amzn).Id);
+    }
+
+    [Fact]
     public async Task GetPricesAfter_ShouldReturnOnlyFuturePrices()
     {
         using var db = CreateDb();
