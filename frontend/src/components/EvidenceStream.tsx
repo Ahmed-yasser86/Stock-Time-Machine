@@ -6,7 +6,7 @@ import { whyNoNews } from '../lib/whyEmpty';
 import { NEWS_COVERAGE_DISCLAIMER, newsSourceLabel, type Disclosure, type Filing, type NewsItem, type NewsSource } from '../types';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
-import { buttonVariants } from './ui/button';
+import { Button, buttonVariants } from './ui/button';
 import { EmptySection } from './StateBlocks';
 
 type Filter = 'all' | 'filings' | 'disclosures' | 'news';
@@ -72,6 +72,7 @@ export function EvidenceStream({
   companyName?: string;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
+  const [showAll, setShowAll] = useState(false);
 
   const items: StreamItem[] = [
     ...filings.map((f) => ({
@@ -170,6 +171,11 @@ export function EvidenceStream({
         </Alert>
       )}
 
+      {items.length > 20 && !showAll && (
+        <p className="text-xs text-fg-dim" aria-live="polite">
+          Showing 20 of {items.length} evidence items retrieved for this window.
+        </p>
+      )}
       {items.length === 0 ? (
         <EmptySection
           title={filter === 'news' ? 'No historical news found' : 'Nothing in this category'}
@@ -187,13 +193,25 @@ export function EvidenceStream({
           }
         />
       ) : (
-        <ul className="density-compact evidence-rail space-y-2">
-          {items.map((item) => (
-            <li key={item.key} className="rounded-lg border border-border bg-surface p-3 text-sm">
-              {item.node}
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="density-compact evidence-rail space-y-2">
+            {(showAll ? items : items.slice(0, 20)).map((item) => (
+              <li key={item.key} className="rounded-lg border border-border bg-surface p-3 text-sm">
+                {item.node}
+              </li>
+            ))}
+          </ul>
+          {items.length > 20 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowAll((v) => !v)}
+              aria-expanded={showAll}
+            >
+              {showAll ? 'Show fewer' : `Show all ${items.length} retrieved items`}
+            </Button>
+          )}
+        </>
       )}
     </div>
   );
