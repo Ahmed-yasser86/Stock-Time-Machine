@@ -198,6 +198,45 @@ public class CopilotService : ICopilotService
         }
     }
 
+    public async Task<MethodologyAnswer?> ExplainMethodology(string question, string? facts, CancellationToken ct = default)
+    {
+        const string Refusal = "The methodology does not cover that.";
+        try
+        {
+            if (!_gemini.IsEnabled || string.IsNullOrWhiteSpace(question) || question.Length > 500)
+                return null;
+            var sections = MethodologyContent.Retrieve(question);
+            if (sections.Count == 0)
+                return new MethodologyAnswer { Answer = Refusal, CitedSections = new List<string>(), Model = _gemini.SummaryModel };
+            var sb = new StringBuilder();
+            sb.AppendLine("You answer questions about how the Stock Time Machine product works.");
+            sb.AppendLine("Answer ONLY from the SECTIONS and FACTS below. If the answer is not in them, reply with exactly:");
+            sb.AppendLine(Refusal);
+            sb.AppendLine("Never use outside knowledge. Never predict, advise, or opine. Cite sections like [Temporal Boundary].");
+            sb.AppendLine();
+            sb.AppendLine("SECTIONS:");
+            foreach (var (heading, body) in sections)
+                sb.AppendLine($"[{heading}] {body}\n");
+            if (!string.IsNullOrWhiteSpace(facts))
+                sb.AppendLine($"FACTS ABOUT THE USER'S CURRENT VIEW:\n{(facts.Length > 1000 ? facts.Substring(0, 1000) : facts)}\n");
+            sb.AppendLine($"QUESTION: {question}");
+            var brief = await _gemini.SummarizeClusterAsync(sb.ToString(), ct);
+            if (brief is null)
+                return null;
+            return new MethodologyAnswer
+            {
+                Answer = brief.Summary,
+                CitedSections = sections.Select(s => s.Heading).ToList(),
+                Model = brief.Model,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Methodology explainer failed");
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<NoteIssue>> ReviewNote(string symbol, DateOnly asOfDate, string? newsSource, string note, CancellationToken ct = default)
     {
         var empty = Array.Empty<NoteIssue>();

@@ -272,6 +272,13 @@ export interface ReviewResponse {
   issues: NoteIssue[];
 }
 
+export interface ExplainerResponse {
+  question: string;
+  answer: string;
+  citedSections: string[];
+  model: string;
+}
+
 export interface NarrativesResponse {
   company: CompanySummary;
   asOfDate: string;

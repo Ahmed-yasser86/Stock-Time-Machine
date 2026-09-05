@@ -3,6 +3,7 @@ import type {
   CompareBriefResponse,
   CompareThreadsResponse,
   CopilotBriefResponse,
+  ExplainerResponse,
   LiveQuote,
   ReviewResponse,
   MethodologyDoc,
@@ -92,6 +93,12 @@ export const api = {
     body: { symbol: string; date: string; newsSource?: NewsSource; ids?: string[]; gaps?: string[] },
   ) =>
     request<CopilotBriefResponse>(`/api/timemachine/copilot/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  explain: (body: { question: string; facts?: string }) =>
+    request<ExplainerResponse>('/api/timemachine/copilot/explain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),

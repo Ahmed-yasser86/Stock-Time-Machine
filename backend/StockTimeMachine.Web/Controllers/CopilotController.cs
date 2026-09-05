@@ -85,6 +85,19 @@ public class CopilotController : ControllerBase
 
     public sealed record SuggestRequest(string? Symbol, string? Date, string? NewsSource, IReadOnlyList<string>? Gaps);
 
+    public sealed record ExplainRequest(string? Question, string? Facts);
+
+    [HttpPost("explain")]
+    public async Task<ActionResult<ExplainerResponse>> Explain([FromBody] ExplainRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Question) || req.Question.Length > 500)
+            throw new InvalidHistoricalDateException("A question of up to 500 characters is required.");
+        var answer = await _copilot.ExplainMethodology(req.Question, req.Facts, ct);
+        if (answer is null)
+            return Ok(new ExplainerResponse(req.Question, "The explainer is unavailable right now — the methodology sections above stand on their own.", Array.Empty<string>(), ""));
+        return Ok(new ExplainerResponse(req.Question, answer.Answer, answer.CitedSections, answer.Model));
+    }
+
     [HttpPost("review")]
     public async Task<ActionResult<ReviewResponse>> Review([FromBody] CopilotRequest req, CancellationToken ct)
     {

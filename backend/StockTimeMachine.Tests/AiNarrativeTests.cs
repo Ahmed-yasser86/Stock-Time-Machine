@@ -350,6 +350,60 @@ public class AiNarrativeTests
     }
 
     [Fact]
+    public void MethodologyRetrieve_RanksRelevantSection()
+    {
+        var hits = MethodologyContent.Retrieve("why is there no news before my cutoff date");
+
+        Assert.NotEmpty(hits);
+        Assert.Contains(hits, h => h.Heading == "News Sources" || h.Heading == "Temporal Boundary");
+    }
+
+    [Fact]
+    public void MethodologyRetrieve_EmptyQuestion_ReturnsEmpty()
+    {
+        Assert.Empty(MethodologyContent.Retrieve("!!!"));
+    }
+
+    [Fact]
+    public async Task Copilot_Explain_GroundedInRetrievedSections()
+    {
+        var db = NewDb();
+        var gemini = new FixedGeminiStub();
+        var sut = Copilot(db, gemini);
+
+        var answer = await sut.ExplainMethodology("why is my news empty?", "symbol=MSFT date=2026-07-03");
+
+        Assert.NotNull(answer);
+        Assert.NotEmpty(answer!.CitedSections);
+        Assert.Contains(gemini.SeenPrompts, p => p.Contains("Answer ONLY from the SECTIONS"));
+    }
+
+    [Fact]
+    public async Task Copilot_Explain_NoRetrieval_ReturnsRefusal()
+    {
+        var db = NewDb();
+        var gemini = new FixedGeminiStub();
+        var sut = Copilot(db, gemini);
+
+        // Gibberish retrieves nothing: refusal without a model call.
+        var answer = await sut.ExplainMethodology("zzzqqq xxxwww", null);
+
+        Assert.NotNull(answer);
+        Assert.Equal("The methodology does not cover that.", answer!.Answer);
+        Assert.Empty(answer.CitedSections);
+        Assert.DoesNotContain(gemini.SeenPrompts, p => p.Contains("QUESTION: zzzqqq"));
+    }
+
+    [Fact]
+    public async Task Copilot_Explain_DisabledAi_ReturnsNull()
+    {
+        var db = NewDb();
+        var sut = Copilot(db, new DisabledGeminiStub());
+
+        Assert.Null(await sut.ExplainMethodology("why empty?", null));
+    }
+
+    [Fact]
     public void EmbeddingClustering_IdenticalVectorsMerge_OrthogonalDoNot()
     {
         var topics = EmbeddingClustering.Cluster(new[]
