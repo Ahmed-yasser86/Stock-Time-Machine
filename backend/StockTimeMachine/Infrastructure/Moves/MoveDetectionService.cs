@@ -24,6 +24,11 @@ public class MoveDetectionService : IMoveDetectionService
     // move so the provider's trailing window covers the most evidence.
     private const int NewsStaleAfterDays = 7;
     private readonly HashSet<string> _newsRefreshed = new(StringComparer.Ordinal);
+    // Per-request fetch-failure guard: when the provider throws for one move
+    // (throttled, down), the next moves' weeks must not re-hammer it seconds
+    // later. Empty-but-successful fetches still retry per move — different
+    // weeks, legitimately different answers.
+    private readonly HashSet<string> _newsFetchFailed = new(StringComparer.Ordinal);
     // Retail discussion lookback per move: 7 days back from the move date.
     // A single per-investigation fetch covers [earliestMove-7d, asOf], then
     // each move slices its own [moveDate-7d, moveDate] window.
@@ -334,15 +339,37 @@ public class MoveDetectionService : IMoveDetectionService
             // source's rows out of the read window.
             var fromSource = (await _dataRepo.GetNewsAsOf(symbol, moveDate, newsSource, ct))
                 .Where(n => IsFromSource(n, newsSource)).ToList();
+            var fetchKey = symbol + "|" + newsSource;
             if (fromSource.Count == 0)
             {
-                var provider = _newsFactory.Get(newsSource);
-                var fresh = await provider.SearchAsync(symbol, companyName, moveDate, ct);
-                if (fresh.Count > 0)
+                if (_newsFetchFailed.Contains(fetchKey))
                 {
-                    await _dataRepo.StoreNews(symbol, fresh, ct);
-                    var reread = await _dataRepo.GetNewsAsOf(symbol, moveDate, newsSource, ct);
-                    fromSource = reread.Where(n => IsFromSource(n, newsSource)).ToList();
+                    // Already-known outage this request: skip the fetch but
+                    // still mark the layer — silent would misread as "no news".
+                    evidence.UnavailableLayers.Add("news");
+                }
+                else
+                {
+                    try
+                    {
+                        var provider = _newsFactory.Get(newsSource);
+                        var fresh = await provider.SearchAsync(symbol, companyName, moveDate, ct);
+                        if (fresh.Count > 0)
+                        {
+                            await _dataRepo.StoreNews(symbol, fresh, ct);
+                            var reread = await _dataRepo.GetNewsAsOf(symbol, moveDate, newsSource, ct);
+                            fromSource = reread.Where(n => IsFromSource(n, newsSource)).ToList();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // One failed fetch per request: provider-level retries
+                        // already ran inside the provider; re-hammering per move
+                        // only deepens throttling. Re-thrown below via the shared
+                        // handler so the layer is still marked honestly.
+                        _newsFetchFailed.Add(fetchKey);
+                        throw;
+                    }
                 }
             }
             evidence.News = fromSource.Take(5).ToList();

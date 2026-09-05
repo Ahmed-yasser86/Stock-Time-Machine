@@ -16,6 +16,9 @@ public class GdeltNewsProvider : INewsProvider
     // (environment variable Gdelt__ApiKey), never logged, never sent to browsers.
     // When absent, the keyless GDELT Project API is used.
     private readonly string _cloudApiKey;
+    private readonly int _minIntervalMs;
+    private readonly SemaphoreSlim _paceGate = new(1, 1);
+    private DateTime _lastCallUtc = DateTime.MinValue;
 
     public GdeltNewsProvider(HttpClient http, ILogger<GdeltNewsProvider> logger, IConfiguration config)
     {
@@ -23,9 +26,34 @@ public class GdeltNewsProvider : INewsProvider
         _logger = logger;
         _baseUrl = (config["Gdelt:BaseUrl"] ?? "https://api.gdeltproject.org/api/v2").TrimEnd('/');
         _cloudApiKey = config["Gdelt:ApiKey"] ?? "";
+        _minIntervalMs = int.TryParse(config["Gdelt:MinRequestIntervalMs"], out var ms) && ms >= 0 ? ms : 3000;
     }
 
-    public async Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default)
+    public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default) =>
+        GdeltResilience.ExecuteAsync(
+            ct2 => SearchCoreAsync(symbol, cutoffDate, ct2),
+            _logger, $"GDELT Project {symbol}", ct);
+
+    private async Task PaceAsync(CancellationToken ct)
+    {
+        TimeSpan wait;
+        await _paceGate.WaitAsync(ct);
+        try
+        {
+            var now = DateTime.UtcNow;
+            var next = _lastCallUtc + TimeSpan.FromMilliseconds(_minIntervalMs);
+            wait = next > now ? next - now : TimeSpan.Zero;
+            _lastCallUtc = now + wait;
+        }
+        finally
+        {
+            _paceGate.Release();
+        }
+        if (wait > TimeSpan.Zero)
+            await Task.Delay(wait, ct);
+    }
+
+    private async Task<IReadOnlyList<NewsArticle>> SearchCoreAsync(string symbol, DateOnly cutoffDate, CancellationToken ct)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(cutoffDate);
         var start = cutoffDate.AddDays(-7).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
@@ -39,9 +67,13 @@ public class GdeltNewsProvider : INewsProvider
 
         _logger.LogInformation("Fetching news from GDELT for {Symbol} between {Start} and {End}", symbol, start, end);
 
+        await PaceAsync(ct);
         try
         {
             using var response = await _http.GetAsync(url, ct);
+            if ((int)response.StatusCode == 429)
+                throw new RateLimitExceededException("GDELT Project rate limit exceeded.",
+                    GdeltResilience.ParseRetryAfter(response.Headers));
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync(ct);
