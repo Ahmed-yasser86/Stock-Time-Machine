@@ -52,6 +52,49 @@ public class TimeMachineServiceTests
             NullLogger<TimeMachineService>.Instance);
     }
 
+    private sealed class CountingNewsProvider : INewsProvider
+    {
+        private readonly IReadOnlyList<NewsArticle> _articles;
+        public int Calls { get; private set; }
+        public CountingNewsProvider(IReadOnlyList<NewsArticle> articles) => _articles = articles;
+        public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(_articles);
+        }
+    }
+
+    [Fact]
+    public async Task GetSnapshot_StaleNewsCache_RefreshesOnce()
+    {
+        var db = new StockTimeMachineDbContext(
+            new DbContextOptionsBuilder<StockTimeMachineDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("TSLA", new[]
+        {
+            new NewsArticle { Id = "old", Title = "Market notes", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 20), Url = "https://example.com/old", CompanySymbol = "TSLA" },
+        });
+        var news = new CountingNewsProvider(new[]
+        {
+            new NewsArticle { Id = "fresh", Title = "Tesla recall expands", Source = "GDELT", PublishedAt = new DateTime(2020, 2, 10), Url = "https://example.com/fresh", CompanySymbol = "TSLA" },
+        });
+        var sut = new TimeMachineService(
+            new CompanyRepository(db, NullLogger<CompanyRepository>.Instance),
+            repo, _secEdgarMock.Object, _alphaMock.Object, _directory,
+            Array.Empty<ICompanyLookup>(),
+            new FixedNewsProviderFactory(news),
+            NullLogger<TimeMachineService>.Instance);
+
+        var snapshot = await sut.GetSnapshot("TSLA", new DateOnly(2020, 2, 20), NewsSources.Gdelt);
+
+        // Jan-20 cache vs Feb-20 cutoff: stale → exactly one refresh; the
+        // company-naming article leads even though it is older than nothing here.
+        Assert.Equal(1, news.Calls);
+        Assert.Contains(snapshot.RecentNews, n => n.Id == "fresh");
+        Assert.Equal("fresh", snapshot.RecentNews[0].Id);
+    }
+
     [Fact]
     public async Task GetSnapshot_FutureDate_Throws()
     {

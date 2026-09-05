@@ -289,18 +289,46 @@ public class TimeMachineService : ITimeMachineService
 
     private async Task<IReadOnlyList<NewsArticle>> ResolveNews(string symbol, string? companyName, string newsSource, DateOnly asOfDate, CancellationToken ct)
     {
+        // Same coverage-freeze guard as the moves lens: a non-empty cache must
+        // not shadow later coverage. One live refresh per snapshot when the
+        // newest cached row predates the cutoff by 7+ days.
         var fromSelectedSource = (await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct))
             .Where(n => IsFromSource(n, newsSource)).ToList();
+        var newest = fromSelectedSource
+            .Select(n => (DateTime?)n.PublishedAt)
+            .Max();
+        if (newest is not null &&
+            DateOnly.FromDateTime(newest.Value) < asOfDate.AddDays(-7))
+        {
+            try
+            {
+                var provider = _newsFactory.Get(newsSource);
+                var refreshed = await provider.SearchAsync(symbol, companyName, asOfDate, ct);
+                if (refreshed.Count > 0)
+                {
+                    await _dataRepo.StoreNews(symbol, refreshed, ct);
+                    var reread = await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
+                    fromSelectedSource = reread.Where(n => IsFromSource(n, newsSource)).ToList();
+                    _logger.LogInformation("Stale snapshot news refreshed for {Symbol}: {Count} rows", symbol, fromSelectedSource.Count);
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Stale snapshot news refresh failed for {Symbol}; serving cached rows", symbol);
+            }
+        }
         if (fromSelectedSource.Count > 0)
-            return fromSelectedSource;
+            return NewsRelevance.OrderByMention(fromSelectedSource, symbol, companyName);
 
-        var provider = _newsFactory.Get(newsSource);
-        var fresh = await provider.SearchAsync(symbol, companyName, asOfDate, ct);
+        var fallbackProvider = _newsFactory.Get(newsSource);
+        var fresh = await fallbackProvider.SearchAsync(symbol, companyName, asOfDate, ct);
         if (fresh.Count > 0)
         {
             await _dataRepo.StoreNews(symbol, fresh, ct);
             var reread = await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
-            return reread.Where(n => IsFromSource(n, newsSource)).ToList();
+            return NewsRelevance.OrderByMention(
+                reread.Where(n => IsFromSource(n, newsSource)), symbol, companyName);
         }
 
         return fromSelectedSource;

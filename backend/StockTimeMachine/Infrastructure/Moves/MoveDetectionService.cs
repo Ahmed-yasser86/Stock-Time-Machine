@@ -384,7 +384,9 @@ public class MoveDetectionService : IMoveDetectionService
                     }
                 }
             }
-            evidence.News = fromSource.Take(5).ToList();
+            // Company-naming articles first (deterministic centrality, same
+            // rows — see NewsRelevance), then most recent. Nothing hidden.
+            evidence.News = NewsRelevance.OrderByMention(fromSource, symbol, companyName).Take(5).ToList();
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)

@@ -44,18 +44,32 @@ interface StreamItem {
  * provenance on every item, replacing the tabbed view. Filter chips narrow
  * by category; counts stay visible so absence reads as fact, not bug.
  */
+function namesCompany(title: string, symbol?: string, companyName?: string): boolean {
+  if (symbol && title.toLowerCase().includes(symbol.toLowerCase())) return true;
+  if (companyName) {
+    const first = companyName.split(' ').find((w) => w.length >= 3);
+    if (first && title.toLowerCase().includes(first.toLowerCase())) return true;
+    if (title.toLowerCase().includes(companyName.toLowerCase())) return true;
+  }
+  return false;
+}
+
 export function EvidenceStream({
   filings,
   disclosures,
   news,
   newsSource,
   asOfDate,
+  symbol,
+  companyName,
 }: {
   filings: Filing[];
   disclosures: Disclosure[];
   news: NewsItem[];
   newsSource: NewsSource;
   asOfDate: string;
+  symbol?: string;
+  companyName?: string;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -99,7 +113,15 @@ export function EvidenceStream({
           <p>
             <a href={n.url} target="_blank" rel="noreferrer" className="font-medium underline-offset-4 hover:underline">
               {n.title}
-            </a>
+            </a>{' '}
+            {namesCompany(n.title, symbol, companyName) && (
+              <span
+                className="rounded-full bg-accent px-1.5 py-0.5 font-mono text-[11px] tabular"
+                title="The headline names this company — more likely central to it than entity-matched coverage"
+              >
+                names {symbol}
+              </span>
+            )}
           </p>
           <ProvenanceChip source={n.source} date={n.publishedAt} />
         </div>
