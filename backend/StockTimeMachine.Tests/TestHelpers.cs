@@ -26,22 +26,28 @@ public sealed class StubHttpMessageHandler : HttpMessageHandler
 // URL-routed canned handler for multi-call provider flows (resolve → fetch).
 public sealed class RoutedHttpMessageHandler : HttpMessageHandler
 {
-    private readonly List<(Func<HttpRequestMessage, bool> Match, HttpStatusCode Status, string Body)> _routes = new();
+    private readonly List<(Func<HttpRequestMessage, bool> Match, HttpStatusCode Status, string Body, Dictionary<string, string>? Headers)> _routes = new();
     public int Calls { get; private set; }
 
-    public RoutedHttpMessageHandler When(Func<HttpRequestMessage, bool> match, string body, HttpStatusCode status = HttpStatusCode.OK)
+    public RoutedHttpMessageHandler When(Func<HttpRequestMessage, bool> match, string body, HttpStatusCode status = HttpStatusCode.OK, Dictionary<string, string>? headers = null)
     {
-        _routes.Add((match, status, body));
+        _routes.Add((match, status, body, headers));
         return this;
     }
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Calls++;
-        foreach (var (match, status, body) in _routes)
+        foreach (var (match, status, body, headers) in _routes)
         {
             if (match(request))
-                return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+            {
+                var resp = new HttpResponseMessage(status) { Content = new StringContent(body) };
+                if (headers is not null)
+                    foreach (var (k, v) in headers)
+                        resp.Headers.TryAddWithoutValidation(k, v);
+                return Task.FromResult(resp);
+            }
         }
         return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") });
     }

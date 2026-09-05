@@ -328,6 +328,36 @@ public class MoveDetectionServiceTests
         Assert.Empty(evidence.Reaction);
     }
 
+    private sealed class ThrottlingNewsProvider : INewsProvider
+    {
+        public int Calls { get; private set; }
+        public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default) =>
+            throw new RateLimitExceededException("throttled");
+        public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, string? companyName, DateOnly cutoffDate, CancellationToken ct = default)
+        {
+            Calls++;
+            throw new RateLimitExceededException("throttled");
+        }
+    }
+
+    [Fact]
+    public async Task GetMoves_ProviderFailure_FetchesOncePerInvestigation()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var news = new ThrottlingNewsProvider();
+        var sut = Sut(db, av, directory, news);
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        // One failed fetch per investigation — later moves must not re-hammer
+        // a throttled provider seconds later.
+        Assert.Equal(1, news.Calls);
+        Assert.NotEmpty(window.KeyMoves);
+        Assert.All(window.EvidenceByDate.Values,
+            e => Assert.Contains("news", e.UnavailableLayers));
+    }
+
     [Fact]
     public async Task GetMoves_SocialFailure_MarksLayerUnavailable()
     {

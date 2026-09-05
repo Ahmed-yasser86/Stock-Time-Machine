@@ -27,6 +27,11 @@ public class GdeltCloudNewsProvider : INewsProvider
     private readonly ILogger<GdeltCloudNewsProvider> _logger;
     private readonly string _apiKey;
     private readonly string _baseUrl;
+    // Request pacing + throttled retries (see GdeltResilience): a throttled
+    // provider must yield, never hammer. Singleton: safe for instance fields.
+    private readonly int _minIntervalMs;
+    private readonly SemaphoreSlim _paceGate = new(1, 1);
+    private DateTime _lastCallUtc = DateTime.MinValue;
 
     public GdeltCloudNewsProvider(HttpClient http, ILogger<GdeltCloudNewsProvider> logger, IConfiguration config)
     {
@@ -34,6 +39,7 @@ public class GdeltCloudNewsProvider : INewsProvider
         _logger = logger;
         _apiKey = config["Gdelt:ApiKey"] ?? "";
         _baseUrl = (config["Gdelt:CloudBaseUrl"] ?? "https://gdeltcloud.com").TrimEnd('/');
+        _minIntervalMs = int.TryParse(config["Gdelt:MinRequestIntervalMs"], out var ms) && ms >= 0 ? ms : 3000;
     }
 
     public bool IsConfigured => !string.IsNullOrEmpty(_apiKey);
@@ -41,7 +47,31 @@ public class GdeltCloudNewsProvider : INewsProvider
     public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, DateOnly cutoffDate, CancellationToken ct = default) =>
         SearchAsync(symbol, companyName: null, cutoffDate, ct);
 
-    public async Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, string? companyName, DateOnly cutoffDate, CancellationToken ct = default)
+    public Task<IReadOnlyList<NewsArticle>> SearchAsync(string symbol, string? companyName, DateOnly cutoffDate, CancellationToken ct = default) =>
+        GdeltResilience.ExecuteAsync(
+            ct2 => SearchCoreAsync(symbol, companyName, cutoffDate, ct2),
+            _logger, $"GDELT Cloud {symbol}", ct);
+
+    private async Task PaceAsync(CancellationToken ct)
+    {
+        TimeSpan wait;
+        await _paceGate.WaitAsync(ct);
+        try
+        {
+            var now = DateTime.UtcNow;
+            var next = _lastCallUtc + TimeSpan.FromMilliseconds(_minIntervalMs);
+            wait = next > now ? next - now : TimeSpan.Zero;
+            _lastCallUtc = now + wait;
+        }
+        finally
+        {
+            _paceGate.Release();
+        }
+        if (wait > TimeSpan.Zero)
+            await Task.Delay(wait, ct);
+    }
+
+    private async Task<IReadOnlyList<NewsArticle>> SearchCoreAsync(string symbol, string? companyName, DateOnly cutoffDate, CancellationToken ct)
     {
         if (!IsConfigured)
         {
@@ -49,6 +79,7 @@ public class GdeltCloudNewsProvider : INewsProvider
             return Array.Empty<NewsArticle>();
         }
 
+        await PaceAsync(ct);
         try
         {
             // Resolve by company name first (the documented resolver input),
@@ -107,7 +138,8 @@ public class GdeltCloudNewsProvider : INewsProvider
 
         using var response = await _http.SendAsync(request, ct);
         if ((int)response.StatusCode == 429)
-            throw new RateLimitExceededException("GDELT Cloud rate limit exceeded.");
+            throw new RateLimitExceededException("GDELT Cloud rate limit exceeded.",
+                GdeltResilience.ParseRetryAfter(response.Headers));
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync(ct);
@@ -165,7 +197,8 @@ public class GdeltCloudNewsProvider : INewsProvider
 
         using var response = await _http.SendAsync(request, ct);
         if ((int)response.StatusCode == 429)
-            throw new RateLimitExceededException("GDELT Cloud rate limit exceeded.");
+            throw new RateLimitExceededException("GDELT Cloud rate limit exceeded.",
+                GdeltResilience.ParseRetryAfter(response.Headers));
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync(ct);
