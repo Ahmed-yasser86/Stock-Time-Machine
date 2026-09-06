@@ -214,6 +214,11 @@ public class TimeMachineApiController : ControllerBase
                 .ToList(),
             News: snapshot.RecentNews.Select(n => new NewsDto(n.Title, n.Source, DateTime.SpecifyKind(n.PublishedAt, DateTimeKind.Utc), n.Url)).ToList(),
             NewsSource: selectedNewsSource,
+            NewsRelevance: new NewsRelevanceDto(
+                snapshot.NewsRelevance.Considered,
+                snapshot.NewsRelevance.Relevant,
+                snapshot.NewsRelevance.Irrelevant,
+                snapshot.NewsRelevance.Uncertain),
             Outcome: new OutcomeDto(
                 snapshot.OutcomePrice,
                 snapshot.OutcomePrices.Select(p => new PricePointDto(p.Date, p.Open, p.High, p.Low, p.Close, p.Volume)).ToList(),

@@ -87,8 +87,16 @@ export interface SnapshotResponse {
   corporateDisclosures: Disclosure[];
   news: NewsItem[];
   newsSource: NewsSource;
+  newsRelevance: NewsRelevance;
   outcome: Outcome;
   warnings: string[];
+}
+
+export interface NewsRelevance {
+  considered: number;
+  relevant: number;
+  irrelevant: number;
+  uncertain: number;
 }
 
 export interface SimulationRequest {
@@ -295,8 +303,30 @@ export interface NarrativesResponse {
   newsSource: NewsSource;
   articlesConsidered: number;
   articlesClustered: number;
+  relevantCount: number;
+  irrelevantCount: number;
+  uncertainCount: number;
+  expansionQueries: number;
+  expansionNew: number;
+  expansionRelevant: number;
   clusteringMethod: string;
   topics: TopicCluster[];
+}
+
+export interface NewsCandidate {
+  article: { id: string; title: string; source: string; publishedAt: string; url: string };
+  decision: string;
+  decisionSource: string;
+  category: string;
+  confidence: number;
+  reason: string;
+}
+
+export interface CandidatesResponse {
+  symbol: string;
+  asOfDate: string;
+  newsSource: NewsSource;
+  items: NewsCandidate[];
 }
 
 export interface MovesResponse {
@@ -309,6 +339,57 @@ export interface MovesResponse {
   windowPrices: PricePoint[];
   uncertainty: UncertaintyIndex;
   regimes: Record<string, 'calm' | 'normal' | 'tense' | 'warming' | string>;
+}
+
+export interface HypeCaseRef {
+  id: string;
+  symbol: string;
+  peakDate: string;
+  flags: string[];
+  completeness: string;
+}
+
+export interface HypeSignal {
+  id: string;
+  name: string;
+  trigger: string;
+  triggerEvidence: string[];
+  supportingCases: HypeCaseRef[];
+  // Steps 4–6 attach here (all optional so v1 renders without them).
+  resemblance?: HypeResemblance[];
+  brief?: ClusterBrief | null;
+  followed?: HypeFollowedCase[];
+}
+
+export interface HypeResemblance {
+  caseId: string;
+  symbol: string;
+  peakDate: string;
+  similarity: number;
+}
+
+export interface HypeFollowedCase {
+  caseId: string;
+  symbol: string;
+  peakDate: string;
+  reaction: { date: string; close: number }[];
+}
+
+export interface HypePeak {
+  peakDate: string;
+  dailyReturnPct: number;
+  score: number;
+  flags: string[];
+  completeness: string;
+  signals: HypeSignal[];
+}
+
+export interface HypeSignalsResponse {
+  company: CompanySummary;
+  asOfDate: string;
+  newsSource: NewsSource;
+  casesConsidered: number;
+  peaks: HypePeak[];
 }
 
 export const NEWS_COVERAGE_DISCLAIMER =

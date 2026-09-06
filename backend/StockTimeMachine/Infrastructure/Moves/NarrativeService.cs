@@ -60,18 +60,155 @@ public class NarrativeService : INarrativeService
             return result;
         }
 
-        progress?.Report(new SnapshotProgress("clustering", "started", $"{articles.Count} cached articles"));
-        if (_gemini.IsEnabled && await TryAiPath(result, articles, progress, ct))
-            return result;
+        // Relevance gate: classify first (bounded), then cluster/embed ONLY
+        // gated articles. Empty map (AI off/failed) passes everything through:
+        // unknown relevance is never treated as irrelevant.
+        const int GateCap = 150;
+        const int MinRelevantEvidence = 5;
+        string? companyName = null;
+        string? sector = null;
+        if (_directory.TryGet(normalized, out var info) && info is not null)
+        {
+            companyName = info.Name;
+            sector = string.IsNullOrWhiteSpace(info.Sector) ? null : info.Sector;
+        }
+        var gateInput = articles.Take(GateCap).ToList();
+        var verdicts = await ClassifyQuietly(normalized, asOfDate, companyName, sector, gateInput, ct);
+        var gated = gateInput.Where(d => verdicts.Count == 0 || RelevanceService.PassesGate(
+            verdicts.TryGetValue(d.Id, out var v) ? v : null)).ToList();
+        result.ArticlesConsidered = articles.Count;
+        CountVerdicts(result, gateInput, verdicts);
 
-        result.Topics = TopicClustering.Cluster(articles);
-        result.ClusteringMethod = "tf-idf-fallback";
-        result.ArticlesClustered = Math.Min(articles.Count, TopicClustering.MaxArticles);
-        await AttachRelevanceAsync(result,
-            articles.Take(TopicClustering.MaxArticles).ToList(), ct);
-        progress?.Report(new SnapshotProgress("clustering", "complete",
-            $"TF-IDF fallback: {result.Topics.Count} threads", result.Topics.Count));
+        // Bounded retrieval expansion: too few relevant articles triggers a
+        // keyword-expansion round before clustering (GDELT family only).
+        if (verdicts.Count > 0 && result.RelevantCount < MinRelevantEvidence &&
+            selected == NewsSources.Gdelt)
+        {
+            progress?.Report(new SnapshotProgress("clustering", "started",
+                $"only {result.RelevantCount} relevant — expanding retrieval"));
+            var expansion = await ExpandQuietly(normalized, asOfDate, companyName, ct);
+            result.ExpansionQueries = expansion.QueriesRun;
+            result.ExpansionNew = expansion.NewCandidates;
+            result.ExpansionRelevant = expansion.NewRelevant;
+            if (expansion.NewRelevant > 0)
+            {
+                articles = (await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct))
+                    .Where(n => IsFromSource(n, selected)).ToList();
+                result.ArticlesConsidered = articles.Count;
+                gateInput = articles.Take(GateCap).ToList();
+                verdicts = await ClassifyQuietly(normalized, asOfDate, companyName, sector, gateInput, ct);
+                gated = gateInput.Where(d => verdicts.Count == 0 || RelevanceService.PassesGate(
+                    verdicts.TryGetValue(d.Id, out var v) ? v : null)).ToList();
+                CountVerdicts(result, gateInput, verdicts);
+            }
+        }
+
+        if (gated.Count == 0)
+        {
+            // Nothing gated: honest empty (AI filtered everything, or the
+            // expansion found nothing). Never backfill with rejected rows.
+            progress?.Report(new SnapshotProgress("clustering", "complete",
+                "no relevant articles", 0));
+            return result;
+        }
+
+        progress?.Report(new SnapshotProgress("clustering", "started",
+            $"{gated.Count} relevant of {articles.Count} cached articles"));
+        if (!_gemini.IsEnabled || !await TryAiPath(result, gated, progress, ct))
+        {
+            result.Topics = TopicClustering.Cluster(gated);
+            result.ClusteringMethod = "tf-idf-fallback";
+            result.ArticlesClustered = Math.Min(gated.Count, TopicClustering.MaxArticles);
+            progress?.Report(new SnapshotProgress("clustering", "complete",
+                $"TF-IDF fallback: {result.Topics.Count} threads", result.Topics.Count));
+        }
+        AttachRelevance(result, verdicts);
         return result;
+    }
+
+    public async Task<IReadOnlyList<NewsCandidate>> GetCandidates(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        HistoricalDate.Create(asOfDate);
+        var normalized = symbol.Trim().ToUpperInvariant();
+        var selected = NewsSources.Normalize(newsSource);
+        var uncertain = await _relevance.CandidatesAsync(normalized, asOfDate, ct);
+        if (uncertain.Count == 0)
+            return Array.Empty<NewsCandidate>();
+        var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
+        var byId = cached.Where(n => IsFromSource(n, selected))
+            .ToDictionary(n => n.Id, StringComparer.Ordinal);
+        return uncertain
+            .Where(u => byId.ContainsKey(u.ArticleId))
+            .Select(u => new NewsCandidate { Article = byId[u.ArticleId], Relevance = u })
+            .ToList();
+    }
+
+    // Verdict census over the evaluated candidates. Unknown admission is
+    // impossible here by construction (ClassifyAsync always returns full
+    // coverage); the empty-map branch preserves the legacy total-failure
+    // pass-through with zeroed breakdowns so the UI can state "unknown".
+    private static void CountVerdicts(
+        NarrativeTopicsResult result,
+        List<NewsArticle> gateInput,
+        IReadOnlyDictionary<string, ArticleRelevance> verdicts)
+    {
+        if (verdicts.Count == 0)
+        {
+            result.RelevantCount = gateInput.Count;
+            result.IrrelevantCount = 0;
+            result.UncertainCount = 0;
+            return;
+        }
+        int relevant = 0, irrelevant = 0, uncertain = 0;
+        foreach (var d in gateInput)
+        {
+            if (!verdicts.TryGetValue(d.Id, out var v) || v is null)
+            {
+                uncertain++;
+                continue;
+            }
+            if (v.Decision == RelevanceDecisions.Relevant ||
+                v.Decision == RelevanceDecisions.UserApproved)
+                relevant++;
+            else if (v.Decision == RelevanceDecisions.Irrelevant)
+                irrelevant++;
+            else
+                uncertain++;
+        }
+        result.RelevantCount = relevant;
+        result.IrrelevantCount = irrelevant;
+        result.UncertainCount = uncertain;
+    }
+
+    private async Task<IReadOnlyDictionary<string, ArticleRelevance>> ClassifyQuietly(
+        string normalized, DateOnly asOfDate, string? companyName, string? sector,
+        List<NewsArticle> docs, CancellationToken ct)
+    {
+        try
+        {
+            return await _relevance.ClassifyAsync(normalized, asOfDate, companyName, sector, docs, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Relevance classification failed for {Symbol}; passing through", normalized);
+            return new Dictionary<string, ArticleRelevance>();
+        }
+    }
+
+    private async Task<ExpansionResult> ExpandQuietly(
+        string normalized, DateOnly asOfDate, string? companyName, CancellationToken ct)
+    {
+        try
+        {
+            return await _relevance.ExpandAsync(normalized, asOfDate, companyName, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Retrieval expansion failed for {Symbol}", normalized);
+            return new ExpansionResult();
+        }
     }
 
     // True only when embeddings clustered end to end. Brief failures do NOT
@@ -124,7 +261,6 @@ public class NarrativeService : INarrativeService
             result.Topics = topics;
             result.ClusteringMethod = "gemini-embeddings";
             result.ArticlesClustered = docs.Count;
-            await AttachRelevanceAsync(result, docs, ct);
             return true;
         }
         catch (Exception ex)
@@ -200,29 +336,11 @@ public class NarrativeService : INarrativeService
     // Semantic relevance annotation (read-only w.r.t. clustering): each
     // thread reports the fraction of classified members rated relevant plus
     // the top category. Unclassified threads keep nulls — never zero-filled.
-    private async Task AttachRelevanceAsync(
-        NarrativeTopicsResult result, List<NewsArticle> docs, CancellationToken ct)
+    private static void AttachRelevance(
+        NarrativeTopicsResult result, IReadOnlyDictionary<string, ArticleRelevance> verdicts)
     {
-        if (docs.Count == 0 || result.Topics.Count == 0)
+        if (result.Topics.Count == 0)
             return;
-        string? companyName = null;
-        string? sector = null;
-        if (_directory.TryGet(result.CompanySymbol, out var info) && info is not null)
-        {
-            companyName = info.Name;
-            sector = string.IsNullOrWhiteSpace(info.Sector) ? null : info.Sector;
-        }
-        IReadOnlyDictionary<string, ArticleRelevance> verdicts;
-        try
-        {
-            verdicts = await _relevance.ClassifyAsync(
-                result.CompanySymbol, result.AsOfDate, companyName, sector, docs, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Relevance annotation failed for {Symbol}", result.CompanySymbol);
-            return;
-        }
         foreach (var topic in result.Topics)
         {
             var rated = topic.ArticleIds

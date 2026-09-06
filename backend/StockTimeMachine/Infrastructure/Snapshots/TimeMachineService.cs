@@ -11,6 +11,7 @@ public class TimeMachineService : ITimeMachineService
     private readonly ICompanyDirectory _directory;
     private readonly IEnumerable<ICompanyLookup> _fallbacks;
     private readonly INewsProviderFactory _newsFactory;
+    private readonly IRelevanceService _relevance;
     private readonly ILogger<TimeMachineService> _logger;
 
     public TimeMachineService(
@@ -21,6 +22,7 @@ public class TimeMachineService : ITimeMachineService
         ICompanyDirectory directory,
         IEnumerable<ICompanyLookup> fallbacks,
         INewsProviderFactory newsFactory,
+        IRelevanceService relevance,
         ILogger<TimeMachineService> logger)
     {
         _companyRepo = companyRepo;
@@ -30,6 +32,7 @@ public class TimeMachineService : ITimeMachineService
         _directory = directory;
         _fallbacks = fallbacks;
         _newsFactory = newsFactory;
+        _relevance = relevance;
         _logger = logger;
     }
 
@@ -84,8 +87,16 @@ public class TimeMachineService : ITimeMachineService
             outcomePrices = Array.Empty<PricePoint>();
             outcomeFilings = Array.Empty<SecFiling>();
         }
+        // The gate census rides alongside the rows (same call, same corpus):
+        // Historical Evidence displays exactly the admitted articles below.
+        NewsRelevanceSummary? newsSummary = null;
         var news = await ResolveSection(sections, SnapshotSections.News, SnapshotStages.News, failedSections,
-            () => ResolveNews(normalizedSymbol, company.Name, selectedNewsSource, historicalDate.Date, ct), progress, ct);
+            async () =>
+            {
+                var resolved = await ResolveNews(normalizedSymbol, company.Name, selectedNewsSource, historicalDate.Date, ct);
+                newsSummary = resolved.Relevance;
+                return resolved.News;
+            }, progress, ct);
 
         // Defense in depth: regardless of what providers returned, the application
         // layer re-enforces the temporal boundary before assembling the snapshot.
@@ -117,6 +128,7 @@ public class TimeMachineService : ITimeMachineService
             // No display cap at the API: the cache read is already complete,
             // and the UI pages through everything retrieved (see expander).
             RecentNews = news.ToList(),
+            NewsRelevance = newsSummary ?? new NewsRelevanceSummary(),
             Company = company,
             OutcomePrices = outcomePrices.ToList(),
             OutcomePrice = outcomePrices.LastOrDefault()?.Close,
@@ -289,7 +301,7 @@ public class TimeMachineService : ITimeMachineService
         return filings;
     }
 
-    private async Task<IReadOnlyList<NewsArticle>> ResolveNews(string symbol, string? companyName, string newsSource, DateOnly asOfDate, CancellationToken ct)
+    private async Task<(IReadOnlyList<NewsArticle> News, NewsRelevanceSummary Relevance)> ResolveNews(string symbol, string? companyName, string newsSource, DateOnly asOfDate, CancellationToken ct)
     {
         // Same coverage-freeze guard as the moves lens: a non-empty cache must
         // not shadow later coverage. One live refresh per snapshot when the
@@ -321,7 +333,7 @@ public class TimeMachineService : ITimeMachineService
             }
         }
         if (fromSelectedSource.Count > 0)
-            return NewsRelevance.OrderByMention(fromSelectedSource, symbol, companyName);
+            return await GateAsync(fromSelectedSource, symbol, companyName, asOfDate, ct);
 
         var fallbackProvider = _newsFactory.Get(newsSource);
         var fresh = await fallbackProvider.SearchAsync(symbol, companyName, asOfDate, ct);
@@ -329,11 +341,54 @@ public class TimeMachineService : ITimeMachineService
         {
             await _dataRepo.StoreNews(symbol, fresh, ct);
             var reread = await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
-            return NewsRelevance.OrderByMention(
-                reread.Where(n => IsFromSource(n, newsSource)), symbol, companyName);
+            return await GateAsync(
+                reread.Where(n => IsFromSource(n, newsSource)).ToList(),
+                symbol, companyName, asOfDate, ct);
         }
 
-        return fromSelectedSource;
+        return (fromSelectedSource, new NewsRelevanceSummary { Considered = fromSelectedSource.Count });
+    }
+
+    // Shared relevance gate (same policy as moves/narratives): gated rows
+    // only. ClassifyAsync always returns full coverage now (AI → RULE
+    // fallback), so the empty-map pass-through below is a last resort for a
+    // mid-request classification exception only — never the normal path.
+    private async Task<(IReadOnlyList<NewsArticle> News, NewsRelevanceSummary Relevance)> GateAsync(
+        List<NewsArticle> rows, string symbol, string? companyName,
+        DateOnly asOfDate, CancellationToken ct)
+    {
+        var summary = new NewsRelevanceSummary { Considered = rows.Count };
+        if (rows.Count == 0)
+            return (rows, summary);
+        IReadOnlyDictionary<string, ArticleRelevance> map;
+        try
+        {
+            map = await _relevance.ClassifyAsync(symbol, asOfDate, companyName, null, rows, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Relevance gate failed for {Symbol}; passing through", symbol);
+            return (rows, summary);
+        }
+        if (map.Count == 0)
+            return (rows, summary);
+        foreach (var n in rows)
+        {
+            if (!map.TryGetValue(n.Id, out var v) || v is null)
+                summary.Uncertain++;
+            else if (v.Decision == RelevanceDecisions.Relevant ||
+                     v.Decision == RelevanceDecisions.UserApproved)
+                summary.Relevant++;
+            else if (v.Decision == RelevanceDecisions.Irrelevant)
+                summary.Irrelevant++;
+            else
+                summary.Uncertain++;
+        }
+        var gated = rows.Where(n => RelevanceService.PassesGate(
+            map.TryGetValue(n.Id, out var v) ? v : null)).ToList();
+        _logger.LogInformation("Relevance gate for {Symbol}: {Gated}/{Total} pass ({Irrelevant} irrelevant, {Uncertain} uncertain)",
+            symbol, gated.Count, rows.Count, summary.Irrelevant, summary.Uncertain);
+        return (NewsRelevance.OrderByMention(gated, symbol, companyName), summary);
     }
 
     private static bool IsFromSource(NewsArticle article, string newsSource)

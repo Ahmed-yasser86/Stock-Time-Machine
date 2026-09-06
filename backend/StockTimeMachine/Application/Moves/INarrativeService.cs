@@ -1,5 +1,11 @@
 namespace StockTimeMachine;
 
+public class NewsCandidate
+{
+    public NewsArticle Article { get; set; } = new();
+    public ArticleRelevance Relevance { get; set; } = new();
+}
+
 public class NarrativeTopicsResult
 {
     public string CompanySymbol { get; set; } = "";
@@ -7,6 +13,15 @@ public class NarrativeTopicsResult
     public string NewsSource { get; set; } = NewsSources.Gdelt;
     public int ArticlesConsidered { get; set; }
     public int ArticlesClustered { get; set; }
+    // Actual gate output over the evaluated candidates: relevant admitted to
+    // embeddings/threads/evidence; irrelevant and uncertain excluded (never
+    // silent — the UI prints all three from these fields).
+    public int RelevantCount { get; set; }
+    public int IrrelevantCount { get; set; }
+    public int UncertainCount { get; set; }
+    public int ExpansionQueries { get; set; }
+    public int ExpansionNew { get; set; }
+    public int ExpansionRelevant { get; set; }
     public List<TopicCluster> Topics { get; set; } = new();
     // "gemini-embeddings" when the AI path held end to end, else
     // "tf-idf-fallback" — the UI prints whichever it was.
@@ -21,6 +36,11 @@ public interface INarrativeService
     // AI path (Gemini embeddings + per-thread briefs) is attempted first when
     // configured; any failure degrades to the deterministic TF-IDF path.
     Task<NarrativeTopicsResult> GetTopics(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null);
+
+    // Uncertain candidates awaiting explicit user approval (cutoff-filtered,
+    // highest confidence first). Approval/rejection flips the verdict with
+    // USER provenance; approved rows enter the normal pipeline downstream.
+    Task<IReadOnlyList<NewsCandidate>> GetCandidates(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default);
 
     // Cross-pick shared-story brief: articles matching the shared terms across
     // the given symbols' caches, briefed as ONE story with per-article

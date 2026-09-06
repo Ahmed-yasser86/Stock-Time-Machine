@@ -11,6 +11,14 @@ namespace StockTimeMachine.Tests;
 // row counts — a passing test proves requested interval == searched interval.
 public class GdeltCoverageTests
 {
+    // The "gdelt" limiter is process-global and stateful: 429-heavy tests
+    // (here and in parallel collections) stretch its rhythm, and a maxed-out
+    // spacing lets the per-fetch budget trip before the 429 under test is
+    // even reached — turning a must-propagate throttle into partial success.
+    // Start every test from clean rhythm (same Reset pattern as the other
+    // limiter-sensitive tests); trailing state is the pre-existing norm.
+    public GdeltCoverageTests() => RateLimiterRegistry.Reset();
+
     private static IConfiguration CloudConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {

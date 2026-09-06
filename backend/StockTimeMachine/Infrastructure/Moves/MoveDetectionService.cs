@@ -41,6 +41,7 @@ public class MoveDetectionService : IMoveDetectionService
     private readonly INewsProviderFactory _newsFactory;
     private readonly IEnumerable<ISocialSignalProvider> _social;
     private readonly IFinancialSentimentAnalyzer _sentiment;
+    private readonly IRelevanceService _relevance;
     private readonly ILogger<MoveDetectionService> _logger;
 
     public MoveDetectionService(
@@ -51,6 +52,7 @@ public class MoveDetectionService : IMoveDetectionService
         INewsProviderFactory newsFactory,
         IEnumerable<ISocialSignalProvider> social,
         IFinancialSentimentAnalyzer sentiment,
+        IRelevanceService relevance,
         ILogger<MoveDetectionService> logger)
     {
         _companyRepo = companyRepo;
@@ -60,10 +62,13 @@ public class MoveDetectionService : IMoveDetectionService
         _newsFactory = newsFactory;
         _social = social;
         _sentiment = sentiment;
+        _relevance = relevance;
         _logger = logger;
     }
 
-    public async Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null)
+    // topMoves override is harvest-only (reason: Step 7 of
+    // hype-intelligence-plan): product callers pass null → TopMoves (5).
+    public async Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null, int? topMoves = null)
     {
         if (string.IsNullOrWhiteSpace(symbol))
             throw new InvalidHistoricalDateException("Symbol is required.");
@@ -96,7 +101,9 @@ public class MoveDetectionService : IMoveDetectionService
         window.WindowPrices = slice;
         window.Regimes = RegimeClassifier.Classify(slice);
 
-        var scored = ScoreDays(asc, slice).Take(TopMoves).ToList();
+        // Harvest override (reason: Step 7): clamped to a sane mining bound.
+        var takeMoves = topMoves is > 0 ? Math.Min(topMoves.Value, 20) : TopMoves;
+        var scored = ScoreDays(asc, slice, takeMoves).Take(takeMoves).ToList();
         var company = await _companyRepo.GetBySymbol(normalized, ct);
         var companyName = company?.Name;
 
@@ -250,7 +257,9 @@ public class MoveDetectionService : IMoveDetectionService
         return list;
     }
 
-    private static List<KeyMove> ScoreDays(List<PricePoint> asc, List<PricePoint> slice)
+    // take is harvest-aware (reason: Step 7 of hype-intelligence-plan):
+    // product default TopMoves, mining override clamped by the caller.
+    private static List<KeyMove> ScoreDays(List<PricePoint> asc, List<PricePoint> slice, int take = TopMoves)
     {
         var indexOf = new Dictionary<DateOnly, int>();
         for (int i = 0; i < asc.Count; i++) indexOf[asc[i].Date] = i;
@@ -333,7 +342,7 @@ public class MoveDetectionService : IMoveDetectionService
             .OrderByDescending(s => s.Score)
             .ThenByDescending(s => s.Move.Date)
             .ThenByDescending(s => s.AbsRet)
-            .Take(TopMoves)
+            .Take(take)
             .Select(s => s.Move)
             .ToList();
     }
@@ -399,6 +408,10 @@ public class MoveDetectionService : IMoveDetectionService
                     }
                 }
             }
+            // Relevance gate (shared policy): only gated articles become
+            // evidence. Empty map (AI off/failed) passes everything through.
+            fromSource = await ApplyRelevanceGateAsync(
+                fromSource, symbol, companyName, moveDate, ct);
             // Company-naming articles first (deterministic centrality, same
             // rows — see NewsRelevance), then most recent. Nothing hidden.
             evidence.News = NewsRelevance.OrderByMention(fromSource, symbol, companyName).Take(5).ToList();
@@ -483,6 +496,32 @@ public class MoveDetectionService : IMoveDetectionService
         {
             _logger.LogWarning(ex, "Stale news refresh failed for {Symbol}; serving cached rows", symbol);
         }
+    }
+
+    private async Task<List<NewsArticle>> ApplyRelevanceGateAsync(
+        List<NewsArticle> rows, string symbol, string? companyName,
+        DateOnly moveDate, CancellationToken ct)
+    {
+        if (rows.Count == 0)
+            return rows;
+        string? sector = null;
+        if (_directory.TryGet(symbol, out var info) && info is not null &&
+            !string.IsNullOrWhiteSpace(info.Sector))
+            sector = info.Sector;
+        IReadOnlyDictionary<string, ArticleRelevance> map;
+        try
+        {
+            map = await _relevance.ClassifyAsync(symbol, moveDate, companyName, sector, rows, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Relevance gate failed for {Symbol}; passing through", symbol);
+            return rows;
+        }
+        if (map.Count == 0)
+            return rows;
+        return rows.Where(n => RelevanceService.PassesGate(
+            map.TryGetValue(n.Id, out var v) ? v : null)).ToList();
     }
 
     // Same source-membership rule as the snapshot engine: cached rows carry

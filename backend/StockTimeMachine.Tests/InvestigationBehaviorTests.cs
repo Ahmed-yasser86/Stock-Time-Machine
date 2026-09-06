@@ -56,6 +56,7 @@ public class InvestigationBehaviorTests
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             sec.Object, av.Object, Directory(),
             Array.Empty<ICompanyLookup>(), news,
+            new DisabledRelevanceStub(),
             NullLogger<TimeMachineService>.Instance);
 
     [Fact]

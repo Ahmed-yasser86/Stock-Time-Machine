@@ -183,11 +183,17 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             }
             else
             {
+                // Explicit user verdicts are final: neither AI re-judgment
+                // nor RULE fallback may overwrite them.
+                if (existing.DecisionSource == RelevanceSources.User)
+                    continue;
                 existing.Relevant = row.Relevant;
                 existing.Category = row.Category;
                 existing.Confidence = row.Confidence;
                 existing.Reason = row.Reason;
                 existing.Model = row.Model;
+                existing.Decision = row.Decision;
+                existing.DecisionSource = row.DecisionSource;
                 existing.ClassifiedAt = DateTime.UtcNow;
             }
         }
@@ -217,6 +223,42 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             existing.ScoredAt = DateTime.UtcNow;
         }
         await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<ArticleRelevance>> GetUncertain(string symbol, DateOnly asOfDate, int take = 10, CancellationToken ct = default)
+    {
+        var normalized = symbol.ToUpperInvariant();
+        var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
+        var ids = await _db.NewsArticles
+            .Where(n => n.CompanySymbol == normalized && n.PublishedAt <= cutoff)
+            .Select(n => n.Id)
+            .ToListAsync(ct);
+        var idSet = new HashSet<string>(ids, StringComparer.Ordinal);
+        return (await _db.ArticleRelevances
+            .Where(x => x.Symbol == normalized && x.Decision == RelevanceDecisions.Uncertain)
+            .OrderByDescending(x => x.Confidence)
+            .Take(Math.Max(take * 4, take))
+            .ToListAsync(ct))
+            .Where(x => idSet.Contains(x.ArticleId))
+            .Take(take)
+            .ToList();
+    }
+
+    public async Task<bool> SetRelevanceDecision(string articleId, string symbol, string decision, string source, CancellationToken ct = default)
+    {
+        var row = await _db.ArticleRelevances.FindAsync(
+            new object[] { articleId, symbol.ToUpperInvariant() }, ct);
+        if (row is null)
+            return false;
+        row.Decision = decision;
+        row.DecisionSource = source;
+        if (decision == RelevanceDecisions.UserApproved)
+            row.Relevant = true;
+        else if (decision == RelevanceDecisions.Irrelevant)
+            row.Relevant = false;
+        row.ClassifiedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)

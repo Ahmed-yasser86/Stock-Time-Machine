@@ -254,7 +254,10 @@ public class GeminiClient : IGeminiClient
                 generationConfig = new
                 {
                     temperature = 0.0,
-                    maxOutputTokens = 2048,
+                    // 25 verdicts × ~5 fields each needs headroom: a 2048 cap
+                    // truncated batches to partial id sets (the rest fell back
+                    // to RULE). 8192 fits a full batch with margin.
+                    maxOutputTokens = 8192,
                     responseMimeType = "application/json",
                     responseJsonSchema = new
                     {

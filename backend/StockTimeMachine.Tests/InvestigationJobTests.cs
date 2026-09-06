@@ -36,7 +36,7 @@ public class InvestigationJobTests
 
     private sealed class FastMoves : IMoveDetectionService
     {
-        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null)
+        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null, int? topMoves = null)
         {
             progress?.Report(new SnapshotProgress("detecting", "complete", "1 move", 1));
             return Task.FromResult(new MovesWindow
@@ -77,6 +77,9 @@ public class InvestigationJobTests
 
         public Task<IReadOnlyList<CrossThreadPair>> CrossThreadSimilarity(IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<CrossThreadPair>>(Array.Empty<CrossThreadPair>());
+
+        public Task<IReadOnlyList<NewsCandidate>> GetCandidates(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<NewsCandidate>>(Array.Empty<NewsCandidate>());
     }
 
     private sealed class Harness
@@ -132,7 +135,7 @@ public class InvestigationJobTests
     private sealed class HangingMoves : IMoveDetectionService
     {
         public bool ObservedCancellation { get; private set; }
-        public async Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null)
+        public async Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null, int? topMoves = null)
         {
             try
             {
@@ -149,8 +152,8 @@ public class InvestigationJobTests
 
     private sealed class ThrowingMoves : IMoveDetectionService
     {
-        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null) =>
-            throw new InvalidOperationException("boom");
+    public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null, int? topMoves = null) =>
+        throw new InvalidOperationException("boom");
     }
 
     [Fact]

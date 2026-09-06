@@ -9,6 +9,9 @@ import Snapshot from './pages/Snapshot';
 // No existing route or screen is altered by its presence.
 import Moves from './pages/Moves';
 import Compare from './pages/Compare';
+// Hype route is additive (reason: Step 3 of hype-intelligence-plan): no
+// existing route or screen is altered by its presence.
+import Hype from './pages/Hype';
 import { StageNav } from './components/StageNav';
 
 export default function App() {
@@ -34,6 +37,7 @@ export default function App() {
             <Route path="/snapshot" element={<Snapshot />} />
             <Route path="/moves" element={<Moves />} />
             <Route path="/compare" element={<Compare />} />
+<Route path="/hype" element={<Hype />} />
             {/* The legacy status dashboard is retired; the investigation is the product. */}
             <Route path="/dashboard" element={<Navigate to="/investigate" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />

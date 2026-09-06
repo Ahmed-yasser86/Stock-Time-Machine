@@ -1,9 +1,12 @@
 import type {
   Company,
+  ClusterBrief,
   CompareBriefResponse,
   CompareThreadsResponse,
   CopilotBriefResponse,
   ExplainerResponse,
+  CandidatesResponse,
+  HypeSignalsResponse,
   MovesJobResponse,
   LiveQuote,
   ReviewResponse,
@@ -84,6 +87,32 @@ export const api = {
     request<NarrativesResponse>(
       `/api/timemachine/narratives?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
         (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
+    ),
+  hypeSignals: (symbol: string, date: string, newsSource?: NewsSource) =>
+    request<HypeSignalsResponse>(
+      `/api/timemachine/hype/signals?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
+        (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
+    ),
+  hypeBrief: (body: { symbol: string; date: string; newsSource?: NewsSource; peakDate: string; signalId: string }) =>
+    request<{ brief: ClusterBrief | null }>(`/api/timemachine/hype/brief`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  candidates: (symbol: string, date: string, newsSource?: NewsSource) =>
+    request<CandidatesResponse>(
+      `/api/timemachine/narratives/candidates?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
+        (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
+    ),
+  approveCandidate: (articleId: string, symbol: string) =>
+    request<{ approved: boolean }>(
+      `/api/timemachine/narratives/candidates/${encodeURIComponent(articleId)}/approve?symbol=${encodeURIComponent(symbol)}`,
+      { method: 'POST' },
+    ),
+  rejectCandidate: (articleId: string, symbol: string) =>
+    request<{ rejected: boolean }>(
+      `/api/timemachine/narratives/candidates/${encodeURIComponent(articleId)}/reject?symbol=${encodeURIComponent(symbol)}`,
+      { method: 'POST' },
     ),
   compareThreads: (symbols: string[], date: string, newsSource: NewsSource) =>
     request<CompareThreadsResponse>(

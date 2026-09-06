@@ -102,6 +102,18 @@ public class GdeltNewsProvider : INewsProvider
             .ToList();
     }
 
+    // Single-range keyword query for retrieval expansion: one bounded call
+    // over an explicit window (callers own chunking). Cutoff-filtered,
+    // deduped by callers.
+    public async Task<IReadOnlyList<NewsArticle>> SearchRangeAsync(
+        string query, string symbol, DateOnly fromDay, DateOnly toDay, DateOnly cutoffDate, int maxRows, CancellationToken ct = default)
+    {
+        var cutoff = TemporalBoundary.GetCutoffUtc(cutoffDate);
+        var from = fromDay.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + "000000";
+        var to = toDay.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + "235959";
+        return await FetchRangeAsync(query, symbol, from, to, cutoff, maxRows, ct);
+    }
+
     private async Task<IReadOnlyList<NewsArticle>> FetchDay(
         string query, string symbol, DateOnly day, DateTime cutoff, CancellationToken ct)
     {
@@ -110,9 +122,14 @@ public class GdeltNewsProvider : INewsProvider
         // Client-side cutoff filtering below still enforces the boundary.
         var from = day.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + "000000";
         var to = day.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + "235959";
+        return await FetchRangeAsync(query, symbol, from, to, cutoff, DayMaxRows, ct);
+    }
 
+    private async Task<IReadOnlyList<NewsArticle>> FetchRangeAsync(
+        string query, string symbol, string from, string to, DateTime cutoff, int maxRows, CancellationToken ct)
+    {
         // Quoted multi-word queries reduce false positives (e.g. ticker "V").
-        var url = $"{_baseUrl}/doc/search?query={query}&format=json&startdatetime={from}&enddatetime={to}&maxrows={DayMaxRows}&sort=datedesc";
+        var url = $"{_baseUrl}/doc/search?query={query}&format=json&startdatetime={from}&enddatetime={to}&maxrows={maxRows}&sort=datedesc";
         if (!string.IsNullOrEmpty(_cloudApiKey))
             url += $"&key={Uri.EscapeDataString(_cloudApiKey)}";
 
@@ -167,6 +184,9 @@ public class GdeltNewsProvider : INewsProvider
                     Url = urlVal,
                     CompanySymbol = normalizedSymbol
                 });
+
+                if (results.Count >= maxRows)
+                    break;
             }
 
             _logger.LogInformation("Found {Count} news articles from GDELT for {Symbol}", results.Count, symbol);

@@ -112,6 +112,15 @@ builder.Services.AddScoped<IFinancialSentimentAnalyzer>(sp =>
 builder.Services.AddScoped<INarrativeService, NarrativeService>();
 builder.Services.AddScoped<IRelevanceService, RelevanceService>();
 builder.Services.AddScoped<IInvestigationJobStore, InvestigationJobStore>();
+// Hype registry: case library backing signal mining. Scoped like the other
+// stores; registered additively (reason: Step 1 of hype-intelligence-plan).
+builder.Services.AddScoped<IHypeCaseStore, HypeCaseStore>();
+// Hype resemblance: cache-only cross-case vector joins (reason: Step 4 of
+// hype-intelligence-plan). No fresh embedding spend, ever.
+builder.Services.AddScoped<IHypeResemblanceService, HypeResemblanceService>();
+// Hype briefs: opt-in grounded signal summaries (reason: Step 5 of
+// hype-intelligence-plan). Fail-soft like thread briefs.
+builder.Services.AddScoped<IHypeBriefService, HypeBriefService>();
 builder.Services.AddSingleton<IInvestigationJobRunner, InvestigationJobRunner>();
 builder.Services.AddScoped<ICopilotService, CopilotService>();
 
