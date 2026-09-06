@@ -197,12 +197,24 @@ public class GdeltCloudNewsProvider : INewsProvider
             .ToList();
         var limiter = RateLimiterRegistry.Get("gdelt", _config);
 
+        // Overall fetch ceiling: throttled days must not turn one fetch into
+        // a ten-minute stall. Budget from config (default 120s); when it
+        // trips, merged days are kept and the shortfall is logged loudly.
+        var budgetSeconds = int.TryParse(_config["Gdelt:FetchBudgetSeconds"], out var b) && b > 0 ? b : 120;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(budgetSeconds);
+
         var results = new List<NewsArticle>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var perDay = new List<(DateOnly Day, int Count)>();
         var failedDays = new List<DateOnly>();
         foreach (var day in days)
         {
+            if (DateTime.UtcNow >= deadline)
+            {
+                failedDays.Add(day);
+                _logger.LogWarning("GDELT Cloud fetch budget exhausted for {Symbol}; keeping {Count} articles from traversed days", normalized, results.Count);
+                break;
+            }
             await limiter.AcquireAsync(0, ct);
             try
             {

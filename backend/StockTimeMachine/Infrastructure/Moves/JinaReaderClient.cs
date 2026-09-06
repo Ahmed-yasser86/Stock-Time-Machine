@@ -24,7 +24,9 @@ public class JinaReaderClient : IArticleContentClient
         _http = http;
         _logger = logger;
         _apiKey = config["Jina:ApiKey"] ?? "";
-        _http.Timeout = TimeSpan.FromSeconds(45);
+        // Fail fast: bodies are enrichment over stored text, never worth a
+        // 45-second stall per article when the provider is slow.
+        _http.Timeout = TimeSpan.FromSeconds(15);
         _limiter = RateLimiterRegistry.Get("jina", config);
     }
 

@@ -234,6 +234,11 @@ public static class RateLimiterRegistry
     public static AdaptiveRateLimiter Get(string name, IConfiguration config) =>
         Cache.GetOrAdd(name, _ => new AdaptiveRateLimiter(LoadPolicy(name, config)));
 
+    // Non-creating read for throttle-aware callers (staleness guards): null
+    // when no traffic has shaped this scope yet — never fabricate state.
+    public static AdaptiveRateLimiter? TryGet(string name) =>
+        Cache.TryGetValue(name, out var limiter) ? limiter : null;
+
     // Tests and hosts reset between isolated scenarios sharing a process.
     public static void Reset() => Cache.Clear();
 

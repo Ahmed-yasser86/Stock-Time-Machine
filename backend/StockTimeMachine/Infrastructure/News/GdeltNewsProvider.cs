@@ -49,11 +49,20 @@ public class GdeltNewsProvider : INewsProvider
             .Select(i => cutoffDate.AddDays(-WindowDaysBack + i))
             .ToList();
 
+        var budgetSeconds = int.TryParse(_config["Gdelt:FetchBudgetSeconds"], out var b) && b > 0 ? b : 120;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(budgetSeconds);
+
         var results = new List<NewsArticle>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var failedDays = new List<DateOnly>();
         foreach (var day in days)
         {
+            if (DateTime.UtcNow >= deadline)
+            {
+                failedDays.Add(day);
+                _logger.LogWarning("GDELT fetch budget exhausted for {Symbol}; keeping {Count} articles from traversed days", symbol, results.Count);
+                break;
+            }
             await _limiter.AcquireAsync(0, ct);
             try
             {

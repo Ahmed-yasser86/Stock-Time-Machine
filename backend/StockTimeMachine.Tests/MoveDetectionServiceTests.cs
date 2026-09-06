@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -385,6 +386,39 @@ public class MoveDetectionServiceTests
         Assert.NotEmpty(window.KeyMoves);
         Assert.All(window.EvidenceByDate.Values,
             e => Assert.Contains("news", e.UnavailableLayers));
+    }
+
+    [Fact]
+    public async Task GetMoves_ThrottledSource_SkipsRefreshWithoutCalling()
+    {
+        RateLimiterRegistry.Reset();
+        try
+        {
+            var (db, av, directory) = BuildDb();
+            await SeedSpike(db);
+            // Stale cache (Jan-20 row, Feb-1 move) that would normally trigger
+            // a refresh — but the limiter already knows gdelt is throttled.
+            await db.NewsArticles.AddAsync(new NewsArticle
+            {
+                Id = "old", Title = "Old news", Source = "GDELT",
+                PublishedAt = new DateTime(2020, 1, 20, 0, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/old", CompanySymbol = "TSLA",
+            });
+            await db.SaveChangesAsync();
+            var emptyConfig = new ConfigurationBuilder().Build();
+            RateLimiterRegistry.Get("gdelt", emptyConfig).ReportThrottled(TimeSpan.Zero);
+            var news = new CountingNewsProvider(Array.Empty<NewsArticle>());
+            var sut = Sut(db, av, directory, news);
+
+            var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+            Assert.Equal(0, news.Calls);
+            Assert.NotEmpty(window.KeyMoves);
+        }
+        finally
+        {
+            RateLimiterRegistry.Reset();
+        }
     }
 
     [Fact]

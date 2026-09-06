@@ -436,6 +436,15 @@ public class MoveDetectionService : IMoveDetectionService
     {
         if (moves.Count == 0 || !_newsRefreshed.Add(symbol + "|" + newsSource))
             return;
+        // Throttle-aware: when the adaptive rhythm already knows this source
+        // is throttled, a refresh would only burn minutes of backoff for rows
+        // we likely cannot get. Serve the stale cache honestly instead.
+        if ((newsSource == NewsSources.Gdelt || newsSource == NewsSources.MarketAux) &&
+            RateLimiterRegistry.TryGet(newsSource == NewsSources.Gdelt ? "gdelt" : "marketaux")?.Recent429s > 0)
+        {
+            _logger.LogInformation("Skipping stale news refresh for {Symbol}: {Source} currently throttled", symbol, newsSource);
+            return;
+        }
         try
         {
             var latest = moves.Max(m => m.Date);

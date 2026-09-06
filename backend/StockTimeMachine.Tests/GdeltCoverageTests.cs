@@ -381,6 +381,47 @@ public class GdeltCoverageTests
             Represented(rows));
     }
 
+    private static IConfiguration CloudConfigWithBudget(int seconds) =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Gdelt:ApiKey"] = "test-key",
+            ["Gdelt:CloudBaseUrl"] = "https://gdeltcloud.com",
+            ["Gdelt:FetchBudgetSeconds"] = seconds.ToString(),
+        }).Build();
+
+    private sealed class SlowCloudHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!.ToString();
+            if (uri.Contains("/search"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(EntityOk) };
+            var day = System.Text.RegularExpressions.Regex.Match(uri, @"date_start=(\d{4}-\d{2}-\d{2})").Groups[1].Value;
+            await Task.Delay(400, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(CloudStories((day, new[] { ($"T{day}", $"https://example.com/{day}") }))),
+            };
+        }
+    }
+
+    [Fact]
+    public async Task Cloud_FetchBudgetBoundsTotalTime()
+    {
+        // Every day stalls 400ms; 8 days would take 3.2s+ but a 1s budget
+        // stops the traversal early with whatever merged so far.
+        var provider = new GdeltCloudNewsProvider(
+            new HttpClient(new SlowCloudHandler()),
+            NullLogger<GdeltCloudNewsProvider>.Instance, CloudConfigWithBudget(1));
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var rows = await provider.SearchAsync("MSFT", new DateOnly(2026, 6, 27));
+
+        sw.Stop();
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(3), $"took {sw.Elapsed}");
+        Assert.True(rows.Count < 8, "budget should have cut the traversal short");
+    }
+
     [Fact]
     public async Task Cloud_ThrottleMidWindow_AbortsAndPropagates()
     {

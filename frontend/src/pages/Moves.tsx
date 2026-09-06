@@ -46,6 +46,25 @@ function jobStorageKey(symbol: string, date: string, newsSource: NewsSource) {
   return `stm:job:${symbol.toUpperCase()}|${date}|${newsSource}`;
 }
 
+// In-flight job creations by investigation key: React StrictMode (and hasty
+// remounts) fire the effect twice — the second attach awaits the first POST
+// instead of spawning a duplicate job that burns quota twice.
+const inflightJobs = new Map<string, Promise<string>>();
+
+function createJobOnce(symbol: string, date: string, newsSource: NewsSource): Promise<string> {
+  const key = jobStorageKey(symbol, date, newsSource);
+  const running = inflightJobs.get(key);
+  if (running) return running;
+  const promise = api
+    .createMovesJob({ symbol, date, newsSource })
+    .then((created) => created.jobId)
+    .finally(() => {
+      if (inflightJobs.get(key) === promise) inflightJobs.delete(key);
+    });
+  inflightJobs.set(key, promise);
+  return promise;
+}
+
 function useMovesStream(symbol: string, date: string, newsSource: NewsSource, nonce: number) {
   const [stages, setStages] = useState<StageEvent[]>([]);
   const [moves, setMoves] = useState<MovesResponse | null>(null);
@@ -129,8 +148,7 @@ function useMovesStream(symbol: string, date: string, newsSource: NewsSource, no
         }
         // Explicit retry always starts fresh; otherwise reattach.
         if (!jobId || nonce > 0) {
-          const created = await api.createMovesJob({ symbol, date, newsSource });
-          jobId = created.jobId;
+          jobId = await createJobOnce(symbol, date, newsSource);
         }
         attach(jobId);
       } catch (e) {
