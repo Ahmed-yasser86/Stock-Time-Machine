@@ -67,6 +67,25 @@ public class GeminiClientTests
         Assert.Equal("supported", single.Verdict);
     }
 
+    private const string RelevancePayload = """
+        {"candidates": [{"content": {"parts": [{"text": "{\"results\": [{\"id\": \"a1\", \"relevant\": true, \"category\": \"financial\", \"confidence\": 2.5, \"reason\": \"R\"}, {\"id\": \"\", \"relevant\": true, \"category\": \"LEGAL\", \"confidence\": 0.5, \"reason\": \"Bad\"}]}"}]}}]}
+        """;
+
+    [Fact]
+    public async Task ClassifyRelevance_ParsesAndValidates()
+    {
+        var sut = Client(new StubHttpMessageHandler(RelevancePayload));
+
+        var verdicts = await sut.ClassifyRelevanceAsync("prompt");
+
+        // Valid item kept (category uppercased, confidence clamped); empty id skipped.
+        var single = Assert.Single(verdicts);
+        Assert.Equal("a1", single.Id);
+        Assert.True(single.Relevant);
+        Assert.Equal("FINANCIAL", single.Category);
+        Assert.Equal(1.0, single.Confidence);
+    }
+
     [Fact]
     public async Task ServerError_SummarizeNull_ReviewEmpty()
     {

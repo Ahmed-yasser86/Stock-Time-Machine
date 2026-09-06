@@ -16,6 +16,8 @@ public sealed class DisabledGeminiStub : IGeminiClient
         Task.FromResult<ClusterBrief?>(null);
     public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
+    public Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<RelevanceVerdict>>(Array.Empty<RelevanceVerdict>());
 }
 
 public sealed class DisabledBodyStub : IArticleContentClient
@@ -23,6 +25,62 @@ public sealed class DisabledBodyStub : IArticleContentClient
     public bool IsEnabled => false;
     public Task<ArticleBody?> FetchBodyAsync(string articleUrl, CancellationToken ct = default) =>
         Task.FromResult<ArticleBody?>(null);
+}
+
+public sealed class DisabledRelevanceStub : IRelevanceService
+{
+    public Task<IReadOnlyDictionary<string, ArticleRelevance>> ClassifyAsync(
+        string symbol, DateOnly asOfDate, string? companyName, string? sector,
+        IReadOnlyList<NewsArticle> articles, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<string, ArticleRelevance>>(
+            new Dictionary<string, ArticleRelevance>());
+}
+
+public sealed class FixedRelevanceStub : IRelevanceService
+{
+    public List<string> SeenCompanies { get; } = new();
+    public Task<IReadOnlyDictionary<string, ArticleRelevance>> ClassifyAsync(
+        string symbol, DateOnly asOfDate, string? companyName, string? sector,
+        IReadOnlyList<NewsArticle> articles, CancellationToken ct = default)
+    {
+        SeenCompanies.Add($"{companyName}|{sector}");
+        return Task.FromResult<IReadOnlyDictionary<string, ArticleRelevance>>(
+            articles.ToDictionary(
+                a => a.Id,
+                a => new ArticleRelevance
+                {
+                    ArticleId = a.Id, Symbol = symbol, Model = "stub",
+                    Relevant = !a.Title.Contains("noise", StringComparison.OrdinalIgnoreCase),
+                    Category = "FINANCIAL", Confidence = 0.9, Reason = "Stub.",
+                }));
+    }
+}
+
+public static class TestDirectory
+{
+    public static ICompanyDirectory Tesla() => new StubCompanyDirectory(
+        new CompanyInfo("TSLA", "Tesla, Inc.", "0001318605", "NASDAQ", "Consumer Discretionary", "Automobiles"));
+}
+
+public sealed class FuncGeminiStub : IGeminiClient
+{
+    private readonly Func<string, IReadOnlyList<RelevanceVerdict>> _classify;
+    public List<string> SeenPrompts { get; } = new();
+    public FuncGeminiStub(Func<string, IReadOnlyList<RelevanceVerdict>> classify) => _classify = classify;
+    public bool IsEnabled => true;
+    public string SummaryModel => "stub-flash";
+    public string EmbeddingModel => "stub-embed";
+    public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default) =>
+        throw new InvalidOperationException("not used");
+    public Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default) =>
+        Task.FromResult<ClusterBrief?>(null);
+    public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
+    public Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default)
+    {
+        SeenPrompts.Add(prompt);
+        return Task.FromResult(_classify(prompt));
+    }
 }
 
 public class AiNarrativeTests
@@ -59,6 +117,16 @@ public class AiNarrativeTests
                 new NoteIssue { Ref = "move 2020-02-01", Verdict = "supported", Detail = "Stub check." },
             });
         }
+        public Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default)
+        {
+            SeenPrompts.Add(prompt);
+            // Relevant unless the model-side input carried a noise marker.
+            var relevant = !prompt.Contains("noise-marker");
+            return Task.FromResult<IReadOnlyList<RelevanceVerdict>>(new[]
+            {
+                new RelevanceVerdict { Id = "r1", Relevant = relevant, Category = "FINANCIAL", Confidence = 0.9, Reason = "Stub." },
+            });
+        }
     }
 
     private sealed class ThrowingGeminiStub : IGeminiClient
@@ -72,6 +140,8 @@ public class AiNarrativeTests
             Task.FromResult<ClusterBrief?>(null);
         public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
+        public Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default) =>
+            throw new HttpRequestException("Gemini down");
     }
 
     private static StockTimeMachineDbContext NewDb() => new(
@@ -98,7 +168,7 @@ public class AiNarrativeTests
         var gemini = new FixedGeminiStub();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            gemini, new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            gemini, new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
 
@@ -126,7 +196,7 @@ public class AiNarrativeTests
         await SeedPair(db);
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            new ThrowingGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            new ThrowingGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
 
@@ -142,7 +212,7 @@ public class AiNarrativeTests
         await SeedPair(db);
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            new DisabledGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
 
@@ -165,7 +235,7 @@ public class AiNarrativeTests
         });
         var gemini = new FixedGeminiStub();
         var sut = new NarrativeService(repo, gemini,
-            new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var brief = await sut.BriefSharedThread(
             new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt,
@@ -184,7 +254,7 @@ public class AiNarrativeTests
         await SeedPair(db);
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            new FixedGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            new FixedGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         // "zzzqqq" appears nowhere: no match, no Gemini call.
         var brief = await sut.BriefSharedThread(
@@ -309,7 +379,7 @@ public class AiNarrativeTests
             new NewsArticle { Id = "b2", Title = "Beta two", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 12), Url = "https://example.com/b2", CompanySymbol = "BBB" },
         });
         var sut = new NarrativeService(repo, new FixedGeminiStub(),
-            new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var pairs = await sut.CrossThreadSimilarity(
             new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
@@ -326,7 +396,7 @@ public class AiNarrativeTests
         var db = NewDb();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            new DisabledGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         Assert.Empty(await sut.CrossThreadSimilarity(
             new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt));
@@ -418,7 +488,7 @@ public class AiNarrativeTests
         var gemini = new FixedGeminiStub();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            gemini, new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            gemini, new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var first = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
         var callsAfterFirst = gemini.EmbedCalls;
@@ -460,7 +530,7 @@ public class AiNarrativeTests
         var gemini = new FixedGeminiStub();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            gemini, new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            gemini, new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
         var stages = new List<SnapshotProgress>();
         var progress = new Progress<SnapshotProgress>(s => stages.Add(s));
 
@@ -483,7 +553,7 @@ public class AiNarrativeTests
         var db = NewDb();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            new DisabledGeminiStub(), new DisabledBodyStub(), NullLogger<NarrativeService>.Instance);
+            new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
         var stages = new List<SnapshotProgress>();
         var progress = new Progress<SnapshotProgress>(s => stages.Add(s));
 
@@ -493,6 +563,117 @@ public class AiNarrativeTests
         for (int i = 0; i < 50 && !stages.Any(s => s.Stage == "clustering"); i++)
             await Task.Delay(100);
         Assert.Contains(stages, s => s.Stage == "clustering" && s.State == "complete");
+    }
+
+    [Fact]
+    public void RelevancePrompt_CarriesContextAndRules()
+    {
+        var prompt = ClusterBriefPromptBuilderCheck();
+        Assert.Contains("Tesla, Inc.", prompt);
+        Assert.Contains("TSLA", prompt);
+        Assert.Contains("2020-01-15", prompt);
+        Assert.Contains("Consumer Discretionary", prompt);
+        Assert.Contains("[a1] Tesla earnings beat", prompt);
+        Assert.Contains("SEMANTIC classification, not keyword matching", prompt);
+        Assert.Contains("Never predict, advise, or recommend anything", prompt);
+    }
+
+    private static string ClusterBriefPromptBuilderCheck() =>
+        RelevancePrompt.Build("Tesla, Inc.", "TSLA", new DateOnly(2020, 1, 15),
+            "Consumer Discretionary", new[] { ("a1", "Tesla earnings beat") });
+
+    private static RelevanceService RelevanceSut(
+        StockTimeMachineDbContext db, IGeminiClient gemini) =>
+        new(new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            gemini, NullLogger<RelevanceService>.Instance);
+
+    private static NewsArticle RelArticle(string id, string title) => new()
+    {
+        Id = id, Title = title, Source = "GDELT",
+        PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/" + id,
+        CompanySymbol = "TSLA",
+    };
+
+    [Fact]
+    public async Task RelevanceService_MapsVerdictsAndCaches()
+    {
+        var db = NewDb();
+        var gemini = new FuncGeminiStub(_ => new[]
+        {
+            new RelevanceVerdict { Id = "a1", Relevant = true, Category = "financial", Confidence = 1.5, Reason = "R1" },
+            new RelevanceVerdict { Id = "zzz", Relevant = true, Category = "BOGUS", Confidence = 0.9, Reason = "Rz" },
+        });
+        var sut = RelevanceSut(db, gemini);
+        var docs = new[] { RelArticle("a1", "T1"), RelArticle("a2", "T2") };
+
+        var first = await sut.ClassifyAsync("TSLA", new DateOnly(2020, 1, 15),
+            "Tesla, Inc.", "Automobiles", docs);
+
+        // a1 mapped (category uppercased, confidence clamped); unknown id
+        // ignored; a2 unanswered → absent (unknown, never guessed).
+        Assert.True(first["a1"].Relevant);
+        Assert.Equal("FINANCIAL", first["a1"].Category);
+        Assert.Equal(1.0, first["a1"].Confidence);
+        Assert.False(first.ContainsKey("a2"));
+        Assert.Single(gemini.SeenPrompts);
+
+        // Second call served from cache: no new model call.
+        var second = await sut.ClassifyAsync("TSLA", new DateOnly(2020, 1, 15),
+            "Tesla, Inc.", "Automobiles", docs.Take(1).ToList());
+        Assert.Single(gemini.SeenPrompts);
+        Assert.True(second["a1"].Relevant);
+    }
+
+    [Fact]
+    public async Task RelevanceService_DisabledAi_ReturnsEmpty()
+    {
+        var db = NewDb();
+        var sut = RelevanceSut(db, new DisabledGeminiStub());
+
+        var result = await sut.ClassifyAsync("TSLA", new DateOnly(2020, 1, 15),
+            null, null, new[] { RelArticle("a1", "T1") });
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task NarrativeService_AttachesThreadRelevance()
+    {
+        var db = NewDb();
+        await SeedPair(db);
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        var relevance = new RelevanceService(repo, new FuncGeminiStub(prompt =>
+        {
+            // Every requested id relevant except titles carrying "fire".
+            var ids = new List<string>();
+            foreach (var line in prompt.Split('\n'))
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"^\[(.+?)\] (.*)$");
+                if (m.Success)
+                    ids.Add(m.Groups[1].Value + "|" + m.Groups[2].Value);
+            }
+            return ids.Select(x =>
+            {
+                var parts = x.Split('|', 2);
+                return new RelevanceVerdict
+                {
+                    Id = parts[0],
+                    Relevant = !parts[1].Contains("fire", StringComparison.OrdinalIgnoreCase),
+                    Category = "OPERATIONS",
+                    Confidence = 0.8,
+                    Reason = "Stub.",
+                };
+            }).ToList();
+        }), NullLogger<RelevanceService>.Instance);
+        var sut = new NarrativeService(repo, new DisabledGeminiStub(), new DisabledBodyStub(),
+            TestDirectory.Tesla(), relevance, NullLogger<NarrativeService>.Instance);
+
+        var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        Assert.NotEmpty(result.Topics);
+        Assert.All(result.Topics, t => Assert.NotNull(t.RelevanceRate));
+        var withCategory = result.Topics.Where(t => t.RelevanceRate > 0).ToList();
+        Assert.All(withCategory, t => Assert.Equal("OPERATIONS", t.TopCategory));
     }
 
     [Fact]
@@ -556,3 +737,4 @@ public class AiNarrativeTests
         Assert.DoesNotContain("price move caused", prompt);
     }
 }
+

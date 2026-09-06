@@ -241,4 +241,90 @@ public class GeminiClient : IGeminiClient
         }
     }
 
+    public async Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default)
+    {
+        var empty = Array.Empty<RelevanceVerdict>();
+        if (!IsEnabled)
+            return empty;
+        try
+        {
+            await _generateLimiter.AcquireAsync(AdaptiveRateLimiter.EstimateTokens(prompt) + 1024, ct);
+            var body = new
+            {
+                generationConfig = new
+                {
+                    temperature = 0.0,
+                    maxOutputTokens = 2048,
+                    responseMimeType = "application/json",
+                    responseJsonSchema = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            results = new
+                            {
+                                type = "array",
+                                items = new
+                                {
+                                    type = "object",
+                                    properties = new
+                                    {
+                                        id = new { type = "string" },
+                                        relevant = new { type = "boolean" },
+                                        category = new { type = "string" },
+                                        confidence = new { type = "number" },
+                                        reason = new { type = "string" },
+                                    },
+                                    required = new[] { "id", "relevant", "category", "confidence", "reason" },
+                                },
+                            },
+                        },
+                        required = new[] { "results" },
+                    },
+                },
+                contents = new[] { new { parts = new[] { new { text = prompt } } } },
+            };
+            using var resp = await _http.PostAsJsonAsync(
+                $"{BaseUrl}/{_summaryModel}:generateContent?key={_apiKey}", body, ct);
+            ThrowIfThrottled(resp, "generate");
+            _generateLimiter.ReportSuccess();
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var text = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString() ?? "";
+            using var parsed = JsonDocument.Parse(text);
+            var list = new List<RelevanceVerdict>();
+            foreach (var e in parsed.RootElement.GetProperty("results").EnumerateArray())
+            {
+                var id = e.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "";
+                if (string.IsNullOrEmpty(id))
+                    continue;
+                var category = e.TryGetProperty("category", out var c) ? (c.GetString() ?? "").ToUpperInvariant() : "UNRELATED";
+                if (!RelevancePrompt.Categories.Contains(category))
+                    category = "UNRELATED";
+                var confidence = e.TryGetProperty("confidence", out var cf) && cf.TryGetDouble(out var d)
+                    ? Math.Clamp(d, 0, 1) : 0;
+                list.Add(new RelevanceVerdict
+                {
+                    Id = id,
+                    Relevant = e.TryGetProperty("relevant", out var r) && r.ValueKind == JsonValueKind.True,
+                    Category = category,
+                    Confidence = confidence,
+                    Reason = e.TryGetProperty("reason", out var rs) ? rs.GetString() ?? "" : "",
+                });
+            }
+            return list;
+        }
+        catch (Exception ex)
+        {
+            if (ex is RateLimitExceededException throttled)
+                _generateLimiter.ReportThrottled(throttled.RetryAfter);
+            _logger.LogWarning(ex, "Gemini relevance classification failed");
+            return empty;
+        }
+    }
+
 }

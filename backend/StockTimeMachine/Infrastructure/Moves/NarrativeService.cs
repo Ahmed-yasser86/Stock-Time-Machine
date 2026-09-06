@@ -15,17 +15,23 @@ public class NarrativeService : INarrativeService
     private readonly IHistoricalDataRepository _dataRepo;
     private readonly IGeminiClient _gemini;
     private readonly IArticleContentClient _bodies;
+    private readonly ICompanyDirectory _directory;
+    private readonly IRelevanceService _relevance;
     private readonly ILogger<NarrativeService> _logger;
 
     public NarrativeService(
         IHistoricalDataRepository dataRepo,
         IGeminiClient gemini,
         IArticleContentClient bodies,
+        ICompanyDirectory directory,
+        IRelevanceService relevance,
         ILogger<NarrativeService> logger)
     {
         _dataRepo = dataRepo;
         _gemini = gemini;
         _bodies = bodies;
+        _directory = directory;
+        _relevance = relevance;
         _logger = logger;
     }
 
@@ -61,6 +67,8 @@ public class NarrativeService : INarrativeService
         result.Topics = TopicClustering.Cluster(articles);
         result.ClusteringMethod = "tf-idf-fallback";
         result.ArticlesClustered = Math.Min(articles.Count, TopicClustering.MaxArticles);
+        await AttachRelevanceAsync(result,
+            articles.Take(TopicClustering.MaxArticles).ToList(), ct);
         progress?.Report(new SnapshotProgress("clustering", "complete",
             $"TF-IDF fallback: {result.Topics.Count} threads", result.Topics.Count));
         return result;
@@ -116,6 +124,7 @@ public class NarrativeService : INarrativeService
             result.Topics = topics;
             result.ClusteringMethod = "gemini-embeddings";
             result.ArticlesClustered = docs.Count;
+            await AttachRelevanceAsync(result, docs, ct);
             return true;
         }
         catch (Exception ex)
@@ -186,6 +195,50 @@ public class NarrativeService : INarrativeService
                 missingIdx.Count, docs.Count, model);
         }
         return vectors;
+    }
+
+    // Semantic relevance annotation (read-only w.r.t. clustering): each
+    // thread reports the fraction of classified members rated relevant plus
+    // the top category. Unclassified threads keep nulls — never zero-filled.
+    private async Task AttachRelevanceAsync(
+        NarrativeTopicsResult result, List<NewsArticle> docs, CancellationToken ct)
+    {
+        if (docs.Count == 0 || result.Topics.Count == 0)
+            return;
+        string? companyName = null;
+        string? sector = null;
+        if (_directory.TryGet(result.CompanySymbol, out var info) && info is not null)
+        {
+            companyName = info.Name;
+            sector = string.IsNullOrWhiteSpace(info.Sector) ? null : info.Sector;
+        }
+        IReadOnlyDictionary<string, ArticleRelevance> verdicts;
+        try
+        {
+            verdicts = await _relevance.ClassifyAsync(
+                result.CompanySymbol, result.AsOfDate, companyName, sector, docs, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Relevance annotation failed for {Symbol}", result.CompanySymbol);
+            return;
+        }
+        foreach (var topic in result.Topics)
+        {
+            var rated = topic.ArticleIds
+                .Select(id => verdicts.TryGetValue(id, out var v) ? v : null)
+                .Where(v => v?.Relevant.HasValue == true)
+                .ToList();
+            if (rated.Count == 0)
+                continue;
+            topic.RelevanceRate = (double)rated.Count(v => v!.Relevant == true) / rated.Count;
+            topic.TopCategory = rated
+                .Where(v => v!.Relevant == true && v.Category != "UNRELATED")
+                .GroupBy(v => v!.Category)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault() ?? "";
+        }
     }
 
     private TopicCluster ToCluster(List<int> members, List<NewsArticle> docs, IReadOnlyList<float[]> vectors)

@@ -199,7 +199,8 @@ public class MovesController : ControllerBase
                 t.LabelTerms, t.ArticleIds, t.RepresentativeTitle,
                 t.SpanStart, t.SpanEnd,
                 t.Brief is null ? null : new ClusterBriefDto(
-                    t.Brief.Summary, t.Brief.KeyPoints, t.Brief.Model))).ToList());
+                    t.Brief.Summary, t.Brief.KeyPoints, t.Brief.Model),
+                t.RelevanceRate, t.TopCategory)).ToList());
 
     // Last-100-trading-days investigation window: ranked key movements, each
     // with evidence already filtered to that movement's own cutoff.

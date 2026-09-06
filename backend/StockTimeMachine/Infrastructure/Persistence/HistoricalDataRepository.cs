@@ -165,6 +165,35 @@ public class HistoricalDataRepository : IHistoricalDataRepository
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task<ArticleRelevance?> GetRelevance(string articleId, string symbol, CancellationToken ct = default) =>
+        await _db.ArticleRelevances.FirstOrDefaultAsync(
+            x => x.ArticleId == articleId && x.Symbol == symbol.ToUpperInvariant(), ct);
+
+    public async Task StoreRelevances(IEnumerable<ArticleRelevance> rows, CancellationToken ct = default)
+    {
+        foreach (var row in rows)
+        {
+            var existing = await _db.ArticleRelevances.FindAsync(
+                new object[] { row.ArticleId, row.Symbol.ToUpperInvariant() }, ct);
+            if (existing is null)
+            {
+                row.Symbol = row.Symbol.ToUpperInvariant();
+                row.ClassifiedAt = DateTime.UtcNow;
+                await _db.ArticleRelevances.AddAsync(row, ct);
+            }
+            else
+            {
+                existing.Relevant = row.Relevant;
+                existing.Category = row.Category;
+                existing.Confidence = row.Confidence;
+                existing.Reason = row.Reason;
+                existing.Model = row.Model;
+                existing.ClassifiedAt = DateTime.UtcNow;
+            }
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);

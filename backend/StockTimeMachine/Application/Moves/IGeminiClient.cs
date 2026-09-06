@@ -25,4 +25,7 @@ public interface IGeminiClient
     // Structured review of a user note: one verdict per cited claim. Empty
     // (not null) when the model declines — reviewers report, never conclude.
     Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default);
+    // Semantic relevance batch: one verdict per headline id. Malformed items
+    // are skipped (callers mark unknown); never throws for content reasons.
+    Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default);
 }
