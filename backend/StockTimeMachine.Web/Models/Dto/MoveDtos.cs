@@ -56,9 +56,9 @@ public sealed record WindowSummaryDto(
     decimal WorstDayReturnPct,
     bool SufficientHistory);
 
-public sealed record UncertaintyComponentDto(string Name, double Weight, double Value, string Detail);
+public sealed record UncertaintyComponentDto(string Name, double Weight, double Value, string Detail, string Status);
 
-public sealed record UncertaintyIndexDto(double Score, IReadOnlyList<UncertaintyComponentDto> Components);
+public sealed record UncertaintyIndexDto(double Score, IReadOnlyList<UncertaintyComponentDto> Components, string Confidence, string Version, string Model);
 
 public sealed record ClusterBriefDto(
     string Summary,

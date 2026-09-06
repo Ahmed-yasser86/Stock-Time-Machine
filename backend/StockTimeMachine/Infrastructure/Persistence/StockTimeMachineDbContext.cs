@@ -14,6 +14,7 @@ public class StockTimeMachineDbContext : DbContext
     public DbSet<NewsArticle> NewsArticles => Set<NewsArticle>();
     public DbSet<ArticleEmbedding> ArticleEmbeddings => Set<ArticleEmbedding>();
     public DbSet<ArticleRelevance> ArticleRelevances => Set<ArticleRelevance>();
+    public DbSet<ArticleSentiment> ArticleSentiments => Set<ArticleSentiment>();
     public DbSet<InvestigationJob> InvestigationJobs => Set<InvestigationJob>();
     public DbSet<PricePoint> PricePoints => Set<PricePoint>();
 
@@ -87,6 +88,14 @@ public class StockTimeMachineDbContext : DbContext
             e.Property(x => x.Symbol).HasMaxLength(10);
             e.Property(x => x.Model).HasMaxLength(100);
             e.Property(x => x.Category).HasMaxLength(32);
+        });
+
+        modelBuilder.Entity<ArticleSentiment>(e =>
+        {
+            e.HasKey(x => new { x.ArticleId, x.Model });
+            e.Property(x => x.ArticleId).HasMaxLength(100);
+            e.Property(x => x.Model).HasMaxLength(100);
+            e.Property(x => x.TextHash).HasMaxLength(64);
         });
 
         modelBuilder.Entity<PricePoint>(e =>

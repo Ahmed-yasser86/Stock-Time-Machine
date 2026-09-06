@@ -40,6 +40,7 @@ public class MoveDetectionService : IMoveDetectionService
     private readonly ICompanyDirectory _directory;
     private readonly INewsProviderFactory _newsFactory;
     private readonly IEnumerable<ISocialSignalProvider> _social;
+    private readonly IFinancialSentimentAnalyzer _sentiment;
     private readonly ILogger<MoveDetectionService> _logger;
 
     public MoveDetectionService(
@@ -49,6 +50,7 @@ public class MoveDetectionService : IMoveDetectionService
         ICompanyDirectory directory,
         INewsProviderFactory newsFactory,
         IEnumerable<ISocialSignalProvider> social,
+        IFinancialSentimentAnalyzer sentiment,
         ILogger<MoveDetectionService> logger)
     {
         _companyRepo = companyRepo;
@@ -57,6 +59,7 @@ public class MoveDetectionService : IMoveDetectionService
         _directory = directory;
         _newsFactory = newsFactory;
         _social = social;
+        _sentiment = sentiment;
         _logger = logger;
     }
 
@@ -80,7 +83,8 @@ public class MoveDetectionService : IMoveDetectionService
         if (rows.Count < MinRows)
         {
             window.Summary = new WindowSummary { TradingDays = rows.Count, SufficientHistory = false };
-            window.Uncertainty = UncertaintyIndexCalculator.Calculate(window);
+            window.Uncertainty = DecisionContextCalculator.Calculate(window,
+                Array.Empty<ScoredArticle>(), _sentiment.ModelId);
             progress?.Report(new SnapshotProgress("detecting", "complete",
                 $"insufficient history ({rows.Count} days)", rows.Count));
             return window;
@@ -129,7 +133,18 @@ public class MoveDetectionService : IMoveDetectionService
             move.SentimentDirection = SentimentDivergence.Classify(scores, move.DailyReturnPct);
         }
 
-        window.Uncertainty = UncertaintyIndexCalculator.Calculate(window);
+        // Decision Context: score the window's cached articles through local
+        // FinBERT (bounded, cache-first), then run the pure engine over the
+        // window + scores. Sentiment that cannot be measured stays missing.
+        var windowArticles = window.EvidenceByDate.Values
+            .SelectMany(e => e.News)
+            .GroupBy(n => n.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderByDescending(n => n.PublishedAt)
+            .Take(100)
+            .ToList();
+        var scoredArticles = await _sentiment.EnsureScoredAsync(windowArticles, asOfDate, ct);
+        window.Uncertainty = DecisionContextCalculator.Calculate(window, scoredArticles, _sentiment.ModelId);
         return window;
     }
 

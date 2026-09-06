@@ -43,6 +43,36 @@ def load():
     return _revision
 
 
+def read_body(handler):
+    """Read the request body regardless of framing.
+
+    .NET HttpClient may send chunked bodies with NO Content-Length; reading
+    Content-Length bytes then yields b'' and every batch silently arrives
+    empty (the batch-shape-mismatch saga of 2026-09-06 — never again).
+    """
+    if "chunked" in (handler.headers.get("Transfer-Encoding", "").lower()):
+        chunks = []
+        while True:
+            line = handler.rfile.readline().strip()
+            if not line:
+                break
+            try:
+                size = int(line.split(b";")[0], 16)
+            except ValueError:
+                break
+            if size == 0:
+                handler.rfile.readline()
+                break
+            chunks.append(handler.rfile.read(size))
+            handler.rfile.readline()
+        return b"".join(chunks)
+    try:
+        length = int(handler.headers.get("Content-Length", 0))
+    except ValueError:
+        length = 0
+    return handler.rfile.read(length) if length > 0 else b""
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "FinBertSidecar/1.0"
 
@@ -66,8 +96,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "unknown endpoint"})
             return
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            raw = read_body(self)
+            payload = json.loads(raw or b"{}")
             texts = payload.get("texts", [])
             if not isinstance(texts, list) or len(texts) > MAX_BATCH:
                 self._send(400, {"error": f"texts must be a list of at most {MAX_BATCH}"})
@@ -75,19 +105,31 @@ class Handler(BaseHTTPRequestHandler):
             results = []
             with _torch.no_grad():
                 for text in texts:
-                    t = text if isinstance(text, str) else ""
-                    enc = _tokenizer(t, return_tensors="pt", truncation=True,
-                                     max_length=512, padding=True)
-                    logits = _model(**enc).logits[0]
-                    probs = _torch.softmax(logits, dim=-1).tolist()
-                    # ProsusAI/finbert label order: positive, negative, neutral.
-                    pos, neg, neu = probs[0], probs[1], probs[2]
-                    results.append({
-                        "pos": pos, "neu": neu, "neg": neg,
-                        "score": pos - neg,
-                        "confidence": max(probs),
-                        "model": MODEL_ID, "revision": _revision,
-                    })
+                    # Per-item isolation: one hostile input (control chars,
+                    # pathological unicode) must never void the whole batch.
+                    # Failed items come back confidence-0, which downstream
+                    # treats as excluded — counted, never silently dropped.
+                    try:
+                        t = text if isinstance(text, str) else ""
+                        enc = _tokenizer(t, return_tensors="pt", truncation=True,
+                                         max_length=512, padding=True)
+                        logits = _model(**enc).logits[0]
+                        probs = _torch.softmax(logits, dim=-1).tolist()
+                        # ProsusAI/finbert label order: positive, negative, neutral.
+                        pos, neg, neu = probs[0], probs[1], probs[2]
+                        results.append({
+                            "pos": pos, "neu": neu, "neg": neg,
+                            "score": pos - neg,
+                            "confidence": max(probs),
+                            "model": MODEL_ID, "revision": _revision,
+                        })
+                    except Exception as item_ex:
+                        results.append({
+                            "pos": 0.0, "neu": 1.0, "neg": 0.0,
+                            "score": 0.0, "confidence": 0.0,
+                            "model": MODEL_ID, "revision": _revision,
+                            "error": str(item_ex)[:200],
+                        })
             self._send(200, {"results": results, "model": MODEL_ID,
                              "revision": _revision})
         except Exception as ex:  # never hang the caller on bad input

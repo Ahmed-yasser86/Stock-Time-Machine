@@ -125,9 +125,9 @@ public class ApiContractTests : IClassFixture<ApiContractTests.Factory>
         Assert.Contains("sufficientHistory", body);
         Assert.Contains("false", body);
         Assert.Contains("uncertainty", body);
-        Assert.Contains("evidence-sparsity", body);
-        Assert.Contains("uncertainty", body);
-        Assert.Contains("evidence-sparsity", body);
+        Assert.Contains("evidence-coverage", body);
+        Assert.Contains("confidence", body);
+        Assert.Contains("dc-v1", body);
     }
 
     [Fact]

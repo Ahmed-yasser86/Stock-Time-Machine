@@ -208,11 +208,15 @@ export interface UncertaintyComponent {
   weight: number;
   value: number;
   detail: string;
+  status: string;
 }
 
 export interface UncertaintyIndex {
   score: number;
   components: UncertaintyComponent[];
+  confidence: string;
+  version: string;
+  model: string;
 }
 
 export interface ClusterBrief {

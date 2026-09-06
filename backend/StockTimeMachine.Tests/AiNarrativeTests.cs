@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using StockTimeMachine;
@@ -60,6 +61,15 @@ public static class TestDirectory
 {
     public static ICompanyDirectory Tesla() => new StubCompanyDirectory(
         new CompanyInfo("TSLA", "Tesla, Inc.", "0001318605", "NASDAQ", "Consumer Discretionary", "Automobiles"));
+}
+
+public sealed class DisabledSentimentStub : IFinancialSentimentAnalyzer
+{
+    public bool IsEnabled => false;
+    public string ModelId => "ProsusAI/finbert";
+    public Task<IReadOnlyList<ScoredArticle>> EnsureScoredAsync(
+        IReadOnlyList<NewsArticle> articles, DateOnly cutoff, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ScoredArticle>>(Array.Empty<ScoredArticle>());
 }
 
 public sealed class FuncGeminiStub : IGeminiClient
@@ -674,6 +684,103 @@ public class AiNarrativeTests
         Assert.All(result.Topics, t => Assert.NotNull(t.RelevanceRate));
         var withCategory = result.Topics.Where(t => t.RelevanceRate > 0).ToList();
         Assert.All(withCategory, t => Assert.Equal("OPERATIONS", t.TopCategory));
+    }
+
+    private static FinBertSentimentAnalyzer NlpAnalyzer(
+        StockTimeMachineDbContext db, HttpMessageHandler handler, bool enabled = true)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Nlp:Endpoint"] = "http://127.0.0.1:5252",
+            ["Nlp:Enabled"] = enabled ? "true" : "false",
+        }).Build();
+        return new FinBertSentimentAnalyzer(
+            new HttpClient(handler),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            NullLogger<FinBertSentimentAnalyzer>.Instance, config);
+    }
+
+    private const string NlpBatch = """
+        {"results": [{"pos": 0.8, "neu": 0.1, "neg": 0.1, "score": 0.7, "confidence": 0.8}], "model": "ProsusAI/finbert", "revision": "r1"}
+        """;
+
+    private static NewsArticle NlpArticle(string id, string date) => new()
+    {
+        Id = id, Title = "T " + id, Description = "Body",
+        PublishedAt = DateTime.SpecifyKind(DateTime.Parse(date), DateTimeKind.Utc),
+        Url = "https://example.com/" + id, CompanySymbol = "TSLA", Source = "GDELT",
+    };
+
+    [Fact]
+    public async Task Nlp_ScoresAndCachesByTextHash()
+    {
+        var db = NewDb();
+        var handler = new RoutedHttpMessageHandler()
+            .When(_ => true, NlpBatch);
+        var sut = NlpAnalyzer(db, handler);
+
+        var first = await sut.EnsureScoredAsync(
+            new[] { NlpArticle("a1", "2020-01-10") }, new DateOnly(2020, 1, 15));
+        var second = await sut.EnsureScoredAsync(
+            new[] { NlpArticle("a1", "2020-01-10") }, new DateOnly(2020, 1, 15));
+
+        var one = Assert.Single(first);
+        Assert.Equal(0.7, one.Score);
+        Assert.Equal(0.8, one.Confidence);
+        Assert.False(one.FromCache);
+        Assert.True(Assert.Single(second).FromCache);
+        Assert.Equal(1, handler.Calls); // second call served from cache
+    }
+
+    [Fact]
+    public async Task Nlp_FutureArticles_ExcludedNeverScored()
+    {
+        var db = NewDb();
+        var handler = new RoutedHttpMessageHandler()
+            .When(_ => true, NlpBatch);
+        var sut = NlpAnalyzer(db, handler);
+
+        var result = await sut.EnsureScoredAsync(
+            new[] { NlpArticle("a1", "2020-02-01") }, new DateOnly(2020, 1, 15));
+
+        Assert.Empty(result);
+        Assert.Equal(0, handler.Calls);
+    }
+
+    [Fact]
+    public async Task Nlp_SidecarDown_ReturnsCachedOnly()
+    {
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreSentiment(new ArticleSentiment
+        {
+            ArticleId = "a1", Model = "ProsusAI/finbert", TextHash = FinBertSentimentAnalyzer.TextHash(NlpArticle("a1", "2020-01-10")),
+            Pos = 0.8, Neu = 0.1, Neg = 0.1, Score = 0.7, Confidence = 0.8,
+        });
+        var sut = NlpAnalyzer(db, new RoutedHttpMessageHandler()
+            .When(_ => true, "boom", System.Net.HttpStatusCode.InternalServerError));
+
+        var result = await sut.EnsureScoredAsync(
+            new[] { NlpArticle("a1", "2020-01-10"), NlpArticle("a2", "2020-01-10") },
+            new DateOnly(2020, 1, 15));
+
+        var single = Assert.Single(result); // a1 cached; a2 failed softly, not fabricated
+        Assert.Equal("a1", single.ArticleId);
+        Assert.True(single.FromCache);
+    }
+
+    [Fact]
+    public async Task Nlp_Disabled_ReturnsEmptyWithoutHttp()
+    {
+        var db = NewDb();
+        var handler = new RoutedHttpMessageHandler()
+            .When(_ => true, NlpBatch);
+        var sut = NlpAnalyzer(db, handler, enabled: false);
+
+        Assert.True(!sut.IsEnabled);
+        Assert.Empty(await sut.EnsureScoredAsync(
+            new[] { NlpArticle("a1", "2020-01-10") }, new DateOnly(2020, 1, 15)));
+        Assert.Equal(0, handler.Calls);
     }
 
     [Fact]
