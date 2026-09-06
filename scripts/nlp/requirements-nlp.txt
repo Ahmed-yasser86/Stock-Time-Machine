@@ -1,0 +1,6 @@
+# FinBERT sidecar pins (CPU-only). Verified live 2026-09-06 on Python 3.14.
+# torch CPU wheel comes from the PyTorch index (first line); the rest from PyPI.
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu
+--extra-index-url https://pypi.org/simple
+transformers==5.16.1
