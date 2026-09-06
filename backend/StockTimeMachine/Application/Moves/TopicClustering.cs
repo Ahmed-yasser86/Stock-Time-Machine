@@ -16,6 +16,11 @@ public class TopicCluster
     // AI brief when the Gemini path produced one; null on the TF-IDF path or
     // when the model declined. Presenters must label it AI-generated.
     public ClusterBrief? Brief { get; set; }
+    // Semantic relevance of member articles (see IRelevanceService): fraction
+    // rated relevant, plus the top category. Null = not classified (AI off or
+    // failed) — never zero-filled.
+    public double? RelevanceRate { get; set; }
+    public string TopCategory { get; set; } = "";
 }
 
 public static class TopicClustering

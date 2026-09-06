@@ -302,6 +302,8 @@ public class MoveDetectionServiceTests
         public Task<IReadOnlyList<SecFiling>> GetFilingsAfter(string s, DateOnly d, int days = 30, CancellationToken ct = default) => _inner.GetFilingsAfter(s, d, days, ct);
         public Task<ArticleEmbedding?> GetEmbedding(string id, string model, CancellationToken ct = default) => _inner.GetEmbedding(id, model, ct);
         public Task StoreEmbedding(ArticleEmbedding e, CancellationToken ct = default) => _inner.StoreEmbedding(e, ct);
+        public Task<ArticleRelevance?> GetRelevance(string id, string symbol, CancellationToken ct = default) => _inner.GetRelevance(id, symbol, ct);
+        public Task StoreRelevances(IEnumerable<ArticleRelevance> rows, CancellationToken ct = default) => _inner.StoreRelevances(rows, ct);
         public Task StorePrices(string s, IEnumerable<PricePoint> p, CancellationToken ct = default) => _inner.StorePrices(s, p, ct);
         public Task StoreNews(string s, IEnumerable<NewsArticle> n, CancellationToken ct = default) => _inner.StoreNews(s, n, ct);
         public Task StoreFilings(string s, IEnumerable<SecFiling> f, CancellationToken ct = default) => _inner.StoreFilings(s, f, ct);
