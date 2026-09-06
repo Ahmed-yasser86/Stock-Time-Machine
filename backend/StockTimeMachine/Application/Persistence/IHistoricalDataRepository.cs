@@ -19,6 +19,8 @@ public interface IHistoricalDataRepository
     Task StoreEmbedding(ArticleEmbedding embedding, CancellationToken ct = default);
     Task<ArticleRelevance?> GetRelevance(string articleId, string symbol, CancellationToken ct = default);
     Task StoreRelevances(IEnumerable<ArticleRelevance> rows, CancellationToken ct = default);
+    Task<ArticleSentiment?> GetSentiment(string articleId, string model, CancellationToken ct = default);
+    Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default);
     Task<IReadOnlyList<SecFiling>> GetFilingsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default);
     Task<IReadOnlyList<PricePoint>> GetPricesAsOf(string companySymbol, DateOnly asOfDate, int days = 30, CancellationToken ct = default);
     Task<IReadOnlyList<PricePoint>> GetPriceRange(string companySymbol, DateOnly from, DateOnly to, CancellationToken ct = default);

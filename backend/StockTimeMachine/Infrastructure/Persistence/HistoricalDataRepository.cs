@@ -194,6 +194,31 @@ public class HistoricalDataRepository : IHistoricalDataRepository
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task<ArticleSentiment?> GetSentiment(string articleId, string model, CancellationToken ct = default) =>
+        await _db.ArticleSentiments
+            .FirstOrDefaultAsync(x => x.ArticleId == articleId && x.Model == model, ct);
+
+    public async Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default)
+    {
+        var existing = await _db.ArticleSentiments.FindAsync(new object[] { row.ArticleId, row.Model }, ct);
+        if (existing is null)
+        {
+            row.ScoredAt = DateTime.UtcNow;
+            await _db.ArticleSentiments.AddAsync(row, ct);
+        }
+        else
+        {
+            existing.TextHash = row.TextHash;
+            existing.Pos = row.Pos;
+            existing.Neu = row.Neu;
+            existing.Neg = row.Neg;
+            existing.Score = row.Score;
+            existing.Confidence = row.Confidence;
+            existing.ScoredAt = DateTime.UtcNow;
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);

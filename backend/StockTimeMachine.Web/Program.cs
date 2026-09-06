@@ -102,6 +102,13 @@ builder.Services.AddSingleton<ICompanyDirectory, JsonCompanyDirectory>();
 builder.Services.AddScoped<ITimeMachineService, TimeMachineService>();
 builder.Services.AddScoped<ISimulationService, SimulationService>();
 builder.Services.AddScoped<IMoveDetectionService, MoveDetectionService>();
+builder.Services.AddHttpClient(nameof(FinBertSentimentAnalyzer));
+builder.Services.AddScoped<IFinancialSentimentAnalyzer>(sp =>
+    new FinBertSentimentAnalyzer(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(FinBertSentimentAnalyzer)),
+        sp.GetRequiredService<IHistoricalDataRepository>(),
+        sp.GetRequiredService<ILogger<FinBertSentimentAnalyzer>>(),
+        sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddScoped<INarrativeService, NarrativeService>();
 builder.Services.AddScoped<IRelevanceService, RelevanceService>();
 builder.Services.AddScoped<IInvestigationJobStore, InvestigationJobStore>();

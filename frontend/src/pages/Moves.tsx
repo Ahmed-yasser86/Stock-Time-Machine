@@ -372,6 +372,9 @@ export default function Moves() {
                 {data.uncertainty.score.toFixed(1)}
               </span>
               <span className="text-xs text-fg-dim">/ 100 · higher means thinner or more conflicting evidence</span>
+              <Badge variant="outline" title="How much of the evidence base could actually be measured">
+                confidence: {data.uncertainty.confidence}
+              </Badge>
             </div>
             <ul className="space-y-1 text-sm">
               {data.uncertainty.components.map((c) => (
@@ -380,10 +383,18 @@ export default function Moves() {
                     {(c.weight * 100).toFixed(0)}% × {c.value.toFixed(3)}
                   </span>
                   <span className="font-medium">{c.name}</span>
+                  {c.status !== 'measured' && (
+                    <Badge variant="outline" className="text-[11px]">{c.status}</Badge>
+                  )}
                   <span className="text-xs text-fg-dim">— {c.detail}</span>
                 </li>
               ))}
             </ul>
+            {data.uncertainty.model && (
+              <p className="font-mono text-[11px] text-fg-dim">
+                {data.uncertainty.version} · sentiment {data.uncertainty.model}
+              </p>
+            )}
             <p className="text-xs text-fg-dim">
               Transparent formula, no hidden inputs — <MethodLink anchor="decision-uncertainty-index" /> Never investment advice.
             </p>

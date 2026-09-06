@@ -301,7 +301,10 @@ public class MovesController : ControllerBase
             Uncertainty: new UncertaintyIndexDto(
                 window.Uncertainty.Score,
                 window.Uncertainty.Components.Select(c => new UncertaintyComponentDto(
-                    c.Name, c.Weight, c.Value, c.Detail)).ToList()),
+                    c.Name, c.Weight, c.Value, c.Detail, c.Status)).ToList(),
+                window.Uncertainty.Confidence,
+                window.Uncertainty.Version,
+                window.Uncertainty.Model),
             Regimes: window.Regimes,
             EvidenceByDate: window.EvidenceByDate.ToDictionary(
                 kvp => kvp.Key,
