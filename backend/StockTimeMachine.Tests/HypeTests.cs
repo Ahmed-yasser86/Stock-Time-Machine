@@ -248,6 +248,65 @@ public class HypeTests
     }
 
     [Fact]
+    public void Projection_CapturesExactStageText()
+    {
+        var move = Move(MoveFlags.Spike);
+        var evidence = new MoveEvidence
+        {
+            News = new List<NewsArticle>
+            {
+                new() { Id = "n1", Title = "Shares jump", Description = "A long description that gets clipped at projection time. " + new string('x', 600), Source = "GDELT", PublishedAt = new DateTime(2026, 6, 14), Url = "https://example.com/n1", CompanySymbol = "NFLX" },
+            },
+            Filings = new List<SecFiling>
+            {
+                new() { AccessionNumber = "0001", FormType = "8-K", FiledAt = new DateTime(2026, 5, 8), Url = "https://sec.gov/1", CompanySymbol = "NFLX" },
+            },
+            Social = new List<SocialSignal>
+            {
+                new() { Id = "s1", Provider = "Arctic Shift", Community = "r/wallstreetbets", Title = "DD post", Excerpt = "excerpt", Url = "https://reddit.com/1", CreatedAt = new DateTime(2026, 6, 13), CompanySymbol = "NFLX" },
+            },
+            Reaction = new List<MarketReaction>
+            {
+                new() { Date = new DateOnly(2026, 6, 16), Close = 101m },
+            },
+            Arrival = new List<ArrivalEntry>
+            {
+                new() { Layer = "news", FirstSeen = new DateTime(2026, 6, 13), State = "observed", LagHours = 5.5, Detail = "2 article(s) published" },
+            },
+        };
+        var detail = Detail(move, Topics(), Window(move, evidence: evidence));
+
+        Assert.Single(detail.Evidence.News);
+        Assert.Equal("Shares jump", detail.Evidence.News[0].Title);
+        Assert.Equal(500, detail.Evidence.News[0].Description.Length);
+        Assert.Single(detail.Evidence.Filings);
+        Assert.Equal("8-K", detail.Evidence.Filings[0].FormType);
+        Assert.Single(detail.Evidence.Social);
+        Assert.Equal("r/wallstreetbets", detail.Evidence.Social[0].Community);
+        Assert.Single(detail.Evidence.Arrival);
+        Assert.Equal("news", detail.Evidence.Arrival[0].Layer);
+    }
+
+    [Fact]
+    public void BriefPrompt_ContainsStagesBansAndCitations()
+    {
+        var move = Move(MoveFlags.Spike, MoveFlags.HighVolume);
+        var detail = Detail(move, Topics(
+            Thread("FINANCIAL", "Earnings beat estimates", new DateTime(2026, 6, 10), new DateTime(2026, 6, 10)),
+            Thread("FINANCIAL", "Revenue guidance raised", new DateTime(2026, 6, 10), new DateTime(2026, 6, 10))));
+        var match = HypeSignals.Evaluate(detail).First(m => m.SignalId == "earnings-chatter");
+        var prompt = HypeBriefPrompt.Build("NFLX", Peak, match, detail,
+            new List<(string Title, string Body)> { ("Earnings beat estimates", "Record quarter") });
+
+        Assert.Contains("2026-06-15", prompt);
+        Assert.Contains("CASE FACTS", prompt);
+        Assert.Contains("NEVER state or imply", prompt);
+        Assert.Contains("NEVER predict", prompt);
+        Assert.Contains("[1] Earnings beat estimates", prompt);
+        Assert.Contains("DISAGREEMENTS AND GAPS", prompt);
+    }
+
+    [Fact]
     public void Library_CorruptOrEmptyJson_ReturnsNull()
     {
         Assert.Null(HypeCaseLibrary.TryReadDetail(null!));

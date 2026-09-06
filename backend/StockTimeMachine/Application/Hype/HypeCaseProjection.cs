@@ -74,7 +74,14 @@ public static class HypeCaseProjection
                 : HypeCompleteness.Full;
         }
 
-        // Evidence: the move's own cutoff-filtered evidence (never re-read).
+        // Evidence: the move's own cutoff-filtered evidence (never re-read),
+        // with exact stage text (capped) so briefs narrate stages, not just
+        // thread titles.
+        const int MaxNewsItems = 25;
+        const int MaxTextChars = 500;
+        static string Clip(string? s) =>
+            string.IsNullOrWhiteSpace(s) ? "" :
+            s.Length > MaxTextChars ? s.Substring(0, MaxTextChars) : s;
         var evidence = new HypeCaseEvidence();
         if (window.EvidenceByDate.TryGetValue(peak.ToString("yyyy-MM-dd"), out var ev) && ev is not null)
         {
@@ -83,6 +90,36 @@ public static class HypeCaseProjection
             evidence.SocialCount = ev.Social.Count;
             evidence.NewsTitles = ev.News.Select(n => n.Title ?? "").Where(t => t.Length > 0).ToList();
             evidence.UnavailableLayers = ev.UnavailableLayers.ToList();
+            evidence.News = ev.News.Take(MaxNewsItems).Select(n => new HypeCaseNewsItem
+            {
+                Title = n.Title ?? "",
+                Description = Clip(n.Description),
+                Source = n.Source ?? "",
+                PublishedAt = n.PublishedAt,
+                Url = n.Url ?? "",
+            }).ToList();
+            evidence.Filings = ev.Filings.Take(MaxNewsItems).Select(f => new HypeCaseFiling
+            {
+                FormType = f.FormType ?? "",
+                FiledAt = f.FiledAt,
+                Url = f.Url ?? "",
+            }).ToList();
+            evidence.Social = ev.Social.Take(MaxNewsItems).Select(s => new HypeCaseSocialPost
+            {
+                Title = s.Title ?? "",
+                Excerpt = Clip(s.Excerpt),
+                Community = s.Community ?? "",
+                CreatedAt = s.CreatedAt,
+                Url = s.Url ?? "",
+            }).ToList();
+            evidence.Arrival = ev.Arrival.Select(a => new HypeCaseArrival
+            {
+                Layer = a.Layer ?? "",
+                FirstSeen = a.FirstSeen,
+                State = a.State ?? "",
+                LagHours = a.LagHours,
+                Detail = Clip(a.Detail),
+            }).ToList();
             completeness["evidence"] = evidence.NewsCount + evidence.FilingCount + evidence.SocialCount == 0
                 ? HypeCompleteness.Partial
                 : HypeCompleteness.Full;

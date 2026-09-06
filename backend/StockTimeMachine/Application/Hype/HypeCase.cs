@@ -71,6 +71,48 @@ public class HypeCaseEvidence
     public int SocialCount { get; set; }
     public List<string> NewsTitles { get; set; } = new();
     public List<string> UnavailableLayers { get; set; } = new();
+    // Exact stage text (additive, reason: hype brief narrates the full
+    // investigation stages, not thread titles alone). Capped at projection
+    // time so CaseJson stays small. Absent on rows frozen before this field
+    // existed — readers must tolerate nulls.
+    public List<HypeCaseNewsItem> News { get; set; } = new();
+    public List<HypeCaseFiling> Filings { get; set; } = new();
+    public List<HypeCaseSocialPost> Social { get; set; } = new();
+    public List<HypeCaseArrival> Arrival { get; set; } = new();
+}
+
+public class HypeCaseNewsItem
+{
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Source { get; set; } = "";
+    public DateTime PublishedAt { get; set; }
+    public string Url { get; set; } = "";
+}
+
+public class HypeCaseFiling
+{
+    public string FormType { get; set; } = "";
+    public DateTime FiledAt { get; set; }
+    public string Url { get; set; } = "";
+}
+
+public class HypeCaseSocialPost
+{
+    public string Title { get; set; } = "";
+    public string Excerpt { get; set; } = "";
+    public string Community { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public string Url { get; set; } = "";
+}
+
+public class HypeCaseArrival
+{
+    public string Layer { get; set; } = "";
+    public DateTime? FirstSeen { get; set; }
+    public string State { get; set; } = "";
+    public double? LagHours { get; set; }
+    public string Detail { get; set; } = "";
 }
 
 public class HypeCaseReaction

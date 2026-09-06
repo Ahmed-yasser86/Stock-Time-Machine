@@ -99,15 +99,87 @@ public class HypeController : ControllerBase
             throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
         HistoricalDate.Create(parsedDate);
 
-        var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
-        var window = await _moves.GetMoves(symbol, parsedDate, selectedNewsSource, ct);
-        var topics = await _narratives.GetTopics(symbol, parsedDate, selectedNewsSource, ct);
+        return Ok(await BuildSignalsAsync(symbol, parsedDate, newsSource, progress: null, ct));
+    }
 
-        var library = await _cases.ListRecentAsync(LibraryScanTake, ct);
-        var peaks = new List<HypePeakDto>();
-        foreach (var move in window.KeyMoves)
+    // Live detection stream (mirrors moves/stream): real stage events
+    // (detecting → threads → projecting → matching) then the full signals
+    // payload. Same data as the GET. Validation errors are normal 400s;
+    // mid-stream failures arrive as an `error` event.
+    // (Reason: hype page must narrate progress while it computes instead of
+    // staring at one opaque request.)
+    [HttpGet("signals/stream")]
+    public async Task SignalsStream(
+        [FromQuery] string? symbol,
+        [FromQuery] string? date,
+        [FromQuery] string? newsSource,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        if (!DateOnly.TryParse(date, out var parsedDate))
+            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        HistoricalDate.Create(parsedDate);
+
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+
+        async Task WriteEvent(string name, object payload)
         {
-            var current = HypeCaseProjection.Build(window, move, topics);
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, HypeStreamJson);
+            await Response.WriteAsync($"event: {name}\ndata: {json}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
+
+        var progress = new Progress<SnapshotProgress>(stage =>
+        {
+            WriteEvent("stage", new
+            {
+                stage = stage.Stage,
+                state = stage.State,
+                detail = stage.Detail,
+                count = stage.Count
+            }).GetAwaiter().GetResult();
+        });
+
+        try
+        {
+            var response = await BuildSignalsAsync(symbol, parsedDate, newsSource, progress, ct);
+            await WriteEvent("signals", response);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Hype stream failed for {Symbol} on {Date}", symbol, parsedDate);
+            await WriteEvent("error", new { detail = "Something went wrong. Please try again." });
+        }
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions HypeStreamJson = new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    private async Task<HypeSignalsResponse> BuildSignalsAsync(
+        string symbol, DateOnly parsedDate, string? newsSource,
+        IProgress<SnapshotProgress>? progress, CancellationToken ct)
+    {
+        var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
+        var window = await _moves.GetMoves(symbol, parsedDate, selectedNewsSource, ct, progress);
+        var topics = await _narratives.GetTopics(symbol, parsedDate, selectedNewsSource, ct, progress);
+
+        progress?.Report(new SnapshotProgress("projecting", "started",
+            $"{window.KeyMoves.Count} peaks into cases"));
+        var cases = window.KeyMoves
+            .Select(move => HypeCaseProjection.Build(window, move, topics))
+            .ToList();
+        progress?.Report(new SnapshotProgress("projecting", "complete",
+            $"{cases.Count} cases", cases.Count));
+
+        progress?.Report(new SnapshotProgress("matching", "started", "evaluating triggers"));
+        var library = await _cases.ListRecentAsync(LibraryScanTake, ct);
+        progress?.Report(new SnapshotProgress("resembling", "started",
+            $"joining against {library.Count} registry cases"));
+        var peaks = new List<HypePeakDto>();
+        foreach (var (current, move) in cases.Zip(window.KeyMoves, (c, m) => (c, m)))
+        {
             var detail = HypeCaseLibrary.TryReadDetail(current);
             var signals = new List<HypeSignalDto>();
             if (detail is not null)
@@ -165,13 +237,15 @@ public class HypeController : ControllerBase
                 current.Completeness,
                 signals));
         }
+        progress?.Report(new SnapshotProgress("matching", "complete",
+            $"{peaks.Sum(p => p.Signals.Count)} signals on {peaks.Count} peaks", peaks.Count));
 
-        return Ok(new HypeSignalsResponse(
+        return new HypeSignalsResponse(
             MapCompany(window.CompanySymbol),
             parsedDate,
             selectedNewsSource,
             library.Count,
-            peaks));
+            peaks);
     }
 
     // Opt-in analyst summary for one detected signal: grounded prose over the

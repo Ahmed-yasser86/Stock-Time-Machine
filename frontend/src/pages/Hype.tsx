@@ -1,20 +1,100 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { API_BASE, ApiError, api } from '../lib/api';
 import { fmtPct } from '../lib/format';
-import type { ClusterBrief, NewsSource } from '../types';
+import type { ClusterBrief, HypeSignalsResponse, NewsSource } from '../types';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { CutoffRule } from '../components/CutoffRule';
 import { GuidedTour } from '../components/GuidedTour';
-import { EmptySection, ErrorState } from '../components/StateBlocks';
+import { EmptySection, ErrorState, ReconstructionProgress, type StageEvent } from '../components/StateBlocks';
 import { MethodLink } from '../components/MethodLink';
 import { SignalCard } from '../components/SignalCard';
+
+const HYPE_STAGES = [
+  { key: 'detecting', label: 'Detecting key movements' },
+  { key: 'evidence', label: 'Attaching evidence to each move' },
+  { key: 'embedding', label: 'Embedding articles for grouping' },
+  { key: 'clustering', label: 'Clustering narrative threads' },
+  { key: 'briefing', label: 'Writing AI briefs for the largest threads' },
+  { key: 'projecting', label: 'Freezing peaks into hype cases' },
+  { key: 'matching', label: 'Evaluating signal triggers' },
+  { key: 'resembling', label: 'Joining resembling past peaks' },
+];
+
+/**
+ * Inline hype stream (mirrors the moves inline stream, without persisted
+ * jobs): stage events narrate detecting → threads → projecting → matching →
+ * resembling, then the full signals payload. Disconnecting cancels via
+ * RequestAborted; an explicit retry starts fresh.
+ */
+function useHypeStream(symbol: string, date: string, newsSource: NewsSource, nonce: number) {
+  const [stages, setStages] = useState<StageEvent[]>([]);
+  const [data, setData] = useState<HypeSignalsResponse | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (symbol === '' || date === '') return;
+    setStages([]);
+    setData(null);
+    setError(null);
+
+    let cancelled = false;
+    let settled = false;
+    let es: EventSource | null = null;
+    const onStage = (e: Event) => {
+      try {
+        const s = JSON.parse((e as MessageEvent).data) as StageEvent;
+        setStages((prev) => [...prev.filter((p) => p.stage !== s.stage), s]);
+      } catch {
+        /* ignore malformed stage frames */
+      }
+    };
+    const onSignals = (e: Event) => {
+      try {
+        setData(JSON.parse((e as MessageEvent).data) as HypeSignalsResponse);
+        settled = true;
+      } catch {
+        if (!cancelled) setError(new Error('The hype response could not be read.'));
+      } finally {
+        if (es) es.close();
+      }
+    };
+    const onError = (e: Event) => {
+      if (e instanceof MessageEvent && e.data) {
+        try {
+          const problem = JSON.parse(e.data) as { detail?: string };
+          if (!cancelled) setError(new ApiError(problem.detail ?? 'Request failed', 500, problem));
+        } catch {
+          if (!cancelled) setError(new Error('Request failed'));
+        }
+        if (es) es.close();
+      } else if (!settled) {
+        if (!cancelled) setError(new ApiError('The investigation service is unreachable. Check that the backend is running and try again.', 0, null));
+        if (es) es.close();
+      }
+    };
+
+    es = new EventSource(
+      `${API_BASE}/api/timemachine/hype/signals/stream?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}&newsSource=${encodeURIComponent(newsSource)}`,
+    );
+    es.addEventListener('stage', onStage);
+    es.addEventListener('signals', onSignals);
+    es.addEventListener('error', onError);
+
+    return () => {
+      cancelled = true;
+      settled = true;
+      if (es) es.close();
+    };
+  }, [symbol, date, newsSource, nonce]);
+
+  return { stages, data, error };
+}
 
 /**
  * Hype-cycle signals: deterministic pre-peak patterns (flags, thread
@@ -33,13 +113,16 @@ export default function Hype() {
   const [sourceInput, setSourceInput] = useState<NewsSource>(newsSource);
 
   const ready = symbol.length > 0 && date.length > 0;
-  const query = useQuery({
-    queryKey: ['hype-signals', symbol, date, newsSource],
-    queryFn: () => api.hypeSignals(symbol, date, newsSource),
-    enabled: ready,
-    staleTime: 5 * 60_000,
-    retry: 1,
-  });
+  const [nonce, setNonce] = useState(0);
+  const stream = useHypeStream(symbol, date, newsSource, nonce);
+  // Shape kept query-like so the results section below reads unchanged.
+  const query = {
+    data: stream.data ?? undefined,
+    isPending: !stream.data && !stream.error,
+    isError: !!stream.error && !stream.data,
+    error: stream.error,
+    refetch: () => setNonce((n) => n + 1),
+  };
 
   // Opt-in analyst summaries (Step 5): one generation call per click, never
   // auto-fetched. Keyed by peak + signal; failures stay silent-but-honest
@@ -129,11 +212,17 @@ export default function Hype() {
       )}
 
       {ready && query.isPending && (
-        <Card aria-busy="true" aria-label="Loading hype signals">
-          <CardContent className="pt-6 text-sm text-fg-muted">
-            Detecting pre-peak patterns — moves, threads, then library matching…
-          </CardContent>
-        </Card>
+        <div className="space-y-4" aria-busy="true">
+          <p className="text-sm text-fg-muted">
+            Detecting pre-peak patterns for {symbol}…
+          </p>
+          <ReconstructionProgress
+            stages={stream.stages}
+            defs={HYPE_STAGES}
+            title="Detecting movements, clustering threads, matching the library — live."
+            footnote="Every row is a real pipeline step: deterministic detection, per-move evidence, embeddings with live counts, case freezing, trigger evaluation, then resemblance joins."
+          />
+        </div>
       )}
 
       {ready && query.isError && (

@@ -56,6 +56,10 @@ export function Header() {
           <NavLink to="/compare" className={linkCls}>
             Compare
           </NavLink>
+          {/* Hype link is additive (reason: hype feature Step 3): no existing link altered. */}
+          <NavLink to="/hype" className={linkCls}>
+            Hype signals
+          </NavLink>
           <NavLink to="/methodology" className={linkCls}>
             Methodology
           </NavLink>
@@ -80,6 +84,10 @@ export function Header() {
           </NavLink>
           <NavLink to="/compare" className={linkCls} onClick={() => setOpen(false)}>
             <span className="block">Compare</span>
+          </NavLink>
+          {/* Hype link is additive (reason: hype feature Step 3): no existing link altered. */}
+          <NavLink to="/hype" className={linkCls} onClick={() => setOpen(false)}>
+            <span className="block">Hype signals</span>
           </NavLink>
           <NavLink to="/methodology" className={linkCls} onClick={() => setOpen(false)}>
             <span className="block">Methodology</span>

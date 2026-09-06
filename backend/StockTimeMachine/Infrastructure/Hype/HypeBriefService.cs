@@ -29,9 +29,14 @@ public class HypeBriefService : IHypeBriefService
             return null;
         try
         {
-            // Grounding = the triggering threads (rep title + stored brief or
-            // label terms), same input shape as narrative thread briefs.
+            // Grounding = the triggering threads' exact article text (stored
+            // title + description from the frozen case) plus the full stage
+            // facts via HypeBriefPrompt: the brief narrates the whole peak
+            // dossier, never thread titles alone.
             var wanted = new HashSet<string>(match.TriggerThreadIds, StringComparer.Ordinal);
+            var newsByTitle = detail.Evidence.News
+                .GroupBy(n => n.Title ?? "", StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
             var threads = detail.PrePeakThreads
                 .Where(t => t.ArticleIds.Any(id => wanted.Contains(id)))
                 .ToList();
@@ -43,13 +48,16 @@ public class HypeBriefService : IHypeBriefService
                 var body = !string.IsNullOrWhiteSpace(t.BriefSummary)
                     ? t.BriefSummary!
                     : string.Join(" ", t.LabelTerms);
+                if (newsByTitle.TryGetValue(t.RepresentativeTitle ?? "", out var item) &&
+                    !string.IsNullOrWhiteSpace(item.Description))
+                    body = item.Description + " (" + item.Source + ", " + item.PublishedAt.ToString("yyyy-MM-dd") + ")";
                 if (body.Length > MaxBodyChars)
                     body = body.Substring(0, MaxBodyChars);
-                inputs.Add((t.RepresentativeTitle, body));
+                inputs.Add((t.RepresentativeTitle ?? "(untitled thread)", body));
             }
             if (inputs.Count == 0)
                 return null;
-            var prompt = ClusterBriefPrompt.Build(symbol.Trim().ToUpperInvariant(), asOfDate, inputs);
+            var prompt = HypeBriefPrompt.Build(symbol, asOfDate, match, detail, inputs);
             return await _gemini.SummarizeClusterAsync(prompt, ct);
         }
         catch (Exception ex)

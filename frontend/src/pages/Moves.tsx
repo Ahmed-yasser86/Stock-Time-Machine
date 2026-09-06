@@ -319,12 +319,19 @@ export default function Moves() {
           <strong className="text-fg">{fmtDate(data.decisionDate)}</strong>.
         </p>
         <CutoffRule date={data.decisionDate} label="Lens ends here — decision moment" />
-        <div>
+        <div className="flex flex-wrap gap-2">
           <Link
             to={`/compare?symbols=${data.company.symbol}&date=${data.decisionDate}&newsSource=${newsSource}`}
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
             Compare this window vs another company
+          </Link>
+          {/* Hype entry point is additive (reason: hype feature Step 3): existing link untouched. */}
+          <Link
+            to={`/hype?symbol=${data.company.symbol}&date=${data.decisionDate}&newsSource=${newsSource}`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            Detect hype signals in this window
           </Link>
         </div>
         <p className="text-xs text-fg-dim">

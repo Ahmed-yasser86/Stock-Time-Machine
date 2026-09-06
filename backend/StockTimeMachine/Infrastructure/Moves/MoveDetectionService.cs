@@ -131,18 +131,12 @@ public class MoveDetectionService : IMoveDetectionService
             progress?.Report(new SnapshotProgress("evidence", "complete",
                 $"{scored.Count} moves with evidence", scored.Count));
 
-        foreach (var move in window.KeyMoves)
-        {
-            var key = move.Date.ToString("yyyy-MM-dd");
-            var scores = window.EvidenceByDate.TryGetValue(key, out var evidence)
-                ? evidence.News.Select(n => n.SentimentScore)
-                : Enumerable.Empty<decimal?>();
-            move.SentimentDirection = SentimentDivergence.Classify(scores, move.DailyReturnPct);
-        }
-
         // Decision Context: score the window's cached articles through local
         // FinBERT (bounded, cache-first), then run the pure engine over the
         // window + scores. Sentiment that cannot be measured stays missing.
+        // (Scored first because per-move divergence below falls back to these
+        // scores when providers supply none — reason: gdelt windows otherwise
+        // read permanently "unknown". Reorder only; no scoring change.)
         var windowArticles = window.EvidenceByDate.Values
             .SelectMany(e => e.News)
             .GroupBy(n => n.Id, StringComparer.Ordinal)
@@ -152,6 +146,24 @@ public class MoveDetectionService : IMoveDetectionService
             .ToList();
         var scoredArticles = await _sentiment.EnsureScoredAsync(windowArticles, asOfDate, ct);
         window.Uncertainty = DecisionContextCalculator.Calculate(window, scoredArticles, _sentiment.ModelId);
+
+        // Per-move divergence: provider per-entity scores first; FinBERT
+        // window scores (confidence-gated, cutoff-enforced, hash-bound)
+        // fill in only where providers are silent. Nothing fabricated:
+        // still unknown when fewer than 2 measured scores exist.
+        var finbertById = scoredArticles
+            .Where(s => s.Confidence >= DecisionContextCalculator.MinConfidenceUsable)
+            .GroupBy(s => s.ArticleId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => (decimal)g.First().Score, StringComparer.Ordinal);
+        foreach (var move in window.KeyMoves)
+        {
+            var key = move.Date.ToString("yyyy-MM-dd");
+            var scores = window.EvidenceByDate.TryGetValue(key, out var evidence)
+                ? evidence.News.Select(n => n.SentimentScore ??
+                    (finbertById.TryGetValue(n.Id, out var f) ? (decimal?)f : null))
+                : Enumerable.Empty<decimal?>();
+            move.SentimentDirection = SentimentDivergence.Classify(scores, move.DailyReturnPct);
+        }
         return window;
     }
 
