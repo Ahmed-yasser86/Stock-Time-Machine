@@ -148,6 +148,12 @@ export function NarrativeTopics({
                   </span>
                 </p>
                 <p className="mt-1 text-fg-muted">e.g. {t.representativeTitle}</p>
+                {t.relevanceRate !== null && t.relevanceRate !== undefined && (
+                  <p className="mt-1 text-xs text-fg-dim">
+                    Relevant {Math.round(t.relevanceRate * t.articleIds.length)}/{t.articleIds.length}
+                    {t.topCategory ? ` · ${t.topCategory}` : ''} — semantic verdicts, verify against the articles
+                  </p>
+                )}
                 {NON_ASCII.test(t.representativeTitle) && !t.brief && (
                   <ThreadGist
                     symbol={symbol}

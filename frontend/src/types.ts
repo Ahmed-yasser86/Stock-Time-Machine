@@ -228,6 +228,8 @@ export interface TopicCluster {
   spanStart: string | null;
   spanEnd: string | null;
   brief: ClusterBrief | null;
+  relevanceRate: number | null;
+  topCategory: string;
 }
 
 export interface CompareBriefResponse {

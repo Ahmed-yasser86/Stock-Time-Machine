@@ -85,8 +85,8 @@ public class TopicClusteringTests
                 .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            new DisabledGeminiStub(), new DisabledBodyStub(),
-            NullLogger<NarrativeService>.Instance);
+            new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(),
+            new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
 
@@ -107,8 +107,8 @@ public class TopicClusteringTests
             new NewsArticle { Id = "a2", Title = "Tesla earnings smash records quarterly", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 11), Url = "https://example.com/a2", CompanySymbol = "TSLA" },
         });
         var sut = new NarrativeService(repo,
-            new DisabledGeminiStub(), new DisabledBodyStub(),
-            NullLogger<NarrativeService>.Instance);
+            new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(),
+            new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
 

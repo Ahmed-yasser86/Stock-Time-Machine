@@ -71,7 +71,9 @@ public sealed record TopicClusterDto(
     string RepresentativeTitle,
     DateTime? SpanStart,
     DateTime? SpanEnd,
-    ClusterBriefDto? Brief);
+    ClusterBriefDto? Brief,
+    double? RelevanceRate,
+    string TopCategory);
 
 public sealed record NarrativesResponse(
     CompanySummaryDto Company,
