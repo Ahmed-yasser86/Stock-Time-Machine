@@ -42,13 +42,14 @@ public class MoveDetectionServiceTests
     private static MoveDetectionService Sut(
         StockTimeMachineDbContext db, Mock<IAlphaVantageProvider> av, StubCompanyDirectory directory,
         INewsProvider news, IEnumerable<ISocialSignalProvider>? social = null,
-        IFinancialSentimentAnalyzer? sentiment = null) =>
+        IFinancialSentimentAnalyzer? sentiment = null, IRelevanceService? relevance = null) =>
         new(new CompanyRepository(db, NullLogger<CompanyRepository>.Instance),
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             av.Object, directory,
             new FixedNewsProviderFactory(news),
             social ?? Array.Empty<ISocialSignalProvider>(),
             sentiment ?? new DisabledSentimentStub(),
+            relevance ?? new DisabledRelevanceStub(),
             NullLogger<MoveDetectionService>.Instance);
 
     // 40 flat days at 100, then a +15% spike on high volume, then flat at 115.
@@ -306,6 +307,8 @@ public class MoveDetectionServiceTests
         public Task StoreEmbedding(ArticleEmbedding e, CancellationToken ct = default) => _inner.StoreEmbedding(e, ct);
         public Task<ArticleRelevance?> GetRelevance(string id, string symbol, CancellationToken ct = default) => _inner.GetRelevance(id, symbol, ct);
         public Task StoreRelevances(IEnumerable<ArticleRelevance> rows, CancellationToken ct = default) => _inner.StoreRelevances(rows, ct);
+        public Task<IReadOnlyList<ArticleRelevance>> GetUncertain(string s, DateOnly d, int take = 10, CancellationToken ct = default) => _inner.GetUncertain(s, d, take, ct);
+        public Task<bool> SetRelevanceDecision(string id, string symbol, string decision, string source, CancellationToken ct = default) => _inner.SetRelevanceDecision(id, symbol, decision, source, ct);
         public Task<ArticleSentiment?> GetSentiment(string id, string model, CancellationToken ct = default) => _inner.GetSentiment(id, model, ct);
         public Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default) => _inner.StoreSentiment(row, ct);
         public Task StorePrices(string s, IEnumerable<PricePoint> p, CancellationToken ct = default) => _inner.StorePrices(s, p, ct);
@@ -326,6 +329,7 @@ public class MoveDetectionServiceTests
             new FixedNewsProviderFactory(new NullNewsProvider(NullLogger<NullNewsProvider>.Instance)),
             Array.Empty<ISocialSignalProvider>(),
             new DisabledSentimentStub(),
+            new DisabledRelevanceStub(),
             NullLogger<MoveDetectionService>.Instance);
 
         var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));

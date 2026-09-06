@@ -44,6 +44,25 @@ const STEPS: Record<string, TourStep[]> = {
       body: 'Narrative clusters with optional AI briefs — labels are vocabulary, briefs are generated. Verify against articles.',
     },
   ],
+  // Hype entry is additive (reason: Step 8 of hype-intelligence-plan):
+  // no existing page's tour is altered.
+  '/hype': [
+    {
+      target: '[data-tour="signals"]',
+      title: '1 · The signals',
+      body: 'Deterministic pre-peak patterns with their triggering evidence. Triggers are hard fields — flags, categories, regimes.',
+    },
+    {
+      target: '[data-tour="supporting"]',
+      title: '2 · Seen before',
+      body: 'Every signal lists the historical cases where the same trigger fired. Open any case to check the claim.',
+    },
+    {
+      target: '[data-tour="aftermath"]',
+      title: '3 · What followed',
+      body: 'Realized prices after past peaks, collapsed by default. Description only — past aftermath predicts nothing.',
+    },
+  ],
 };
 
 /**
@@ -51,7 +70,7 @@ const STEPS: Record<string, TourStep[]> = {
  * page, dismissible, remembered per page in localStorage. Steps whose targets
  * are absent are skipped, never blocking.
  */
-export function GuidedTour({ page }: { page: '/snapshot' | '/moves' }) {
+export function GuidedTour({ page }: { page: '/snapshot' | '/moves' | '/hype' }) {
   const [params, setParams] = useSearchParams();
   const [index, setIndex] = useState(0);
   const key = `stm:tour-seen:${page}`;

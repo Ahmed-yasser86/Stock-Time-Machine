@@ -32,6 +32,12 @@ public sealed record OutcomeDto(
 
 public sealed record CompanySummaryDto(string Symbol, string Name, string Cik, string Exchange, string Sector);
 
+public sealed record NewsRelevanceDto(
+    int Considered,
+    int Relevant,
+    int Irrelevant,
+    int Uncertain);
+
 public sealed record SnapshotResponse(
     CompanySummaryDto Company,
     DateOnly SnapshotDate,
@@ -42,6 +48,7 @@ public sealed record SnapshotResponse(
     IReadOnlyList<DisclosureDto> CorporateDisclosures,
     IReadOnlyList<NewsDto> News,
     string NewsSource,
+    NewsRelevanceDto NewsRelevance,
     OutcomeDto Outcome,
     IReadOnlyList<string> Warnings);
 

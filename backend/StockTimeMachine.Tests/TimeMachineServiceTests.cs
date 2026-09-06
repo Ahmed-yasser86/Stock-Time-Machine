@@ -49,6 +49,7 @@ public class TimeMachineServiceTests
             _directory,
             Array.Empty<ICompanyLookup>(),
             new FixedNewsProviderFactory(new NullNewsProvider(NullLogger<NullNewsProvider>.Instance)),
+            new DisabledRelevanceStub(),
             NullLogger<TimeMachineService>.Instance);
     }
 
@@ -84,6 +85,7 @@ public class TimeMachineServiceTests
             repo, _secEdgarMock.Object, _alphaMock.Object, _directory,
             Array.Empty<ICompanyLookup>(),
             new FixedNewsProviderFactory(news),
+            new DisabledRelevanceStub(),
             NullLogger<TimeMachineService>.Instance);
 
         var snapshot = await sut.GetSnapshot("TSLA", new DateOnly(2020, 2, 20), NewsSources.Gdelt);

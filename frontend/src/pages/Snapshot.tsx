@@ -382,6 +382,7 @@ function Dossier({ data }: { data: SnapshotResponse }) {
           asOfDate={data.snapshotDate}
           symbol={data.company.symbol}
           companyName={data.company.name}
+          newsRelevance={data.newsRelevance}
         />
       </section>
 

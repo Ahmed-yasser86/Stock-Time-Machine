@@ -15,6 +15,7 @@ public class MovesController : ControllerBase
 {
     private readonly IMoveDetectionService _moves;
     private readonly INarrativeService _narratives;
+    private readonly IRelevanceService _relevance;
     private readonly ICompanyDirectory _directory;
     private readonly INewsProviderFactory _newsFactory;
     private readonly IInvestigationJobStore _jobs;
@@ -24,6 +25,7 @@ public class MovesController : ControllerBase
     public MovesController(
         IMoveDetectionService moves,
         INarrativeService narratives,
+        IRelevanceService relevance,
         ICompanyDirectory directory,
         INewsProviderFactory newsFactory,
         IInvestigationJobStore jobs,
@@ -32,6 +34,7 @@ public class MovesController : ControllerBase
     {
         _moves = moves;
         _narratives = narratives;
+        _relevance = relevance;
         _directory = directory;
         _newsFactory = newsFactory;
         _jobs = jobs;
@@ -187,6 +190,60 @@ public class MovesController : ControllerBase
         return Ok(MapNarratives(result));
     }
 
+    // Uncertain candidates: the borderline the gate refused to decide on its
+    // own. Approving flips the verdict to USER_APPROVED (it then enters the
+    // normal pipeline); rejecting marks it IRRELEVANT. Explicit, never silent.
+    [HttpGet("narratives/candidates")]
+    public async Task<ActionResult<CandidatesResponse>> Candidates(
+        [FromQuery] string? symbol,
+        [FromQuery] string? date,
+        [FromQuery] string? newsSource,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        if (!DateOnly.TryParse(date, out var parsedDate))
+            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+
+        var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
+        var items = await _narratives.GetCandidates(symbol, parsedDate, selectedNewsSource, ct);
+
+        return Ok(new CandidatesResponse(
+            Symbol: symbol.Trim().ToUpperInvariant(),
+            AsOfDate: parsedDate,
+            NewsSource: selectedNewsSource,
+            Items: items.Select(c => new NewsCandidateDto(
+                new MoveNewsDto(
+                    c.Article.Id, c.Article.Title, c.Article.Source ?? "",
+                    c.Article.PublishedAt, c.Article.Url ?? "", null),
+                c.Relevance.Decision, c.Relevance.DecisionSource,
+                c.Relevance.Category, c.Relevance.Confidence, c.Relevance.Reason)).ToList()));
+    }
+
+    [HttpPost("narratives/candidates/{articleId}/approve")]
+    public async Task<ActionResult<object>> ApproveCandidate(
+        [FromRoute] string articleId,
+        [FromQuery] string? symbol,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        var ok = await _relevance.ApproveAsync(symbol, articleId, ct);
+        return Ok(new { approved = ok });
+    }
+
+    [HttpPost("narratives/candidates/{articleId}/reject")]
+    public async Task<ActionResult<object>> RejectCandidate(
+        [FromRoute] string articleId,
+        [FromQuery] string? symbol,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        var ok = await _relevance.RejectAsync(symbol, articleId, ct);
+        return Ok(new { rejected = ok });
+    }
+
     private NarrativesResponse MapNarratives(NarrativeTopicsResult result) =>
         new NarrativesResponse(
             Company: MapCompany(result.CompanySymbol),
@@ -194,6 +251,12 @@ public class MovesController : ControllerBase
             NewsSource: result.NewsSource,
             ArticlesConsidered: result.ArticlesConsidered,
             ArticlesClustered: result.ArticlesClustered,
+            RelevantCount: result.RelevantCount,
+            IrrelevantCount: result.IrrelevantCount,
+            UncertainCount: result.UncertainCount,
+            ExpansionQueries: result.ExpansionQueries,
+            ExpansionNew: result.ExpansionNew,
+            ExpansionRelevant: result.ExpansionRelevant,
             ClusteringMethod: result.ClusteringMethod,
             Topics: result.Topics.Select(t => new TopicClusterDto(
                 t.LabelTerms, t.ArticleIds, t.RepresentativeTitle,

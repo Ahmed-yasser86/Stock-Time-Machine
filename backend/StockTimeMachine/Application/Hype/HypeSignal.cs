@@ -1,0 +1,51 @@
+namespace StockTimeMachine;
+
+// Named, repeating pre-peak pattern. The catalog is static code (v1): adding
+// a signal is adding a definition + a predicate in HypeSignals — no schema
+// change, no migration. Deterministic triggers only (flags, categories,
+// label terms, regime path, sentiment); LLM briefs narrate, embeddings
+// assist recall — neither detects.
+public class HypeSignalDefinition
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    // Plain-English trigger description (shown in UI + methodology).
+    public string Trigger { get; set; } = "";
+    public string Version { get; set; } = HypeSignalCatalog.Version;
+}
+
+// One fired trigger on one case, with concrete evidence references
+// (thread titles, flags, regime dates) — never a bare label.
+public class HypeSignalMatch
+{
+    public string SignalId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public List<string> TriggerEvidence { get; set; } = new();
+    // Article ids behind the trigger (for resemblance joins). Additive
+    // (reason: Step 4 resemblance needs vectors, not prose).
+    public List<string> TriggerThreadIds { get; set; } = new();
+}
+
+public static class HypeSignalCatalog
+{
+    public const string Version = "hs-v1";
+
+    public static readonly IReadOnlyList<HypeSignalDefinition> All = new List<HypeSignalDefinition>
+    {
+        new() { Id = "earnings-chatter", Name = "Earnings-chatter clustering",
+            Trigger = "2+ FINANCIAL-category threads in the 20 days before the peak." },
+        new() { Id = "regulatory-overhang", Name = "Regulatory overhang",
+            Trigger = "LEGAL/REGULATORY thread before the peak plus a tense regime on 3+ pre-peak days." },
+        new() { Id = "volume-first-divergence", Name = "Volume-first divergence",
+            Trigger = "High-volume spike/plunge on thin narrative (≤2 pre-peak news items)." },
+        new() { Id = "leadership-turbulence", Name = "Leadership turbulence",
+            Trigger = "MANAGEMENT-category thread in the 20 days before the peak." },
+        new() { Id = "sentiment-split", Name = "Sentiment split",
+            Trigger = "Scored news leans against the price move (contrarian divergence)." },
+        new() { Id = "supply-tremor", Name = "Supply-chain tremor",
+            Trigger = "SUPPLY_CHAIN thread before the peak plus a warming→tense regime shift." },
+    }.AsReadOnly();
+
+    public static HypeSignalDefinition? ById(string id) =>
+        All.FirstOrDefault(s => s.Id == id);
+}

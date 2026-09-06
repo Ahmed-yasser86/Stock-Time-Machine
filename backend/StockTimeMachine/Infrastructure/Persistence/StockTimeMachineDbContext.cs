@@ -16,6 +16,9 @@ public class StockTimeMachineDbContext : DbContext
     public DbSet<ArticleRelevance> ArticleRelevances => Set<ArticleRelevance>();
     public DbSet<ArticleSentiment> ArticleSentiments => Set<ArticleSentiment>();
     public DbSet<InvestigationJob> InvestigationJobs => Set<InvestigationJob>();
+    // Hype registry: DbSet addition only (existing code untouched).
+    // EnsureCreatedAsync at startup creates the table on existing databases.
+    public DbSet<HypeCase> HypeCases => Set<HypeCase>();
     public DbSet<PricePoint> PricePoints => Set<PricePoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -88,6 +91,8 @@ public class StockTimeMachineDbContext : DbContext
             e.Property(x => x.Symbol).HasMaxLength(10);
             e.Property(x => x.Model).HasMaxLength(100);
             e.Property(x => x.Category).HasMaxLength(32);
+            e.Property(x => x.Decision).HasMaxLength(16);
+            e.Property(x => x.DecisionSource).HasMaxLength(8);
         });
 
         modelBuilder.Entity<ArticleSentiment>(e =>
@@ -96,6 +101,21 @@ public class StockTimeMachineDbContext : DbContext
             e.Property(x => x.ArticleId).HasMaxLength(100);
             e.Property(x => x.Model).HasMaxLength(100);
             e.Property(x => x.TextHash).HasMaxLength(64);
+        });
+
+        // Hype registry mapping (additive: no existing mapping altered).
+        modelBuilder.Entity<HypeCase>(e =>
+        {
+            e.ToTable("HypeCases");
+            e.HasKey(h => h.Id);
+            e.Property(h => h.Id).HasMaxLength(64);
+            e.Property(h => h.CompanySymbol).HasMaxLength(10);
+            e.Property(h => h.NewsSource).HasMaxLength(32);
+            e.Property(h => h.FlagsCsv).HasMaxLength(200);
+            e.Property(h => h.SentimentDirection).HasMaxLength(16);
+            e.Property(h => h.Completeness).HasMaxLength(16);
+            e.Property(h => h.DailyReturnPct).HasPrecision(18, 4);
+            e.HasIndex(h => h.CompanySymbol);
         });
 
         modelBuilder.Entity<PricePoint>(e =>

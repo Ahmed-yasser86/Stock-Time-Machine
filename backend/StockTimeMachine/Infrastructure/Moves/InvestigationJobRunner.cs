@@ -103,6 +103,20 @@ public class InvestigationJobRunner : IInvestigationJobRunner
                 JsonSerializer.Serialize(topics, Json),
                 CancellationToken.None);
             _logger.LogInformation("Investigation job {Job} completed (stored: {Stored})", id, done);
+            // Hype registry: freeze each key move as a HypeCase so signal
+            // mining survives job pruning (reason: Step 1 of
+            // hype-intelligence-plan). Best-effort: a registry failure must
+            // never fail the investigation itself.
+            try
+            {
+                var hype = scope.ServiceProvider.GetRequiredService<IHypeCaseStore>();
+                foreach (var move in window.KeyMoves)
+                    await hype.SaveAsync(HypeCaseProjection.Build(window, move, topics), CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Hype case registry failed for job {Job}; investigation unaffected", id);
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

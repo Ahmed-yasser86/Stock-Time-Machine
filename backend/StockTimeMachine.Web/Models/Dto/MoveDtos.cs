@@ -81,8 +81,28 @@ public sealed record NarrativesResponse(
     string NewsSource,
     int ArticlesConsidered,
     int ArticlesClustered,
+    int RelevantCount,
+    int IrrelevantCount,
+    int UncertainCount,
+    int ExpansionQueries,
+    int ExpansionNew,
+    int ExpansionRelevant,
     string ClusteringMethod,
     IReadOnlyList<TopicClusterDto> Topics);
+
+public sealed record NewsCandidateDto(
+    MoveNewsDto Article,
+    string Decision,
+    string DecisionSource,
+    string Category,
+    double Confidence,
+    string Reason);
+
+public sealed record CandidatesResponse(
+    string Symbol,
+    DateOnly AsOfDate,
+    string NewsSource,
+    IReadOnlyList<NewsCandidateDto> Items);
 
 public sealed record CompareBriefResponse(
     IReadOnlyList<string> Symbols,

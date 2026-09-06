@@ -35,6 +35,17 @@ public sealed class DisabledRelevanceStub : IRelevanceService
         IReadOnlyList<NewsArticle> articles, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<string, ArticleRelevance>>(
             new Dictionary<string, ArticleRelevance>());
+    public bool PassesGate(ArticleRelevance? row) => true;
+    public Task<ExpansionResult> ExpandAsync(
+        string symbol, DateOnly asOfDate, string? companyName, CancellationToken ct = default) =>
+        Task.FromResult(new ExpansionResult());
+    public Task<IReadOnlyList<ArticleRelevance>> CandidatesAsync(
+        string symbol, DateOnly asOfDate, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ArticleRelevance>>(Array.Empty<ArticleRelevance>());
+    public Task<bool> ApproveAsync(string symbol, string articleId, CancellationToken ct = default) =>
+        Task.FromResult(false);
+    public Task<bool> RejectAsync(string symbol, string articleId, CancellationToken ct = default) =>
+        Task.FromResult(false);
 }
 
 public sealed class FixedRelevanceStub : IRelevanceService
@@ -48,13 +59,30 @@ public sealed class FixedRelevanceStub : IRelevanceService
         return Task.FromResult<IReadOnlyDictionary<string, ArticleRelevance>>(
             articles.ToDictionary(
                 a => a.Id,
-                a => new ArticleRelevance
+                a =>
                 {
-                    ArticleId = a.Id, Symbol = symbol, Model = "stub",
-                    Relevant = !a.Title.Contains("noise", StringComparison.OrdinalIgnoreCase),
-                    Category = "FINANCIAL", Confidence = 0.9, Reason = "Stub.",
+                    var relevant = !a.Title.Contains("noise", StringComparison.OrdinalIgnoreCase);
+                    return new ArticleRelevance
+                    {
+                        ArticleId = a.Id, Symbol = symbol, Model = "stub",
+                        Relevant = relevant,
+                        Decision = relevant ? RelevanceDecisions.Relevant : RelevanceDecisions.Irrelevant,
+                        DecisionSource = RelevanceSources.Rule,
+                        Category = "FINANCIAL", Confidence = 0.9, Reason = "Stub.",
+                    };
                 }));
     }
+    public bool PassesGate(ArticleRelevance? row) => RelevanceService.PassesGate(row);
+    public Task<ExpansionResult> ExpandAsync(
+        string symbol, DateOnly asOfDate, string? companyName, CancellationToken ct = default) =>
+        Task.FromResult(new ExpansionResult());
+    public Task<IReadOnlyList<ArticleRelevance>> CandidatesAsync(
+        string symbol, DateOnly asOfDate, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ArticleRelevance>>(Array.Empty<ArticleRelevance>());
+    public Task<bool> ApproveAsync(string symbol, string articleId, CancellationToken ct = default) =>
+        Task.FromResult(false);
+    public Task<bool> RejectAsync(string symbol, string articleId, CancellationToken ct = default) =>
+        Task.FromResult(false);
 }
 
 public static class TestDirectory
@@ -276,7 +304,7 @@ public class AiNarrativeTests
 
     private sealed class StubMoves : IMoveDetectionService
     {
-        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null) =>
+        public Task<MovesWindow> GetMoves(string symbol, DateOnly asOfDate, string? newsSource = null, CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null, int? topMoves = null) =>
             Task.FromResult(new MovesWindow
             {
                 CompanySymbol = symbol,
@@ -595,7 +623,11 @@ public class AiNarrativeTests
     private static RelevanceService RelevanceSut(
         StockTimeMachineDbContext db, IGeminiClient gemini) =>
         new(new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
-            gemini, NullLogger<RelevanceService>.Instance);
+            gemini,
+            new GdeltNewsProvider(new HttpClient(),
+                NullLogger<GdeltNewsProvider>.Instance,
+                new ConfigurationBuilder().Build()),
+            NullLogger<RelevanceService>.Instance);
 
     private static NewsArticle RelArticle(string id, string title) => new()
     {
@@ -620,11 +652,15 @@ public class AiNarrativeTests
             "Tesla, Inc.", "Automobiles", docs);
 
         // a1 mapped (category uppercased, confidence clamped); unknown id
-        // ignored; a2 unanswered → absent (unknown, never guessed).
+        // ignored; a2 unanswered by the model → RULE fallback (never absent,
+        // never guessed relevant: "T2" carries no mention or signal).
         Assert.True(first["a1"].Relevant);
         Assert.Equal("FINANCIAL", first["a1"].Category);
         Assert.Equal(1.0, first["a1"].Confidence);
-        Assert.False(first.ContainsKey("a2"));
+        Assert.Equal(RelevanceSources.Ai, first["a1"].DecisionSource);
+        Assert.True(first.ContainsKey("a2"));
+        Assert.Equal(RelevanceSources.Rule, first["a2"].DecisionSource);
+        Assert.Equal(RelevanceDecisions.Irrelevant, first["a2"].Decision);
         Assert.Single(gemini.SeenPrompts);
 
         // Second call served from cache: no new model call.
@@ -635,15 +671,91 @@ public class AiNarrativeTests
     }
 
     [Fact]
-    public async Task RelevanceService_DisabledAi_ReturnsEmpty()
+    public async Task RelevanceService_DisabledAi_ReturnsRuleCoverage()
     {
+        // AI off no longer means "unknown": the deterministic materiality
+        // fallback judges every candidate ("T1" — no mention, no signal).
         var db = NewDb();
         var sut = RelevanceSut(db, new DisabledGeminiStub());
 
         var result = await sut.ClassifyAsync("TSLA", new DateOnly(2020, 1, 15),
             null, null, new[] { RelArticle("a1", "T1") });
 
-        Assert.Empty(result);
+        Assert.Single(result);
+        Assert.Equal(RelevanceSources.Rule, result["a1"].DecisionSource);
+        Assert.Equal(RelevanceDecisions.Irrelevant, result["a1"].Decision);
+    }
+
+    [Fact]
+    public void RelevanceGate_AdmitsRelevantAndApprovedOnly()
+    {
+        // The single policy every consumer shares: RELEVANT + USER_APPROVED
+        // pass; everything else — including a legacy Relevant flag without a
+        // decision, and unknown — stays out.
+        Assert.True(RelevanceService.PassesGate(
+            new ArticleRelevance { Decision = RelevanceDecisions.Relevant }));
+        Assert.True(RelevanceService.PassesGate(
+            new ArticleRelevance { Decision = RelevanceDecisions.UserApproved }));
+        Assert.False(RelevanceService.PassesGate(
+            new ArticleRelevance { Decision = RelevanceDecisions.Irrelevant }));
+        Assert.False(RelevanceService.PassesGate(
+            new ArticleRelevance { Decision = RelevanceDecisions.Uncertain }));
+        Assert.False(RelevanceService.PassesGate(null));
+        Assert.False(RelevanceService.PassesGate(new ArticleRelevance { Relevant = true }));
+    }
+
+    [Fact]
+    public async Task RelevanceService_ApprovalWorkflow()
+    {
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("TSLA", new[] { RelArticle("u1", "T1"), RelArticle("u2", "T2") });
+        await repo.StoreRelevances(new[]
+        {
+            new ArticleRelevance { ArticleId = "u1", Symbol = "TSLA", Model = "t", Decision = RelevanceDecisions.Uncertain, DecisionSource = RelevanceSources.Ai, Category = "FINANCIAL", Confidence = 0.4, Reason = "R1" },
+            new ArticleRelevance { ArticleId = "u2", Symbol = "TSLA", Model = "t", Decision = RelevanceDecisions.Uncertain, DecisionSource = RelevanceSources.Ai, Category = "FINANCIAL", Confidence = 0.5, Reason = "R2" },
+        });
+        var sut = RelevanceSut(db, new DisabledGeminiStub());
+
+        // Candidates surface highest confidence first.
+        var cands = await sut.CandidatesAsync("TSLA", new DateOnly(2020, 1, 15));
+        Assert.Equal(2, cands.Count);
+        Assert.Equal("u2", cands[0].ArticleId);
+
+        // Approval admits to the pipeline with USER provenance...
+        Assert.True(await sut.ApproveAsync("TSLA", "u1"));
+        var approved = await repo.GetRelevance("u1", "TSLA");
+        Assert.Equal(RelevanceDecisions.UserApproved, approved!.Decision);
+        Assert.Equal(RelevanceSources.User, approved.DecisionSource);
+        Assert.True(RelevanceService.PassesGate(approved));
+
+        // ...rejection excludes, and unknown ids fail honestly.
+        Assert.True(await sut.RejectAsync("TSLA", "u2"));
+        Assert.False(RelevanceService.PassesGate(await repo.GetRelevance("u2", "TSLA")));
+        Assert.False(await sut.ApproveAsync("TSLA", "missing"));
+    }
+
+    [Fact]
+    public async Task NarrativeService_GateExcludesIrrelevant()
+    {
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("TSLA", new[]
+        {
+            RelArticle("n1", "Tesla quarterly earnings beat"),
+            RelArticle("n2", "Tesla earnings smash records quarterly"),
+            RelArticle("noise1", "Market noise daily roundup chatter"),
+        });
+        var sut = new NarrativeService(repo, new DisabledGeminiStub(), new DisabledBodyStub(),
+            TestDirectory.Tesla(), new FixedRelevanceStub(), NullLogger<NarrativeService>.Instance);
+
+        var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        Assert.Equal(3, result.ArticlesConsidered);
+        Assert.Equal(2, result.RelevantCount);
+        Assert.NotEmpty(result.Topics);
+        Assert.DoesNotContain(result.Topics.SelectMany(t => t.ArticleIds), id => id == "noise1");
+        Assert.All(result.Topics, t => Assert.NotNull(t.RelevanceRate));
     }
 
     [Fact]
@@ -674,7 +786,11 @@ public class AiNarrativeTests
                     Reason = "Stub.",
                 };
             }).ToList();
-        }), NullLogger<RelevanceService>.Instance);
+        }),
+            new GdeltNewsProvider(new HttpClient(),
+                NullLogger<GdeltNewsProvider>.Instance,
+                new ConfigurationBuilder().Build()),
+            NullLogger<RelevanceService>.Instance);
         var sut = new NarrativeService(repo, new DisabledGeminiStub(), new DisabledBodyStub(),
             TestDirectory.Tesla(), relevance, NullLogger<NarrativeService>.Instance);
 

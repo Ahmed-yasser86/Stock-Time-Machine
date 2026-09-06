@@ -8,6 +8,11 @@ namespace StockTimeMachine;
 // the conservative principle (material → relevant; weak/incidental → not).
 public static class RelevancePrompt
 {
+    // Prompt version, stamped onto every AI verdict (Model column). Bumping it
+    // invalidates verdicts judged under an older policy so the next
+    // investigation re-judges them instead of trusting stale semantics.
+    public const string Version = "rx-2";
+
     public static readonly IReadOnlySet<string> Categories = new HashSet<string>(StringComparer.Ordinal)
     {
         "FINANCIAL", "MARKET", "PRODUCT", "OPERATIONS", "SUPPLY_CHAIN",
@@ -35,9 +40,17 @@ public static class RelevancePrompt
         sb.AppendLine("at the investigation date? Perform SEMANTIC classification, not keyword matching:");
         sb.AppendLine("- A company mention alone (name, ticker, executive, incidental reference) does NOT make it relevant.");
         sb.AppendLine("- Absence of the company name does NOT make it irrelevant: material supplier, customer,");
-        sb.AppendLine("  regulator, competitor, macroeconomic, or geopolitical connections count — when material and defensible.");
-        sb.AppendLine("- Do NOT invent hypothetical connections to force relevance. Weak/incidental → NOT_RELEVANT.");
-        sb.AppendLine("- Uncertain but potentially material → RELEVANT with lower confidence.");
+        sb.AppendLine("  regulator, competitor, macroeconomic, or geopolitical connections count — when CONCRETE and defensible.");
+        sb.AppendLine("- 'Affects the broader sector/industry/market' is NOT a concrete connection. Do NOT invent");
+        sb.AppendLine("  hypothetical connections to force relevance. If you cannot state the concrete mechanism in");
+        sb.AppendLine("  one sentence, it is NOT relevant.");
+        sb.AppendLine("- EXCLUDE even when the company is named: true-crime/celebrity cases the company merely");
+        sb.AppendLine("  documented or distributed a film/series about; content lineups, reviews, release buzz, viewership");
+        sb.AppendLine("  records; unrelated people, companies, or technologies; stories where the company is only");
+        sb.AppendLine("  background context.");
+        sb.AppendLine("- Genuinely uncertain (no concrete, defensible material connection) → NOT_RELEVANT.");
+        sb.AppendLine("  Reserve RELEVANT for headlines with a concrete link to the company's business, finances,");
+        sb.AppendLine("  operations, legal/regulatory position, or competitive environment.");
         sb.AppendLine();
         sb.AppendLine("Hard bans: do NOT judge temporal admissibility (already validated). Do NOT score sentiment.");
         sb.AppendLine("Do NOT compute uncertainty, risk, or recommendations. Never predict, advise, or recommend anything.");

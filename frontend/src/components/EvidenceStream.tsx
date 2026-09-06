@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { fmtDate } from '../lib/format';
 import { whyNoNews } from '../lib/whyEmpty';
-import { NEWS_COVERAGE_DISCLAIMER, newsSourceLabel, type Disclosure, type Filing, type NewsItem, type NewsSource } from '../types';
+import { NEWS_COVERAGE_DISCLAIMER, newsSourceLabel, type Disclosure, type Filing, type NewsItem, type NewsRelevance, type NewsSource } from '../types';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { Button, buttonVariants } from './ui/button';
@@ -62,6 +62,7 @@ export function EvidenceStream({
   asOfDate,
   symbol,
   companyName,
+  newsRelevance,
 }: {
   filings: Filing[];
   disclosures: Disclosure[];
@@ -70,6 +71,7 @@ export function EvidenceStream({
   asOfDate: string;
   symbol?: string;
   companyName?: string;
+  newsRelevance?: NewsRelevance;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   // Client-side pager over the COMPLETE retrieved set: every row the API
@@ -176,6 +178,13 @@ export function EvidenceStream({
         <Alert>
           <AlertDescription>{NEWS_COVERAGE_DISCLAIMER}</AlertDescription>
         </Alert>
+      )}
+      {(filter === 'all' || filter === 'news') && newsRelevance && (
+        <p className="text-xs text-fg-dim">
+          Relevance gate over {newsRelevance.considered} evaluated candidate(s): {newsRelevance.relevant}{' '}
+          relevant admitted · {newsRelevance.irrelevant} irrelevant · {newsRelevance.uncertain} uncertain
+          excluded. This list shows admitted evidence only — the same corpus as narrative threads.
+        </p>
       )}
 
       {items.length > pageSize && (
