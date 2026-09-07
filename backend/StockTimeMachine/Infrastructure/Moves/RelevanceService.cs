@@ -122,7 +122,7 @@ public class RelevanceService : IRelevanceService
 
     public Task<IReadOnlyList<ArticleRelevance>> CandidatesAsync(
         string symbol, DateOnly asOfDate, CancellationToken ct = default) =>
-        _dataRepo.GetUncertain(symbol, asOfDate, 10, ct);
+        _dataRepo.GetUncertain(symbol, asOfDate, ct);
 
     public Task<bool> ApproveAsync(string symbol, string articleId, CancellationToken ct = default) =>
         _dataRepo.SetRelevanceDecision(articleId, symbol,

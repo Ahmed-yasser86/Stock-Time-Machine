@@ -390,8 +390,11 @@ public class MoveDetectionService : IMoveDetectionService
 
         try
         {
+            // No take: every cutoff-eligible filing is qualified evidence.
+            // Display pages, downstream caps (briefs take 3 for LLM cost)
+            // slice explicitly where a technical bound actually exists.
             var filings = await _dataRepo.GetFilingsAsOf(symbol, moveDate, ct);
-            evidence.Filings = filings.Take(5).ToList();
+            evidence.Filings = filings.ToList();
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -446,8 +449,11 @@ public class MoveDetectionService : IMoveDetectionService
             fromSource = await ApplyRelevanceGateAsync(
                 fromSource, symbol, companyName, moveDate, ct);
             // Company-naming articles first (deterministic centrality, same
-            // rows — see NewsRelevance), then most recent. Nothing hidden.
-            evidence.News = NewsRelevance.OrderByMention(fromSource, symbol, companyName).Take(5).ToList();
+            // rows — see NewsRelevance), then most recent. Nothing hidden,
+            // nothing cut: every gated article flows to evidence, sentiment,
+            // hype cases, and briefs. Bounded consumers (FinBERT 100 for CPU,
+            // briefs for token budget) slice explicitly at their own boundary.
+            evidence.News = NewsRelevance.OrderByMention(fromSource, symbol, companyName).ToList();
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -466,11 +472,12 @@ public class MoveDetectionService : IMoveDetectionService
         else
         {
             var from = moveDate.AddDays(-SocialLookbackDays);
+            // No take: the window slice is already bounded by post date, and
+            // the provider response behind it is capped per community.
             evidence.Social = socialWindow.Signals
                 .Where(s => DateOnly.FromDateTime(s.CreatedAt) >= from &&
                             DateOnly.FromDateTime(s.CreatedAt) <= moveDate)
                 .OrderByDescending(s => s.Score)
-                .Take(3)
                 .ToList();
         }
 

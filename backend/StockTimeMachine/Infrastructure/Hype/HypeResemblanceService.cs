@@ -8,8 +8,13 @@ public class HypeResemblanceService : IHypeResemblanceService
     // Same join threshold as compare/threads: below this, pairs are vocabulary
     // coincidence, not resemblance worth showing.
     private const double SimilarityThreshold = 0.70;
+    // MaxResults ranks the displayed matches (top-5 by score, disclosed in
+    // the UI as the top matches) — the join itself always scans the complete
+    // candidate sets on every layer.
     private const int MaxResults = 5;
-    private const int MaxTriggerArticles = 30;
+    // Degraded-mode bound only (reason: the in-memory fallback path does DB
+    // vector reads per row; under a Qdrant outage the page must stay fast).
+    // The primary vector path below is uncapped.
     private const int MaxLibraryCases = 100;
     // Self-exclusion window: same-symbol cases this close share most of their
     // pre-peak window (and near-duplicate wire copies), so joins saturate at
@@ -20,7 +25,8 @@ public class HypeResemblanceService : IHypeResemblanceService
     // exclusions) so Qdrant extends the in-memory path instead of replacing
     // its semantics. Any vector-store failure falls back to the in-memory
     // join below — never an error, never a stall.
-    private const int VectorQueryVectors = 8;
+    // Every trigger article queries (no count cap): ANN lookups are
+    // millisecond-cheap and the per-vector TopK below bounds payload size.
     private const int VectorQueryTopK = 10;
     // Measured thresholds (124-case distribution with filing dims live:
     // min 0.547, p25 0.845, median 0.898, p75 0.951, max 0.985): hybrid 0.85
@@ -76,7 +82,10 @@ public class HypeResemblanceService : IHypeResemblanceService
         var wanted = triggerArticleIds.Count > 0
             ? triggerArticleIds
             : HypeCaseProjection.QualifiedArticleIds(current).ToList();
-        var currentVectors = await LoadCachedAsync(wanted.Take(MaxTriggerArticles).ToList(), model, ct);
+        // No take: every trigger article loads its cached vector (indexed PK
+        // reads). The per-vector TopK below — not the article count — is what
+        // bounds ANN payload size.
+        var currentVectors = await LoadCachedAsync(wanted.ToList(), model, ct);
         if (currentVectors.Count == 0)
             return empty;
 
@@ -178,7 +187,9 @@ public class HypeResemblanceService : IHypeResemblanceService
         HypeCaseDetail detail, CancellationToken ct)
     {
         var inputs = new List<HypeCaseVector.FilingVectorInput>();
-        foreach (var filing in detail.Evidence.Filings.Take(5))
+        // No take (reason: same as indexer — every stored summary shapes
+        // the query vector; reads are cheap PK lookups).
+        foreach (var filing in detail.Evidence.Filings)
         {
             // Same legacy fallback as indexer/briefs: derive from directory
             // URL when the frozen row predates accession storage.
@@ -274,7 +285,7 @@ public class HypeResemblanceService : IHypeResemblanceService
             var detail = HypeCaseLibrary.TryReadDetail(row);
             if (detail is null)
                 continue;
-            var ids = detail.PrePeakThreads.SelectMany(t => t.ArticleIds).Distinct().Take(MaxTriggerArticles).ToList();
+            var ids = detail.PrePeakThreads.SelectMany(t => t.ArticleIds).Distinct().ToList();
             if (ids.Count == 0)
                 continue;
             var vectors = await LoadCachedAsync(ids, model, ct);
@@ -334,7 +345,7 @@ public class HypeResemblanceService : IHypeResemblanceService
             var currentIds = new HashSet<string>(
                 currentVectors.Select(v => v.Id), StringComparer.Ordinal);
             var bestByCase = new Dictionary<string, (HypeCaseResemblance Hit, double Best)>(StringComparer.Ordinal);
-            foreach (var (aId, a) in currentVectors.Take(VectorQueryVectors))
+            foreach (var (aId, a) in currentVectors)
             {
                 var hits = await _vectors.SearchAsync(a.ToArray(), VectorQueryTopK, ct);
                 foreach (var hit in hits)

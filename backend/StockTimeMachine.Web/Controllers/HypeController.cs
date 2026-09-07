@@ -14,10 +14,6 @@ namespace StockTimeMachine.Web.Controllers;
 [ApiController]
 public class HypeController : ControllerBase
 {
-    // Cap on registry rows scanned per supporting-case search: signal mining
-    // over recent cases, not a full-table sweep.
-    private const int LibraryScanTake = 200;
-
     private readonly IMoveDetectionService _moves;
     private readonly INarrativeService _narratives;
     private readonly IHypeCaseStore _cases;
@@ -127,7 +123,8 @@ public class HypeController : ControllerBase
     {
         if (!string.Equals(_config["Hype:HarvestEnabled"], "true", StringComparison.OrdinalIgnoreCase))
             return NotFound();
-        var library = await _cases.ListRecentAsync(2000, ct);
+        // Uncapped library read (reason: reindex must reach every case).
+        var library = await _cases.ListAllAsync(ct);
         int scanned = 0, indexed = 0;
         foreach (var row in library)
         {
@@ -161,7 +158,8 @@ public class HypeController : ControllerBase
     {
         if (!string.Equals(_config["Hype:HarvestEnabled"], "true", StringComparison.OrdinalIgnoreCase))
             return NotFound();
-        var library = await _cases.ListRecentAsync(2000, ct);
+        // Uncapped library read (reason: the distribution must cover every case).
+        var library = await _cases.ListAllAsync(ct);
         var bests = new List<double>();
         foreach (var row in library)
         {
@@ -315,7 +313,9 @@ public class HypeController : ControllerBase
             $"{cases.Count} cases", cases.Count));
 
         progress?.Report(new SnapshotProgress("matching", "started", "evaluating triggers"));
-        var library = await _cases.ListRecentAsync(LibraryScanTake, ct);
+        // Uncapped library read (reason: live matching must see the whole
+        // registry, not an arbitrary most-recent-N).
+        var library = await _cases.ListAllAsync(ct);
         progress?.Report(new SnapshotProgress("resembling", "started",
             $"joining against {library.Count} registry cases"));
         var peaks = new List<HypePeakDto>();

@@ -307,7 +307,7 @@ public class MoveDetectionServiceTests
         public Task StoreEmbedding(ArticleEmbedding e, CancellationToken ct = default) => _inner.StoreEmbedding(e, ct);
         public Task<ArticleRelevance?> GetRelevance(string id, string symbol, CancellationToken ct = default) => _inner.GetRelevance(id, symbol, ct);
         public Task StoreRelevances(IEnumerable<ArticleRelevance> rows, CancellationToken ct = default) => _inner.StoreRelevances(rows, ct);
-        public Task<IReadOnlyList<ArticleRelevance>> GetUncertain(string s, DateOnly d, int take = 10, CancellationToken ct = default) => _inner.GetUncertain(s, d, take, ct);
+        public Task<IReadOnlyList<ArticleRelevance>> GetUncertain(string s, DateOnly d, CancellationToken ct = default) => _inner.GetUncertain(s, d, ct);
         public Task<bool> SetRelevanceDecision(string id, string symbol, string decision, string source, CancellationToken ct = default) => _inner.SetRelevanceDecision(id, symbol, decision, source, ct);
         public Task<ArticleSentiment?> GetSentiment(string id, string model, CancellationToken ct = default) => _inner.GetSentiment(id, model, ct);
         public Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default) => _inner.StoreSentiment(row, ct);
@@ -423,6 +423,36 @@ public class MoveDetectionServiceTests
         Assert.Contains(stages, s => s.Stage == "detecting" && s.State == "complete");
         Assert.Contains(stages, s => s.Stage == "evidence" && s.State == "skipped");
         Assert.DoesNotContain(stages, s => s.Stage == "evidence" && s.State == "started");
+    }
+
+    [Fact]
+    public async Task GetMoves_EvidenceKeepsDepthBeyondFive()
+    {
+        // Regression: the per-move slice capped admitted news at 5 while the
+        // uncapped read path held far more — depth now reaches 20 so
+        // sentiment, hype cases, and briefs see what the snapshot shows.
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("TSLA", Enumerable.Range(1, 8).Select(i =>
+            new NewsArticle
+            {
+                Id = $"deep{i}", Title = $"Tesla story number {i}",
+                Description = "Cached body", Source = "GDELT",
+                PublishedAt = new DateTime(2020, 1, 15, 0, 0, 0, DateTimeKind.Utc),
+                Url = $"https://example.com/deep{i}", CompanySymbol = "TSLA",
+            }));
+        var sut = Sut(db, av, directory,
+            new NullNewsProvider(NullLogger<NullNewsProvider>.Instance));
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        Assert.NotEmpty(window.KeyMoves);
+        var evidence = window.EvidenceByDate.Values.First();
+        Assert.True(evidence.News.Count > 5,
+            $"expected depth beyond the old 5-cap, got {evidence.News.Count}");
+        Assert.All(evidence.News, n =>
+            Assert.True(n.PublishedAt <= new DateTime(2020, 2, 20), "cutoff must still hold"));
     }
 
     [Fact]

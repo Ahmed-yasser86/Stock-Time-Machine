@@ -75,9 +75,10 @@ public static class HypeCaseProjection
         }
 
         // Evidence: the move's own cutoff-filtered evidence (never re-read),
-        // with exact stage text (capped) so briefs narrate stages, not just
-        // thread titles.
-        const int MaxNewsItems = 25;
+        // with exact stage text so briefs narrate stages, not just thread
+        // titles. Item counts are uncapped (reason: every qualified item
+        // flows downstream); only per-field TEXT is clipped, because CaseJson
+        // size — not item count — is the real storage bound.
         const int MaxTextChars = 500;
         static string Clip(string? s) =>
             string.IsNullOrWhiteSpace(s) ? "" :
@@ -90,7 +91,7 @@ public static class HypeCaseProjection
             evidence.SocialCount = ev.Social.Count;
             evidence.NewsTitles = ev.News.Select(n => n.Title ?? "").Where(t => t.Length > 0).ToList();
             evidence.UnavailableLayers = ev.UnavailableLayers.ToList();
-            evidence.News = ev.News.Take(MaxNewsItems).Select(n => new HypeCaseNewsItem
+            evidence.News = ev.News.Select(n => new HypeCaseNewsItem
             {
                 Title = n.Title ?? "",
                 Description = Clip(n.Description),
@@ -98,14 +99,14 @@ public static class HypeCaseProjection
                 PublishedAt = n.PublishedAt,
                 Url = n.Url ?? "",
             }).ToList();
-            evidence.Filings = ev.Filings.Take(MaxNewsItems).Select(f => new HypeCaseFiling
+            evidence.Filings = ev.Filings.Select(f => new HypeCaseFiling
             {
                 AccessionNumber = f.AccessionNumber ?? "",
                 FormType = f.FormType ?? "",
                 FiledAt = f.FiledAt,
                 Url = f.Url ?? "",
             }).ToList();
-            evidence.Social = ev.Social.Take(MaxNewsItems).Select(s => new HypeCaseSocialPost
+            evidence.Social = ev.Social.Select(s => new HypeCaseSocialPost
             {
                 Title = s.Title ?? "",
                 Excerpt = Clip(s.Excerpt),

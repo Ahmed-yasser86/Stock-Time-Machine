@@ -11,5 +11,8 @@ public interface IHypeCaseStore
     Task<HypeCase?> GetAsync(string symbol, DateOnly peakDate, CancellationToken ct = default);
     Task<IReadOnlyList<HypeCase>> ListBySymbolAsync(string symbol, int take = 20, CancellationToken ct = default);
     Task<IReadOnlyList<HypeCase>> ListRecentAsync(int take = 50, CancellationToken ct = default);
+    // Uncapped registry read for mining paths (signals, reindex, stats):
+    // resemblance and evaluation must see every case, not the N most recent.
+    Task<IReadOnlyList<HypeCase>> ListAllAsync(CancellationToken ct = default);
     Task<int> CountAsync(CancellationToken ct = default);
 }

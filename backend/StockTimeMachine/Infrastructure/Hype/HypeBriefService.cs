@@ -152,9 +152,12 @@ public class HypeBriefService : IHypeBriefService
     private async Task<IReadOnlyList<HypeFilingSummary>?> SummariesFromStoreAsync(
         HypeCaseDetail detail, CancellationToken ct)
     {
+        // No take: stored-row reads are cheap PK lookups, and the prompt's
+        // regulatory section lists every summary while the model compresses
+        // to its output budget. Truncating here would hide filings the
+        // live path (bounded at 5 new generations) may already cover.
         var filings = detail.Evidence.Filings
             .OrderByDescending(f => f.FiledAt)
-            .Take(3)
             .ToList();
         if (filings.Count == 0)
             return new List<HypeFilingSummary>();

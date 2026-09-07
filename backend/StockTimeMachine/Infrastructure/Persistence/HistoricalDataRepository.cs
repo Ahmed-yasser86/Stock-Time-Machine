@@ -250,7 +250,7 @@ public class HistoricalDataRepository : IHistoricalDataRepository
         await _db.SaveChangesAsync(ct);
     }
 
-    public async Task<IReadOnlyList<ArticleRelevance>> GetUncertain(string symbol, DateOnly asOfDate, int take = 10, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ArticleRelevance>> GetUncertain(string symbol, DateOnly asOfDate, CancellationToken ct = default)
     {
         var normalized = symbol.ToUpperInvariant();
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
@@ -259,13 +259,13 @@ public class HistoricalDataRepository : IHistoricalDataRepository
             .Select(n => n.Id)
             .ToListAsync(ct);
         var idSet = new HashSet<string>(ids, StringComparer.Ordinal);
+        // No take: the cutoff join stays in memory (as before), but every
+        // eligible row now flows to the review queue instead of the top 10.
         return (await _db.ArticleRelevances
             .Where(x => x.Symbol == normalized && x.Decision == RelevanceDecisions.Uncertain)
             .OrderByDescending(x => x.Confidence)
-            .Take(Math.Max(take * 4, take))
             .ToListAsync(ct))
             .Where(x => idSet.Contains(x.ArticleId))
-            .Take(take)
             .ToList();
     }
 
@@ -316,10 +316,11 @@ public class HistoricalDataRepository : IHistoricalDataRepository
     {
         var fromDayAfter = TemporalBoundary.StartOfDayAfterUtc(fromDate);
         var toCutoff = TemporalBoundary.GetCutoffUtc(fromDate.AddDays(days));
+        // No take: the 30-day window already bounds the result, and outcome
+        // sections must not silently drop filings from busy periods.
         return await _db.SecFilings
             .Where(f => f.CompanySymbol == companySymbol.ToUpperInvariant() && f.FiledAt >= fromDayAfter && f.FiledAt <= toCutoff)
             .OrderBy(f => f.FiledAt)
-            .Take(20)
             .ToListAsync(ct);
     }
 

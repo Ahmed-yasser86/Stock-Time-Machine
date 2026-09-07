@@ -126,7 +126,10 @@ public class HypeCaseIndexer : IHypeCaseIndexer
         HypeCaseDetail detail, CancellationToken ct)
     {
         var inputs = new List<HypeCaseVector.FilingVectorInput>();
-        foreach (var filing in detail.Evidence.Filings.Take(5))
+        // No take: filing vector dims aggregate over every stored summary;
+        // reads are indexed PK lookups, and missing rows simply contribute
+        // nothing. Truncating here would silently drop regulatory dimensions.
+        foreach (var filing in detail.Evidence.Filings)
         {
             var accession = string.IsNullOrWhiteSpace(filing.AccessionNumber)
                 ? HypeFilingService.DeriveAccessionNumber(filing.Url)

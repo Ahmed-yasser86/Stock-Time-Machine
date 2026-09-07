@@ -61,6 +61,12 @@ public class HypeCaseStore : IHypeCaseStore
             .Take(Math.Max(1, take))
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<HypeCase>> ListAllAsync(CancellationToken ct = default) =>
+        await _db.HypeCases
+            .OrderBy(h => h.CompanySymbol)
+            .ThenBy(h => h.PeakDate)
+            .ToListAsync(ct);
+
     public async Task<int> CountAsync(CancellationToken ct = default) =>
         await _db.HypeCases.CountAsync(ct);
 }
