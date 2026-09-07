@@ -106,12 +106,20 @@ public class InvestigationJobRunner : IInvestigationJobRunner
             // Hype registry: freeze each key move as a HypeCase so signal
             // mining survives job pruning (reason: Step 1 of
             // hype-intelligence-plan). Best-effort: a registry failure must
-            // never fail the investigation itself.
+            // never fail the investigation itself. Indexing mirrors the same
+            // rule: vector-store writes must never fail the job either.
             try
             {
                 var hype = scope.ServiceProvider.GetRequiredService<IHypeCaseStore>();
+                var indexer = scope.ServiceProvider.GetRequiredService<IHypeCaseIndexer>();
                 foreach (var move in window.KeyMoves)
-                    await hype.SaveAsync(HypeCaseProjection.Build(window, move, topics), CancellationToken.None);
+                {
+                    var hypeCase = HypeCaseProjection.Build(window, move, topics);
+                    await hype.SaveAsync(hypeCase, CancellationToken.None);
+                    var detail = HypeCaseLibrary.TryReadDetail(hypeCase);
+                    if (detail is not null)
+                        await indexer.IndexCaseAsync(detail, CancellationToken.None);
+                }
             }
             catch (Exception ex)
             {

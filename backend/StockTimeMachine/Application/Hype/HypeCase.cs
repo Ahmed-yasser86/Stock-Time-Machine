@@ -42,6 +42,10 @@ public class HypeCaseDetail
     public decimal DailyReturnPct { get; set; }
     public List<string> Flags { get; set; } = new();
     public string SentimentDirection { get; set; } = SentimentDivergence.Unknown;
+    // Mean measured per-article sentiment behind the direction verdict.
+    // Null when fewer than 2 measured scores existed (additive, reason:
+    // hype case vectors need a sentiment magnitude dim).
+    public double? SentimentMean { get; set; }
     public List<HypeCaseThread> PrePeakThreads { get; set; } = new();
     // Regime path inside the pre-peak window ("yyyy-MM-dd" → label).
     public Dictionary<string, string> RegimePath { get; set; } = new();

@@ -16,7 +16,9 @@ public static class HypeBriefPrompt
         DateOnly asOfDate,
         HypeSignalMatch match,
         HypeCaseDetail detail,
-        IReadOnlyList<(string Title, string Body)> articles)
+        IReadOnlyList<(string Title, string Body)> articles,
+        IReadOnlyList<HypeCaseSocialPost>? signalSocial = null,
+        IReadOnlyList<HypeFilingSummary>? filingSummaries = null)
     {
         var symbol = companySymbol.Trim().ToUpperInvariant();
         var sb = new StringBuilder();
@@ -32,12 +34,16 @@ public static class HypeBriefPrompt
         AppendArrival(sb, detail);
         AppendReaction(sb, detail);
         AppendFilings(sb, detail);
-        AppendSocial(sb, detail);
+        AppendSocial(sb, detail, signalSocial);
+        AppendRegulatoryContext(sb, filingSummaries);
         var regimePath = detail.RegimePath.OrderBy(kv => kv.Key).ToList();
         if (regimePath.Count > 0)
             sb.AppendLine($"- Regime path (pre-peak): {string.Join(", ", regimePath.Select(kv => $"{kv.Key}={kv.Value})"))}.");
         sb.AppendLine();
-        sb.AppendLine($"EVIDENCE ARTICLES [{articles.Count}] — contemporary coverage behind the trigger. Summarize what THEY report:");
+        if (articles.Count == 0)
+            sb.AppendLine("EVIDENCE ARTICLES [0] — no article passed the signal-relevance filter. Narrate the CASE FACTS only.");
+        else
+            sb.AppendLine($"EVIDENCE ARTICLES [{articles.Count}] — contemporary coverage behind the trigger. Summarize what THEY report.");
         sb.AppendLine();
         for (int i = 0; i < articles.Count; i++)
         {
@@ -103,9 +109,31 @@ public static class HypeBriefPrompt
         sb.AppendLine($"- Regulatory filings ({filings.Count}): {string.Join("; ", filings.Select(f => $"{f.FormType} filed {f.FiledAt:yyyy-MM-dd}"))} (case fact).");
     }
 
-    private static void AppendSocial(StringBuilder sb, HypeCaseDetail detail)
+    // Dedicated regulatory section: filing-document summaries live here,
+    // clearly separated from general narrative — never mixed in.
+    private static void AppendRegulatoryContext(
+        StringBuilder sb, IReadOnlyList<HypeFilingSummary>? filingSummaries)
     {
-        var posts = detail.Evidence.Social;
+        if (filingSummaries is null || filingSummaries.Count == 0)
+        {
+            sb.AppendLine("REGULATORY CONTEXT: no filing summaries available for this peak (case fact).");
+            sb.AppendLine();
+            return;
+        }
+        sb.AppendLine("REGULATORY CONTEXT (from filing documents — separate from news narrative):");
+        foreach (var f in filingSummaries)
+        {
+            sb.AppendLine($"- {f.FormType} filed {f.FiledAt:yyyy-MM-dd}: {f.Findings} Disclosures/risks: {f.Disclosures} [content: {f.ConfidenceNote}, {f.PagesProcessed}/{f.TotalPages} pages]".TrimEnd());
+        }
+        sb.AppendLine();
+    }
+
+    private static void AppendSocial(StringBuilder sb, HypeCaseDetail detail,
+        IReadOnlyList<HypeCaseSocialPost>? signalSocial = null)
+    {
+        // Only signal-relevant posts narrate (pre-filtered by the caller);
+        // noise never reaches this prompt.
+        var posts = signalSocial ?? detail.Evidence.Social;
         if (posts.Count == 0)
         {
             sb.AppendLine("- Social: no posts in this peak's evidence (case fact).");

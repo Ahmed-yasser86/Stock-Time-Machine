@@ -23,6 +23,8 @@ public class HypeController : ControllerBase
     private readonly IHypeCaseStore _cases;
     private readonly IHypeResemblanceService _resemblance;
     private readonly IHypeBriefService _briefs;
+    private readonly IHypeCaseIndexer _indexer;
+    private readonly IVectorStore _vectors;
     private readonly ICompanyDirectory _directory;
     private readonly INewsProviderFactory _newsFactory;
     private readonly IConfiguration _config;
@@ -34,6 +36,8 @@ public class HypeController : ControllerBase
         IHypeCaseStore cases,
         IHypeResemblanceService resemblance,
         IHypeBriefService briefs,
+        IHypeCaseIndexer indexer,
+        IVectorStore vectors,
         ICompanyDirectory directory,
         INewsProviderFactory newsFactory,
         IConfiguration config,
@@ -44,6 +48,8 @@ public class HypeController : ControllerBase
         _cases = cases;
         _resemblance = resemblance;
         _briefs = briefs;
+        _indexer = indexer;
+        _vectors = vectors;
         _directory = directory;
         _newsFactory = newsFactory;
         _config = config;
@@ -74,13 +80,134 @@ public class HypeController : ControllerBase
         var window = await _moves.GetMoves(req.Symbol, parsedDate, selectedNewsSource, ct, progress: null, topMoves: req.TopMoves);
         var topics = await _narratives.GetTopics(req.Symbol, parsedDate, selectedNewsSource, ct);
         var saved = 0;
+        var indexed = 0;
         foreach (var move in window.KeyMoves)
         {
-            await _cases.SaveAsync(HypeCaseProjection.Build(window, move, topics), ct);
+            var hypeCase = HypeCaseProjection.Build(window, move, topics);
+            await _cases.SaveAsync(hypeCase, ct);
             saved++;
+            // Indexing mirrors the runner hook rule: best-effort, never fatal.
+            try
+            {
+                var detail = HypeCaseLibrary.TryReadDetail(hypeCase);
+                if (detail is not null)
+                    indexed += await _indexer.IndexCaseAsync(detail, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Harvest indexing failed for {Case}; registry row kept", hypeCase.Id);
+            }
         }
-        _logger.LogInformation("Hype harvest for {Symbol} on {Date}: {Saved} cases", window.CompanySymbol, parsedDate, saved);
+        _logger.LogInformation("Hype harvest for {Symbol} on {Date}: {Saved} cases, {Indexed} vectors",
+            window.CompanySymbol, parsedDate, saved, indexed);
         return Ok(new HarvestResponse(window.CompanySymbol, parsedDate, saved));
+    }
+
+    public sealed record ReindexResponse(int CasesScanned, int VectorsIndexed);
+
+    // One-shot backfill of cached vectors into the vector store (same
+    // operator gate as harvest). Existing rows are never modified: points
+    // upsert by stable id.
+    [HttpPost("reindex")]
+    public async Task<ActionResult<ReindexResponse>> Reindex(CancellationToken ct)
+    {
+        if (!string.Equals(_config["Hype:HarvestEnabled"], "true", StringComparison.OrdinalIgnoreCase))
+            return NotFound();
+        var library = await _cases.ListRecentAsync(2000, ct);
+        int scanned = 0, indexed = 0;
+        foreach (var row in library)
+        {
+            ct.ThrowIfCancellationRequested();
+            var detail = HypeCaseLibrary.TryReadDetail(row);
+            if (detail is null)
+            {
+                _logger.LogWarning("Skipping unreadable hype case {Id} in reindex", row.Id);
+                continue;
+            }
+            scanned++;
+            try
+            {
+                indexed += await _indexer.IndexCaseAsync(detail, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reindex failed for {Case}; continuing", row.Id);
+            }
+        }
+        _logger.LogInformation("Hype reindex: {Scanned} cases, {Indexed} vectors", scanned, indexed);
+        return Ok(new ReindexResponse(scanned, indexed));
+    }
+
+    // Pattern-score distribution (operator-only, same gate as harvest):
+    // best non-self pattern similarity per registry case → min/max/median/
+    // quartiles + 10 buckets over [0,1]. Read-only analytics; decides the
+    // pattern threshold with measured data instead of a guess.
+    [HttpPost("case-stats")]
+    public async Task<ActionResult<HypeCaseStatsResponse>> CaseStats(CancellationToken ct)
+    {
+        if (!string.Equals(_config["Hype:HarvestEnabled"], "true", StringComparison.OrdinalIgnoreCase))
+            return NotFound();
+        var library = await _cases.ListRecentAsync(2000, ct);
+        var bests = new List<double>();
+        foreach (var row in library)
+        {
+            ct.ThrowIfCancellationRequested();
+            var detail = HypeCaseLibrary.TryReadDetail(row);
+            if (detail is null)
+                continue;
+            // Same hybrid query the live path uses (structural + content).
+            var query = await _resemblance.BuildCaseQueryAsync(detail, ct);
+            if (query is null)
+                continue;
+            IReadOnlyList<VectorHit> hits;
+            try
+            {
+                hits = await _vectors.SearchCasesAsync(query, 10, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Case stats search failed for {Case}; skipping", row.Id);
+                continue;
+            }
+            double? best = null;
+            foreach (var hit in hits)
+            {
+                if (string.Equals(hit.CaseId, row.Id, StringComparison.Ordinal))
+                    continue;
+                if (string.Equals(hit.Symbol, row.CompanySymbol, StringComparison.OrdinalIgnoreCase) &&
+                    Math.Abs(hit.PeakDate.DayNumber - row.PeakDate.DayNumber) <= 30)
+                    continue;
+                var sim = EmbeddingClustering.Cosine(query, hit.Vector);
+                best = best is null ? sim : Math.Max(best.Value, sim);
+            }
+            if (best.HasValue)
+                bests.Add(best.Value);
+        }
+        bests.Sort();
+        double Quantile(double q) => bests.Count == 0 ? 0 :
+            bests[Math.Min(bests.Count - 1, (int)(q * bests.Count))];
+        var buckets = new int[10];
+        foreach (var s in bests)
+            buckets[Math.Min(9, (int)(s * 10))]++;
+        return Ok(new HypeCaseStatsResponse(
+            library.Count, bests.Count,
+            bests.Count == 0 ? 0 : Math.Round(bests[0], 3),
+            bests.Count == 0 ? 0 : Math.Round(bests[^1], 3),
+            Math.Round(Quantile(0.5), 3),
+            Math.Round(Quantile(0.25), 3),
+            Math.Round(Quantile(0.75), 3),
+            buckets.ToList()));
+    }
+
+    public sealed record VectorHealthResponse(string Backend, bool Reachable, ulong Points);
+
+    // Vector-store health for operators: which resemblance backend is live
+    // and how many points it holds. Never fails the feature either way.
+    [HttpGet("vector-health")]
+    public async Task<ActionResult<VectorHealthResponse>> VectorHealth(CancellationToken ct)
+    {
+        var (reachable, points) = await _vectors.HealthAsync(ct);
+        return Ok(new VectorHealthResponse(reachable ? "qdrant" : "memory", reachable, points));
     }
 
     // Signal detections for every key move in the window: current-case
@@ -193,8 +320,10 @@ public class HypeController : ControllerBase
                             s.Row.FlagsCsv.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList(),
                             s.Row.Completeness))
                         .ToList();
-                    // Realized aftermath only (Step 6): post-peak closes frozen
-                    // in each supporting case. Displayed collapsed + disclaimed.
+                    // Realized aftermath only (Step 6 / Issue 4): post-peak
+                    // closes frozen in each supporting case, plus the
+                    // aggregate first→last move (median/high/low).
+                    // Displayed collapsed + disclaimed.
                     var followed = supporting
                         .Select(s => new HypeFollowedCaseDto(
                             s.Row.Id, s.Row.CompanySymbol, s.Row.PeakDate,
@@ -202,6 +331,7 @@ public class HypeController : ControllerBase
                                 .Select(r => new HypeReactionDto(r.Date, r.Close))
                                 .ToList()))
                         .ToList();
+                    var followedSummary = SummarizeFollowed(supporting);
                     var def = HypeSignalCatalog.ById(match.SignalId);
                     // Resemblance is a recall aid, never a trigger: failures
                     // degrade to no resemblance, never to missing signals.
@@ -211,7 +341,7 @@ public class HypeController : ControllerBase
                         resemblance = (await _resemblance.FindResemblingAsync(
                                 detail, match.TriggerThreadIds, library, ct))
                             .Select(r => new HypeResemblanceDto(
-                                r.CaseId, r.Symbol, r.PeakDate, r.Similarity))
+                                r.CaseId, r.Symbol, r.PeakDate, r.Similarity, r.Kind))
                             .ToList();
                     }
                     catch (Exception ex)
@@ -226,7 +356,8 @@ public class HypeController : ControllerBase
                         match.TriggerEvidence,
                         supporters,
                         resemblance,
-                        followed));
+                        followed,
+                        followedSummary));
                 }
             }
             peaks.Add(new HypePeakDto(
@@ -315,6 +446,31 @@ public class HypeController : ControllerBase
                 supporters.Add((row, detail));
         }
         return supporters;
+    }
+
+    // Aggregate realized move per supporting case (first→last recorded
+    // close), then median/high/low across cases with reaction data.
+    // Decimal math (money-adjacent); nulls when no case has ≥2 closes.
+    private static HypeFollowedSummaryDto SummarizeFollowed(
+        List<(HypeCase Row, HypeCaseDetail Detail)> supporting)
+    {
+        var moves = supporting
+            .Select(s => s.Detail.Reaction)
+            .Where(r => r.Count >= 2 && r.First().Close != 0)
+            .Select(r => (r.Last().Close - r.First().Close) / r.First().Close * 100m)
+            .OrderBy(p => p)
+            .ToList();
+        if (moves.Count == 0)
+            return new HypeFollowedSummaryDto(0, null, null, null);
+        var mid = moves.Count / 2;
+        var median = moves.Count % 2 == 1
+            ? moves[mid]
+            : (moves[mid - 1] + moves[mid]) / 2m;
+        return new HypeFollowedSummaryDto(
+            moves.Count,
+            Math.Round(median, 2),
+            Math.Round(moves.Max(), 2),
+            Math.Round(moves.Min(), 2));
     }
 
     private CompanySummaryDto MapCompany(string symbol)

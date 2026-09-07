@@ -158,11 +158,22 @@ public class MoveDetectionService : IMoveDetectionService
         foreach (var move in window.KeyMoves)
         {
             var key = move.Date.ToString("yyyy-MM-dd");
-            var scores = window.EvidenceByDate.TryGetValue(key, out var evidence)
+            var found = window.EvidenceByDate.TryGetValue(key, out var evidence);
+            var scores = found && evidence is not null
                 ? evidence.News.Select(n => n.SentimentScore ??
                     (finbertById.TryGetValue(n.Id, out var f) ? (decimal?)f : null))
-                : Enumerable.Empty<decimal?>();
+                    .ToList()
+                : new List<decimal?>();
             move.SentimentDirection = SentimentDivergence.Classify(scores, move.DailyReturnPct);
+            if (found && evidence is not null)
+            {
+                // Mean of measured scores only (same inputs as the classifier,
+                // so the magnitude dim can never contradict the direction).
+                var measured = scores.Where(s => s.HasValue).Select(s => s!.Value).ToList();
+                evidence.SentimentMean = measured.Count >= 2
+                    ? Math.Round(measured.Average(), 4)
+                    : null;
+            }
         }
         return window;
     }

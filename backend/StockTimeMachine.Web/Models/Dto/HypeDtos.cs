@@ -13,7 +13,8 @@ public sealed record HypeResemblanceDto(
     string CaseId,
     string Symbol,
     DateOnly PeakDate,
-    double Similarity);
+    double Similarity,
+    string Kind);
 
 public sealed record HypeReactionDto(DateOnly Date, decimal Close);
 
@@ -23,6 +24,27 @@ public sealed record HypeFollowedCaseDto(
     DateOnly PeakDate,
     IReadOnlyList<HypeReactionDto> Reaction);
 
+// Aggregate realized aftermath across supporting cases: first→last recorded
+// close per case, then median/high/low. Description only — the UI labels it
+// "Observed in past cases — never a forecast".
+public sealed record HypeFollowedSummaryDto(
+    int CasesWithReaction,
+    decimal? MedianMovePct,
+    decimal? ObservedHighPct,
+    decimal? ObservedLowPct);
+
+// Pattern-score distribution over the registry: each case's best non-self
+// pattern similarity. Decides the PatternThreshold — never hardcoded blind.
+public sealed record HypeCaseStatsResponse(
+    int CasesScanned,
+    int CasesMatched,
+    double Min,
+    double Max,
+    double Median,
+    double P25,
+    double P75,
+    IReadOnlyList<int> Buckets);
+
 public sealed record HypeSignalDto(
     string Id,
     string Name,
@@ -31,7 +53,8 @@ public sealed record HypeSignalDto(
     IReadOnlyList<HypeCaseRefDto> SupportingCases,
     // Step 4 resemblance (recall aid); Step 6 realized aftermath below.
     IReadOnlyList<HypeResemblanceDto> Resemblance,
-    IReadOnlyList<HypeFollowedCaseDto> Followed);
+    IReadOnlyList<HypeFollowedCaseDto> Followed,
+    HypeFollowedSummaryDto FollowedSummary);
 
 public sealed record HypePeakDto(
     DateOnly PeakDate,

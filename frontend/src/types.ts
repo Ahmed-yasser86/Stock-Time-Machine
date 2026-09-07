@@ -359,6 +359,7 @@ export interface HypeSignal {
   resemblance?: HypeResemblance[];
   brief?: ClusterBrief | null;
   followed?: HypeFollowedCase[];
+  followedSummary?: HypeFollowedSummary | null;
 }
 
 export interface HypeResemblance {
@@ -366,6 +367,7 @@ export interface HypeResemblance {
   symbol: string;
   peakDate: string;
   similarity: number;
+  kind: 'pattern' | 'narrative' | string;
 }
 
 export interface HypeFollowedCase {
@@ -373,6 +375,13 @@ export interface HypeFollowedCase {
   symbol: string;
   peakDate: string;
   reaction: { date: string; close: number }[];
+}
+
+export interface HypeFollowedSummary {
+  casesWithReaction: number;
+  medianMovePct: number | null;
+  observedHighPct: number | null;
+  observedLowPct: number | null;
 }
 
 export interface HypePeak {

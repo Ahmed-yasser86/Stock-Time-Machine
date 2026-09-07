@@ -121,6 +121,15 @@ builder.Services.AddScoped<IHypeResemblanceService, HypeResemblanceService>();
 // Hype briefs: opt-in grounded signal summaries (reason: Step 5 of
 // hype-intelligence-plan). Fail-soft like thread briefs.
 builder.Services.AddScoped<IHypeBriefService, HypeBriefService>();
+// Hype vector store: Qdrant-backed resemblance index (reason: Qdrant
+// integration). Singleton client inside; unavailable without Qdrant:ApiKey,
+// and every consumer keeps its in-memory fallback.
+builder.Services.AddSingleton<IVectorStore, QdrantVectorStore>();
+builder.Services.AddScoped<IHypeCaseIndexer, HypeCaseIndexer>();
+// Hype filings: per-filing regulatory context ingestion (reason: Issue 3 —
+// filing rows carry metadata only, so text is fetched, sized, and summarized
+// before the brief pipeline ever sees it).
+builder.Services.AddScoped<IHypeFilingService, HypeFilingService>();
 builder.Services.AddSingleton<IInvestigationJobRunner, InvestigationJobRunner>();
 builder.Services.AddScoped<ICopilotService, CopilotService>();
 

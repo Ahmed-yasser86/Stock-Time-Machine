@@ -1,11 +1,18 @@
 import { Link } from 'react-router-dom';
 import type { HypeSignal, NewsSource } from '../types';
 import { AiBriefBlock } from './AiBriefBlock';
-import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useState } from 'react';
+
+// Signed percent with explicit +/− and em-dash for null (never 0-filled:
+// null means unmeasured, not flat).
+function formatSignedPct(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
+}
 
 /**
  * One detected hype signal. Deterministic trigger + concrete evidence refs
@@ -79,6 +86,9 @@ export function SignalCard({
             <ul className="mt-1 space-y-1 text-sm">
               {signal.resemblance.map((r) => (
                 <li key={r.caseId}>
+                  <Badge variant="secondary" className="mr-1 font-mono text-[10px]">
+                    {r.kind === 'pattern' ? 'pattern' : 'narrative'}
+                  </Badge>
                   <Link
                     to={`/moves?symbol=${encodeURIComponent(r.symbol)}&date=${r.peakDate}&newsSource=${newsSource}`}
                     className="font-mono underline decoration-dotted underline-offset-2 hover:text-fg"
@@ -109,31 +119,44 @@ export function SignalCard({
         )}
 
         {signal.followed && signal.followed.length > 0 && (
-          <div data-tour="aftermath">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFollowedOpen((v) => !v)}
-              aria-expanded={followedOpen}
-            >
-              {followedOpen ? 'Hide what followed' : `Show what followed (${signal.followed.length} cases)`}
-            </Button>
+          <div data-tour="aftermath" className="space-y-2">
+            <p className="text-xs text-fg-dim">
+              Observed in past cases — never a forecast. Realized prices only; nothing here
+              predicts this peak. This is not investment advice.
+            </p>
+            {signal.followedSummary && signal.followedSummary.casesWithReaction > 0 && (
+              <p className="text-sm">
+                Across {signal.followedSummary.casesWithReaction} past case(s): median 5-day
+                move {formatSignedPct(signal.followedSummary.medianMovePct)} · observed high{' '}
+                {formatSignedPct(signal.followedSummary.observedHighPct)} · observed low{' '}
+                {formatSignedPct(signal.followedSummary.observedLowPct)}
+              </p>
+            )}
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFollowedOpen((v) => !v)}
+                aria-expanded={followedOpen}
+              >
+                {followedOpen ? 'Hide what followed' : `Show what followed (${signal.followed.length} cases)`}
+              </Button>
+            </div>
             {followedOpen && (
-              <div className="mt-2 space-y-2">
-                <Alert>
-                  <AlertDescription>
-                    Realized historical prices after past peaks — description only. Past
-                    aftermath predicts nothing about this peak. This is not investment advice.
-                  </AlertDescription>
-                </Alert>
-                <ul className="space-y-1 text-sm">
-                  {signal.followed.map((f) => (
-                    <li key={f.caseId} className="font-mono text-xs">
-                      {f.symbol} {f.peakDate}: {f.reaction.map((r) => `${r.date} ${r.close}`).join(' · ') || 'no reaction data'}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <ul className="space-y-1 text-sm">
+                {signal.followed.map((f) => (
+                  <li key={f.caseId} className="font-mono text-xs">
+                    <Link
+                      to={`/moves?symbol=${encodeURIComponent(f.symbol)}&date=${f.peakDate}&newsSource=${newsSource}`}
+                      className="underline decoration-dotted underline-offset-2 hover:text-fg"
+                      title={`Open the full ${f.symbol} ${f.peakDate} investigation`}
+                    >
+                      {f.symbol} {f.peakDate}
+                    </Link>
+                    : {f.reaction.map((r) => `${r.date} ${r.close}`).join(' · ') || 'no reaction data'}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

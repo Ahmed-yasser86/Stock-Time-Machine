@@ -44,6 +44,11 @@ public class MoveEvidence
     public List<MarketReaction> Reaction { get; set; } = new();
     public List<string> UnavailableLayers { get; set; } = new();
     public List<ArrivalEntry> Arrival { get; set; } = new();
+    // Mean of the measured per-article sentiment scores behind
+    // SentimentDirection (provider + FinBERT fallback). Null when fewer than
+    // 2 measured scores exist. Additive (reason: hype case vectors need a
+    // sentiment magnitude dim); not exposed in DTOs.
+    public decimal? SentimentMean { get; set; }
 }
 
 // Window-level investor context for the 100 trading days before the decision.

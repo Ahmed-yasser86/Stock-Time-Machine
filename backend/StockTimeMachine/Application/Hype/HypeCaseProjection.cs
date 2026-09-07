@@ -155,6 +155,7 @@ public static class HypeCaseProjection
             DailyReturnPct = move.DailyReturnPct,
             Flags = flags,
             SentimentDirection = move.SentimentDirection,
+            SentimentMean = ev?.SentimentMean is decimal mean ? (double)mean : null,
             PrePeakThreads = threads,
             RegimePath = regimePath,
             Evidence = evidence,

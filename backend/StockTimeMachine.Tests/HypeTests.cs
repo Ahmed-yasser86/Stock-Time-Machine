@@ -307,6 +307,190 @@ public class HypeTests
     }
 
     [Fact]
+    public void BriefFilter_DropsNoiseKeepsSignal()
+    {
+        // Social post about a fictional SpaceX IPO: no company mention, no
+        // material signal → excluded before any LLM token is spent.
+        var noise = new HypeCaseSocialPost
+        {
+            Title = "My fight to convince ChatGPT that SpaceX had an IPO this month",
+            Excerpt = "Elon Musk IPO rumors and market manipulation claims",
+            Community = "r/wallstreetbets",
+        };
+        var signal = new HypeCaseSocialPost
+        {
+            Title = "NVDA earnings thread: data center revenue doubles",
+            Excerpt = "Nvidia data center revenue beat expectations on AI demand",
+            Community = "r/wallstreetbets",
+        };
+        var kept = HypeBriefInputFilter.FilterSocial("NVDA", "Nvidia", new[] { noise, signal });
+
+        Assert.Single(kept);
+        Assert.Contains("earnings", kept[0].Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BriefFilter_NewsAndThreads()
+    {
+        var earnings = new HypeCaseNewsItem { Title = "Nvidia earnings beat expectations", Description = "Data center revenue records" };
+        var murder = new HypeCaseNewsItem { Title = "Murder documentary streams", Description = "A Netflix true-crime film about the case" };
+        var keptNews = HypeBriefInputFilter.FilterNews("NVDA", "Nvidia", new[] { earnings, murder });
+
+        Assert.Single(keptNews);
+        Assert.Equal("Nvidia earnings beat expectations", keptNews[0].Title);
+
+        var threads = new List<HypeCaseThread>
+        {
+            new() { TopCategory = "FINANCIAL", RepresentativeTitle = "t1" },
+            new() { TopCategory = "UNRELATED", RepresentativeTitle = "t2" },
+            new() { TopCategory = "REPUTATIONAL", RepresentativeTitle = "t3" },
+            new() { TopCategory = "", RepresentativeTitle = "t4" },
+        };
+        var keptThreads = HypeBriefInputFilter.FilterThreads(threads);
+
+        Assert.Single(keptThreads);
+        Assert.Equal("t1", keptThreads[0].RepresentativeTitle);
+    }
+
+    [Fact]
+    public void CaseVector_LayoutWeightsAndNormalization()
+    {
+        var detail = new HypeCaseDetail
+        {
+            CompanySymbol = "NVDA",
+            PeakDate = Peak,
+            Score = 0.5,
+            DailyReturnPct = 6m,
+            Flags = new List<string> { MoveFlags.Spike },
+            SentimentDirection = SentimentDivergence.Disagree,
+            PrePeakThreads = new List<HypeCaseThread>
+            {
+                new() { TopCategory = "FINANCIAL", RepresentativeTitle = "t1", ArticleIds = new List<string> { "a1" } },
+                new() { TopCategory = "FINANCIAL", RepresentativeTitle = "t2", ArticleIds = new List<string> { "a2" } },
+            },
+            RegimePath = new Dictionary<string, string>
+            {
+                ["2026-06-10"] = MarketRegimes.Tense,
+                ["2026-06-11"] = MarketRegimes.Tense,
+            },
+            Evidence = new HypeCaseEvidence
+            {
+                NewsCount = 5,
+                Filings = new List<HypeCaseFiling>
+                {
+                    new() { FormType = "8-K", FiledAt = new DateTime(2026, 6, 1) },
+                },
+            },
+        };
+        var matches = new List<HypeSignalMatch>
+        {
+            new() { SignalId = "earnings-chatter", Name = "Earnings-chatter clustering" },
+        };
+
+        var vec = HypeCaseVector.Build(detail, matches);
+
+        Assert.Equal(HypeCaseVector.Dimensions, vec.Length);
+        Assert.Equal(89 + 3072, HypeCaseVector.Dimensions);
+        // Unit norm after weighting.
+        Assert.Equal(1.0, Math.Sqrt(vec.Sum(x => (double)x * x)), 5);
+        // Signal bit [0] carries weight 3.0 pre-normalization: it dominates
+        // the filing dim [65] (0.5 × 1/3).
+        Assert.True(Math.Abs(vec[0]) > Math.Abs(vec[65]));
+        // Sentiment disagree one-hot [13] present, others absent.
+        Assert.True(vec[13] != 0);
+        Assert.Equal(0, vec[12]);
+        // Tense-only regime histogram: dim 11 = 2 × dim 8 post-norm.
+        Assert.True(vec[8] > 0 && vec[11] > vec[8]);
+        // Positive 6% move: dim 68 = 0.6 × 0.5 pre-norm, dim 69 zero.
+        Assert.True(vec[68] > 0);
+        Assert.Equal(0, vec[69]);
+        // Category share+volume [16–49]: 2 FINANCIAL threads → share 1.0,
+        // volume 0.2 on dims 16/17; all other categories zero.
+        Assert.True(vec[16] > 0 && vec[17] > 0);
+        Assert.Equal(0, vec[18]);
+        // No content mean passed: content side zero.
+        Assert.All(vec.Skip(89), x => Assert.Equal(0, x));
+    }
+
+    [Fact]
+    public void CaseVector_PairsBigramsAndSentimentMean()
+    {
+        var detail = new HypeCaseDetail
+        {
+            CompanySymbol = "NVDA",
+            PeakDate = Peak,
+            SentimentDirection = SentimentDivergence.Disagree,
+            SentimentMean = -0.8,
+            RegimePath = new Dictionary<string, string>
+            {
+                ["2026-06-09"] = MarketRegimes.Warming,
+                ["2026-06-10"] = MarketRegimes.Normal,
+                ["2026-06-12"] = MarketRegimes.Tense,
+            },
+        };
+        var matches = new List<HypeSignalMatch>
+        {
+            new() { SignalId = "sentiment-split", Name = "s" },
+            new() { SignalId = "regulatory-overhang", Name = "r" },
+        };
+
+        var vec = HypeCaseVector.Build(detail, matches);
+
+        // Pair dims: sentiment-split is signal index 4, regulatory-overhang
+        // index 1 → pair (1,4) lives at 50 + 5 + 2 = 57.
+        Assert.True(vec[57] > 0);
+        // A non-firing pair stays zero (indices 0,2 → 51).
+        Assert.Equal(0, vec[51]);
+        // Sentiment magnitude [72]: -0.8 × 2.0 pre-norm, negative sign kept.
+        Assert.True(vec[72] < 0);
+        // Warming→normal→tense bigrams: [warming,normal] then [normal,tense].
+        // Label order calm=0, normal=1, tense=2, warming=3:
+        // (3,1) → 73+13=86; (1,2) → 73+6=79.
+        Assert.True(vec[86] > 0 && vec[79] > 0);
+        Assert.Equal(0, vec[73]);
+    }
+
+    [Fact]
+    public void CaseVector_ContentScalarApplied()
+    {
+        var detail = new HypeCaseDetail { CompanySymbol = "NVDA", PeakDate = Peak, Score = 0.5 };
+        var unit = Enumerable.Repeat(1f / (float)Math.Sqrt(3072), 3072).ToList();
+
+        var vec = HypeCaseVector.Build(detail, new List<HypeSignalMatch>(), unit);
+
+        // Content side norm post-global-normalization is positive and the
+        // structural score dim survives alongside it.
+        var contentNorm = Math.Sqrt(vec.Skip(89).Sum(x => (double)x * x));
+        Assert.True(contentNorm > 0.3 && contentNorm < 0.95);
+        Assert.True(vec[70] > 0);
+        Assert.Equal(1.0, Math.Sqrt(vec.Sum(x => (double)x * x)), 5);
+    }
+
+    [Fact]
+    public void CaseVector_NullDetail_IsZero()
+    {
+        var vec = HypeCaseVector.Build(null!, new List<HypeSignalMatch>());
+
+        Assert.Equal(HypeCaseVector.Dimensions, vec.Length);
+        Assert.All(vec, x => Assert.Equal(0, x));
+    }
+
+    [Fact]
+    public void MeanPool_AveragesAndNormalizes()
+    {
+        var mean = HypeCaseVector.MeanPool(new List<IReadOnlyList<float>>
+        {
+            new float[] { 1, 0 },
+            new float[] { 0, 1 },
+        });
+
+        Assert.NotNull(mean);
+        Assert.Equal(2, mean!.Count);
+        Assert.Equal(Math.Sqrt(0.5), mean[0], 5);
+        Assert.Null(HypeCaseVector.MeanPool(new List<IReadOnlyList<float>>()));
+    }
+
+    [Fact]
     public void Library_CorruptOrEmptyJson_ReturnsNull()
     {
         Assert.Null(HypeCaseLibrary.TryReadDetail(null!));
@@ -356,11 +540,11 @@ public class HypeTests
         },
     };
 
-    private static HypeCase ResemblanceRow(string id, HypeCaseDetail detail) => new()
+    private static HypeCase ResemblanceRow(string id, HypeCaseDetail detail, DateOnly? peak = null, string symbol = "NFLX") => new()
     {
         Id = id,
-        CompanySymbol = "NFLX",
-        PeakDate = Peak,
+        CompanySymbol = symbol,
+        PeakDate = peak ?? Peak,
         CaseJson = JsonSerializer.Serialize(detail, WebJson),
     };
 
@@ -381,8 +565,27 @@ public class HypeTests
         return repo;
     }
 
-    private static HypeResemblanceService ResemblanceSut(Mock<IHistoricalDataRepository> repo, IGeminiClient gemini) =>
-        new(repo.Object, gemini, NullLogger<HypeResemblanceService>.Instance);
+    private sealed class UnavailableVectorStore : IVectorStore
+    {
+        public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(false);
+        public Task<(bool Reachable, ulong Points)> HealthAsync(CancellationToken ct = default) =>
+            Task.FromResult((false, 0UL));
+        public Task<int> UpsertAsync(string caseId, string symbol, DateOnly peakDate,
+            IReadOnlyList<(string ArticleId, float[] Vector)> vectors, CancellationToken ct = default) =>
+            Task.FromResult(0);
+        public Task<IReadOnlyList<VectorHit>> SearchAsync(float[] query, int limit, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<VectorHit>>(Array.Empty<VectorHit>());
+        public Task<int> UpsertCaseAsync(string caseId, string symbol, DateOnly peakDate,
+            float[] vector, CancellationToken ct = default) =>
+            Task.FromResult(0);
+        public Task<IReadOnlyList<VectorHit>> SearchCasesAsync(float[] query, int limit, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<VectorHit>>(Array.Empty<VectorHit>());
+    }
+
+    private static HypeResemblanceService ResemblanceSut(
+        Mock<IHistoricalDataRepository> repo, IGeminiClient gemini, IVectorStore? vectors = null) =>
+        new(repo.Object, gemini, vectors ?? new UnavailableVectorStore(),
+            NullLogger<HypeResemblanceService>.Instance);
 
     [Fact]
     public async Task Resemblance_SkipsIdenticalArticles()
@@ -417,14 +620,197 @@ public class HypeTests
         var current = ResemblanceDetail(("a", "Current article"));
         var library = new List<HypeCase>
         {
-            ResemblanceRow("NFLX:2026-06-16", ResemblanceDetail(("b", "Library article"))),
+            ResemblanceRow("NFLX:2026-08-01", ResemblanceDetail(("b", "Library article")),
+                peak: new DateOnly(2026, 8, 1)),
         };
 
         var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
 
         var match = Assert.Single(found);
-        Assert.Equal("NFLX:2026-06-16", match.CaseId);
+        Assert.Equal("NFLX:2026-08-01", match.CaseId);
         Assert.Equal(0.8, match.Similarity, 3);
+    }
+
+    [Fact]
+    public void Cosine_IsMathematicallyCorrect()
+    {
+        Assert.Equal(1.0, EmbeddingClustering.Cosine(new float[] { 1, 0 }, new float[] { 1, 0 }), 9);
+        Assert.Equal(0.0, EmbeddingClustering.Cosine(new float[] { 1, 0 }, new float[] { 0, 1 }), 9);
+        Assert.Equal(-1.0, EmbeddingClustering.Cosine(new float[] { 1, 0 }, new float[] { -1, 0 }), 9);
+        Assert.Equal(0.8, EmbeddingClustering.Cosine(new float[] { 1, 0 }, new float[] { 0.8f, 0.6f }), 6);
+    }
+
+    [Fact]
+    public async Task Resemblance_ExcludesSameSymbolThirtyDayNeighbors()
+    {
+        // Date neighbors share most of the pre-peak window: even byte-identical
+        // vectors must not join (their 1.00 is window overlap, not resemblance).
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+            ["b"] = new float[] { 1, 0 },
+        });
+        var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()));
+        var current = ResemblanceDetail(("a", "Current article"));
+        var library = new List<HypeCase>
+        {
+            ResemblanceRow("NFLX:2026-06-25", ResemblanceDetail(("b", "Neighbor article")),
+                peak: new DateOnly(2026, 6, 25)),
+        };
+
+        var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
+
+        Assert.Empty(found);
+    }
+
+    [Fact]
+    public async Task Resemblance_KeepsDistantSameSymbolAndNearOtherSymbol()
+    {
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+            ["b"] = new float[] { 0.8f, 0.6f },
+            ["c"] = new float[] { 0.9f, 0.4359f },
+        });
+        var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()));
+        var current = ResemblanceDetail(("a", "Current article"));
+        var library = new List<HypeCase>
+        {
+            ResemblanceRow("NFLX:2026-08-01", ResemblanceDetail(("b", "Distant article")),
+                peak: new DateOnly(2026, 8, 1)),
+            ResemblanceRow("MSFT:2026-06-18", ResemblanceDetail(("c", "Other symbol article")),
+                peak: new DateOnly(2026, 6, 18), symbol: "MSFT"),
+        };
+
+        var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
+
+        Assert.Equal(2, found.Count);
+        Assert.All(found, f => Assert.True(f.Similarity < 1.0));
+    }
+
+    [Fact]
+    public async Task Resemblance_VectorStorePath_AppliesSameRules()
+    {
+        // Qdrant hits go through identical exclusion + threshold math: the
+        // neighbor is dropped, the distant case joins.
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+        });
+        var store = new Mock<IVectorStore>();
+        store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        store.Setup(s => s.SearchAsync(It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<VectorHit>
+            {
+                new("b", new float[] { 0.8f, 0.6f }, "NFLX:2026-08-01", "NFLX", new DateOnly(2026, 8, 1)),
+                new("c", new float[] { 1, 0 }, "NFLX:2026-06-25", "NFLX", new DateOnly(2026, 6, 25)),
+            });
+        var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()), store.Object);
+        var current = ResemblanceDetail(("a", "Current article"));
+
+        var found = await sut.FindResemblingAsync(current, new[] { "a" }, new List<HypeCase>());
+
+        // The vector path ran (current vector cached locally): only the
+        // distant case survives exclusion.
+        store.Verify(s => s.SearchAsync(It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+        Assert.Single(found);
+        Assert.Equal("NFLX:2026-08-01", found[0].CaseId);
+    }
+
+    [Fact]
+    public async Task Resemblance_VectorStoreFailure_FallsBackToMemory()
+    {
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+            ["b"] = new float[] { 0.8f, 0.6f },
+        });
+        var store = new Mock<IVectorStore>();
+        store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("down"));
+        var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()), store.Object);
+        var current = ResemblanceDetail(("a", "Current article"));
+        var library = new List<HypeCase>
+        {
+            ResemblanceRow("NFLX:2026-08-01", ResemblanceDetail(("b", "Library article")),
+                peak: new DateOnly(2026, 8, 1)),
+        };
+
+        var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
+
+        Assert.Single(found);
+        Assert.Equal("NFLX:2026-08-01", found[0].CaseId);
+    }
+
+    [Fact]
+    public async Task Indexer_UpsertsCachedThreadVectors()
+    {
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+        });
+        var store = new Mock<IVectorStore>();
+        store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        store.Setup(s => s.UpsertAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateOnly>(),
+                It.IsAny<IReadOnlyList<(string ArticleId, float[] Vector)>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        store.Setup(s => s.UpsertCaseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateOnly>(),
+                It.IsAny<float[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        var indexer = new HypeCaseIndexer(repo.Object, store.Object,
+            new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
+            NullLogger<HypeCaseIndexer>.Instance);
+        var detail = ResemblanceDetail(("a", "Current article"));
+
+        var indexed = await indexer.IndexCaseAsync(detail);
+
+        // 1 article point + 1 case pattern point.
+        Assert.Equal(2, indexed);
+        store.Verify(s => s.UpsertAsync("NFLX:2026-06-15", "NFLX", new DateOnly(2026, 6, 15),
+            It.Is<IReadOnlyList<(string ArticleId, float[] Vector)>>(v => v.Count == 1 && v[0].ArticleId == "a"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Indexer_ThreadlessCase_StillWritesCasePoint()
+    {
+        // Regression: the case pattern point must not depend on threads
+        // existing (38 production cases have none).
+        var repo = VectorRepo(new Dictionary<string, float[]>());
+        var store = new Mock<IVectorStore>();
+        store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        store.Setup(s => s.UpsertCaseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateOnly>(),
+                It.IsAny<float[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        var indexer = new HypeCaseIndexer(repo.Object, store.Object,
+            new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
+            NullLogger<HypeCaseIndexer>.Instance);
+        var window = Window(Move(MoveFlags.Spike));
+        window.EvidenceByDate.Clear();
+        var detail = HypeCaseLibrary.TryReadDetail(
+            HypeCaseProjection.Build(window, Move(MoveFlags.Spike), null))!;
+
+        Assert.Empty(detail.PrePeakThreads);
+        Assert.Equal(1, await indexer.IndexCaseAsync(detail));
+        store.Verify(s => s.UpsertCaseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateOnly>(),
+            It.Is<float[]>(v => v.Length == HypeCaseVector.Dimensions),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Indexer_UnavailableStore_IndexesNothing()
+    {
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+        });
+        var store = new Mock<IVectorStore>();
+        store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var indexer = new HypeCaseIndexer(repo.Object, store.Object,
+            new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
+            NullLogger<HypeCaseIndexer>.Instance);
+
+        Assert.Equal(0, await indexer.IndexCaseAsync(ResemblanceDetail(("a", "x"))));
     }
 
     [Fact]

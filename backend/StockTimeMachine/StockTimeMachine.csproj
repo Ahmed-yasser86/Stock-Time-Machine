@@ -19,6 +19,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
+    <PackageReference Include="Qdrant.Client" Version="1.19.0" />
   </ItemGroup>
 
 </Project>
