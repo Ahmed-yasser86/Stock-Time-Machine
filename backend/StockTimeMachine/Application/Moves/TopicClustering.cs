@@ -10,6 +10,10 @@ public class TopicCluster
 {
     public List<string> LabelTerms { get; set; } = new();
     public List<string> ArticleIds { get; set; } = new();
+    // Per-article publication dates (additive, reason: retrospective briefs
+    // must date every claim to its article — never backdate post-peak
+    // coverage to the event date). Absent on rows frozen before this field.
+    public Dictionary<string, DateOnly> ArticleDates { get; set; } = new();
     public string RepresentativeTitle { get; set; } = "";
     public DateTime? SpanStart { get; set; }
     public DateTime? SpanEnd { get; set; }
@@ -143,6 +147,7 @@ public static class TopicClustering
         {
             LabelTerms = termWeight.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList(),
             ArticleIds = ordered.Select(i => docs[i].Id).ToList(),
+            ArticleDates = ordered.ToDictionary(i => docs[i].Id, i => DateOnly.FromDateTime(docs[i].PublishedAt)),
             RepresentativeTitle = docs[ordered.MaxBy(i => docs[i].Title.Length)].Title,
             SpanStart = dates.Min(),
             SpanEnd = dates.Max(),

@@ -126,10 +126,11 @@ export function SignalCard({
             </p>
             {signal.followedSummary && signal.followedSummary.casesWithReaction > 0 && (
               <p className="text-sm">
-                Across {signal.followedSummary.casesWithReaction} past case(s): median 5-day
-                move {formatSignedPct(signal.followedSummary.medianMovePct)} · observed high{' '}
-                {formatSignedPct(signal.followedSummary.observedHighPct)} · observed low{' '}
-                {formatSignedPct(signal.followedSummary.observedLowPct)}
+                Across {signal.followedSummary.casesWithReaction} historical cases: median realized
+                5-day move {formatSignedPct(signal.followedSummary.medianMovePct)}; observed
+                range {formatSignedPct(signal.followedSummary.observedLowPct)} to{' '}
+                {formatSignedPct(signal.followedSummary.observedHighPct)}. These are historical
+                outcomes, not a forecast for the current case.
               </p>
             )}
             <div>

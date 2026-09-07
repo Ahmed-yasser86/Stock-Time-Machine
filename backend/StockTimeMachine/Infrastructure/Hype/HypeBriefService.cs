@@ -75,18 +75,41 @@ public class HypeBriefService : IHypeBriefService
             var newsByTitle = relevantNews
                 .GroupBy(n => n.Title ?? "", StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-            var inputs = new List<(string Title, string Body)>();
+            // Dated inputs (reason: retrospective briefs must date every claim
+            // to its article — per-article dates from the thread map, falling
+            // back to evidence-news dates by title, else undated but never
+            // silently assigned to either side of the peak).
+            var inputs = new List<HypeBriefArticle>();
             foreach (var t in threads.Take(MaxInputs))
             {
                 var body = !string.IsNullOrWhiteSpace(t.BriefSummary)
                     ? t.BriefSummary!
                     : string.Join(" ", t.LabelTerms);
+                // Dating authority is the thread's OWN member articles — never
+                // an evidence title-match (same story can exist in two dated
+                // versions; matching by title once stamped a June-8 story as
+                // June-5). Evidence text enriches the body only, dateless.
+                DateOnly? publishedAt = null;
+                var memberDates = t.ArticleDates.Values.OrderBy(d => d).ToList();
+                if (memberDates.Count > 0)
+                {
+                    if (memberDates.Last() <= detail.PeakDate)
+                        publishedAt = memberDates.Last();
+                    else if (memberDates.First() > detail.PeakDate)
+                        publishedAt = memberDates.First();
+                }
                 if (newsByTitle.TryGetValue(t.RepresentativeTitle ?? "", out var item) &&
                     !string.IsNullOrWhiteSpace(item.Description))
-                    body = item.Description + " (" + item.Source + ", " + item.PublishedAt.ToString("yyyy-MM-dd") + ")";
+                    body = item.Description + " (" + item.Source + ")";
                 if (body.Length > MaxBodyChars)
                     body = body.Substring(0, MaxBodyChars);
-                inputs.Add((t.RepresentativeTitle ?? "(untitled thread)", body));
+                inputs.Add(new HypeBriefArticle
+                {
+                    Title = t.RepresentativeTitle ?? "(untitled thread)",
+                    Body = body,
+                    PublishedAt = publishedAt,
+                    SpanLabel = SpanLabel(t),
+                });
             }
             // Regulatory context: stored summaries first (zero re-fetch), live
             // generation only for filings with no stored row. Either way the
@@ -110,6 +133,16 @@ public class HypeBriefService : IHypeBriefService
             _logger.LogWarning(ex, "Hype signal brief failed for {Signal}; continuing without", match.SignalId);
             return null;
         }
+    }
+
+    // Thread span as an honest label ("May 31 → Jun 15"): shown for undated
+    // inputs so the model sees the range instead of inventing a date.
+    private static string SpanLabel(HypeCaseThread t)
+    {
+        if (t.SpanStart.HasValue && t.SpanEnd.HasValue)
+            return DateOnly.FromDateTime(t.SpanStart.Value).ToString("yyyy-MM-dd") +
+                " → " + DateOnly.FromDateTime(t.SpanEnd.Value).ToString("yyyy-MM-dd");
+        return "dates unknown";
     }
 
     // Stored summaries (Phase 5 reuse): one row per accession, newest three

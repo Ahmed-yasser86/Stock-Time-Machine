@@ -296,13 +296,17 @@ public class HypeTests
             Thread("FINANCIAL", "Revenue guidance raised", new DateTime(2026, 6, 10), new DateTime(2026, 6, 10))));
         var match = HypeSignals.Evaluate(detail).First(m => m.SignalId == "earnings-chatter");
         var prompt = HypeBriefPrompt.Build("NFLX", Peak, match, detail,
-            new List<(string Title, string Body)> { ("Earnings beat estimates", "Record quarter") });
+            new List<HypeBriefArticle>
+            {
+                new() { Title = "Earnings beat estimates", Body = "Record quarter",
+                    PublishedAt = new DateOnly(2026, 6, 10) },
+            });
 
         Assert.Contains("2026-06-15", prompt);
         Assert.Contains("CASE FACTS", prompt);
         Assert.Contains("NEVER state or imply", prompt);
         Assert.Contains("NEVER predict", prompt);
-        Assert.Contains("[1] Earnings beat estimates", prompt);
+        Assert.Contains("[1] (2026-06-10) Earnings beat estimates", prompt);
         Assert.Contains("DISAGREEMENTS AND GAPS", prompt);
         // No filing summaries: no mandatory regulatory bullet, honest empty section.
         Assert.DoesNotContain("Bullet 1 MUST", prompt);
@@ -325,12 +329,141 @@ public class HypeTests
                 ConfidenceNote = "full", PagesProcessed = 1, TotalPages = 1 },
         };
         var prompt = HypeBriefPrompt.Build("MSFT", Peak, match, detail,
-            new List<(string Title, string Body)>(), null, filings);
+            new List<HypeBriefArticle>(), null, filings);
 
         Assert.Contains("REGULATORY CONTEXT (from filing documents", prompt);
         Assert.Contains("Debt offering announced.", prompt);
         Assert.Contains("Bullet 1 MUST summarize the REGULATORY CONTEXT", prompt);
         Assert.Contains("omitting any section is a failure", prompt);
+    }
+
+    [Fact]
+    public void BriefPrompt_SplitsAtEventFromPostPeak()
+    {
+        // Retrospective dating: peak June 5, cutoff June 15. June-5 and
+        // earlier items are at-event evidence; June 6+ items are subsequent
+        // context only — never event-day knowledge, never causes.
+        var peak = new DateOnly(2026, 6, 5);
+        var cutoff = new DateOnly(2026, 6, 15);
+        var detail = new HypeCaseDetail
+        {
+            CompanySymbol = "NVDA",
+            PeakDate = peak,
+            Score = 0.474,
+            DailyReturnPct = -6.20m,
+            Flags = new List<string> { "plunge", "breakdown" },
+            SentimentDirection = SentimentDivergence.Disagree,
+            Evidence = new HypeCaseEvidence
+            {
+                NewsCount = 3,
+                News = new List<HypeCaseNewsItem>
+                {
+                    new() { Title = "June five story", PublishedAt = new DateTime(2026, 6, 5) },
+                    new() { Title = "June eight story", PublishedAt = new DateTime(2026, 6, 8) },
+                    new() { Title = "June ten story", PublishedAt = new DateTime(2026, 6, 10) },
+                },
+            },
+        };
+        var match = new HypeSignalMatch { SignalId = "sentiment-split", Name = "Sentiment split" };
+        var articles = new List<HypeBriefArticle>
+        {
+            new() { Title = "Invitation story", Body = "b1", PublishedAt = new DateOnly(2026, 6, 5) },
+            new() { Title = "Lawmakers story", Body = "b2", PublishedAt = new DateOnly(2026, 6, 8) },
+            new() { Title = "Taiwan story", Body = "b3", PublishedAt = new DateOnly(2026, 6, 10) },
+            new() { Title = "Legacy thread", Body = "b4", SpanLabel = "2026-05-31 → 2026-06-15" },
+        };
+        var prompt = HypeBriefPrompt.Build("NVDA", cutoff, match, detail, articles);
+
+        // Frame: event date, cutoff, and window stated up front.
+        Assert.Contains("Detected event date: 2026-06-05.", prompt);
+        Assert.Contains("Investigation cutoff: 2026-06-15", prompt);
+        // Groups split exactly at the peak; every dated item carries its date.
+        Assert.Contains("AT-EVENT ARTICLES [1]", prompt);
+        Assert.Contains("POST-PEAK ARTICLES [2]", prompt);
+        Assert.Contains("(2026-06-08) Lawmakers story", prompt);
+        Assert.Contains("(2026-06-10) Taiwan story", prompt);
+        Assert.Contains("UNDATED ARTICLES", prompt);
+        Assert.Contains("(2026-05-31 → 2026-06-15) Legacy thread", prompt);
+        // Per-date evidence census: only the June-5 row is at-event.
+        Assert.Contains("1 published 2026-06-05 (at-event)", prompt);
+        Assert.Contains("1 published 2026-06-08 (post-peak)", prompt);
+        Assert.Contains("1 published 2026-06-10 (post-peak)", prompt);
+        // Bans: no blanket contemporary label, no post-peak causation,
+        // invitation/response dating, spec attribution.
+        Assert.DoesNotContain("contemporary coverage behind the trigger", prompt);
+        Assert.Contains("never event-day knowledge, never causes", prompt);
+        Assert.Contains("date the response by the LATER article", prompt);
+        Assert.Contains("never the FirstSeen date for the whole set", prompt);
+        Assert.Contains("name its reporting outlet inline", prompt);
+        Assert.Contains("report each figure with its source attribution", prompt);
+        Assert.Contains("mark pipeline stage facts as (case fact)", prompt);
+        // Summary order mandated: event, cutoff, stages, at-event, post-peak.
+        Assert.Contains("then at-event coverage, then post-peak developments", prompt);
+    }
+
+    private static HypeCaseThread DatedThread(
+        string category, string title, string id, DateOnly published) => new()
+    {
+        LabelTerms = title.Split(' ').Take(3).ToList(),
+        ArticleIds = new List<string> { id },
+        ArticleDates = new Dictionary<string, DateOnly> { [id] = published },
+        RepresentativeTitle = title,
+        TopCategory = category,
+    };
+
+    private static HypeCaseDetail DatedCase(params HypeCaseThread[] threads) => new()
+    {
+        CompanySymbol = "NVDA",
+        PeakDate = new DateOnly(2026, 6, 5),
+        Score = 0.5,
+        Flags = new List<string>(),
+        SentimentDirection = SentimentDivergence.Unknown,
+        PrePeakThreads = threads.ToList(),
+        RegimePath = new Dictionary<string, string>(),
+        Evidence = new HypeCaseEvidence(),
+    };
+
+    [Fact]
+    public void QualifiedThreads_LegacyUndatedAlwaysVotes()
+    {
+        // No dates anywhere (legacy rows): span rule stands, nothing excluded.
+        var detail = DatedCase(new HypeCaseThread
+        {
+            TopCategory = "FINANCIAL",
+            RepresentativeTitle = "t",
+            ArticleIds = new List<string> { "a" },
+        });
+
+        Assert.Single(HypeCaseProjection.QualifiedThreads(detail));
+    }
+
+    [Fact]
+    public void QualifiedThreads_PostPeakOnlyThreadDoesNotVote()
+    {
+        // Span-straddling thread whose dated articles are ALL post-peak must
+        // not trigger or shape pattern counts as pre-peak evidence.
+        var detail = DatedCase(
+            DatedThread("FINANCIAL", "June eight story", "a1", new DateOnly(2026, 6, 8)),
+            DatedThread("FINANCIAL", "June ten story", "a2", new DateOnly(2026, 6, 10)));
+
+        Assert.Empty(HypeCaseProjection.QualifiedThreads(detail));
+        Assert.DoesNotContain(HypeSignals.Evaluate(detail), m => m.SignalId == "earnings-chatter");
+        var vec = HypeCaseVector.Build(detail, HypeSignals.Evaluate(detail));
+        Assert.Equal(0, vec.Skip(16).Take(34).Sum(x => Math.Abs(x)));
+    }
+
+    [Fact]
+    public void QualifiedThreads_MixedSetVotesContemporaneousOnly()
+    {
+        var detail = DatedCase(
+            DatedThread("FINANCIAL", "June five story", "a1", new DateOnly(2026, 6, 5)),
+            DatedThread("FINANCIAL", "June four story", "a2", new DateOnly(2026, 6, 4)),
+            DatedThread("FINANCIAL", "June eight story", "a3", new DateOnly(2026, 6, 8)));
+
+        var qualified = HypeCaseProjection.QualifiedThreads(detail);
+
+        Assert.Equal(2, qualified.Count);
+        Assert.Contains(HypeSignals.Evaluate(detail), m => m.SignalId == "earnings-chatter");
     }
 
     [Fact]

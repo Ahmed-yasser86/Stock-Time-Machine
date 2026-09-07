@@ -69,11 +69,13 @@ public class HypeResemblanceService : IHypeResemblanceService
         if (string.IsNullOrWhiteSpace(model))
             return empty;
 
-        // Trigger threads when the signal has a thread basis, else the full
-        // pre-peak thread set (volume/sentiment signals carry no articles).
+        // Trigger threads when the signal has a thread basis, else the
+        // qualified pre-peak set (volume/sentiment signals carry no
+        // articles). Same qualified set the indexer pools, so query and
+        // indexed means always agree.
         var wanted = triggerArticleIds.Count > 0
             ? triggerArticleIds
-            : current.PrePeakThreads.SelectMany(t => t.ArticleIds).Distinct().ToList();
+            : HypeCaseProjection.QualifiedArticleIds(current).ToList();
         var currentVectors = await LoadCachedAsync(wanted.Take(MaxTriggerArticles).ToList(), model, ct);
         if (currentVectors.Count == 0)
             return empty;
@@ -308,8 +310,7 @@ public class HypeResemblanceService : IHypeResemblanceService
         var model = _gemini.EmbeddingModel;
         if (string.IsNullOrWhiteSpace(model))
             return null;
-        var ids = detail.PrePeakThreads
-            .SelectMany(t => t.ArticleIds).Distinct(StringComparer.Ordinal).ToList();
+        var ids = HypeCaseProjection.QualifiedArticleIds(detail).ToList();
         var vectors = await LoadCachedAsync(ids, model, ct);
         var mean = HypeCaseVector.MeanPool(vectors.Select(v => v.Vector).ToList());
         // Same inputs as the live hybrid path (structural + content mean +

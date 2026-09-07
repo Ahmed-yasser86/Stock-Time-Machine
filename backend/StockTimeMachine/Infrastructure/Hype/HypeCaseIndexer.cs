@@ -41,6 +41,10 @@ public class HypeCaseIndexer : IHypeCaseIndexer
             return 0;
         var caseId = detail.CompanySymbol + ":" + detail.PeakDate.ToString("yyyy-MM-dd");
         var indexed = 0;
+        // Content mean pools qualified articles only (reason: same
+        // retrospective rule — the query side in HypeResemblanceService uses
+        // this exact set, so both sides of the cosine always agree).
+        var qualifiedIds = HypeCaseProjection.QualifiedArticleIds(detail);
         var ids = detail.PrePeakThreads
             .SelectMany(t => t.ArticleIds)
             .Distinct(StringComparer.Ordinal)
@@ -68,7 +72,10 @@ public class HypeCaseIndexer : IHypeCaseIndexer
         // both the hybrid and the structural point.
         var matches = HypeSignals.Evaluate(detail);
         var filingInputs = await LoadFilingInputsAsync(detail, ct);
-        var mean = HypeCaseVector.MeanPool(vectors.Select(v => (IReadOnlyList<float>)v.Vector).ToList());
+        var qualifiedSet = new HashSet<string>(qualifiedIds, StringComparer.Ordinal);
+        var mean = HypeCaseVector.MeanPool(vectors
+            .Where(v => qualifiedSet.Contains(v.ArticleId))
+            .Select(v => (IReadOnlyList<float>)v.Vector).ToList());
         var caseVector = HypeCaseVector.Build(detail, matches, mean, filingInputs);
         if (caseVector.Any(x => x != 0))
             indexed += await _vectors.UpsertCaseAsync(

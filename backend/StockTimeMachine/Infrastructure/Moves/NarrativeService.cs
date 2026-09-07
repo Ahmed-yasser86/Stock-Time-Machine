@@ -369,6 +369,7 @@ public class NarrativeService : INarrativeService
         {
             LabelTerms = LabelTerms(ordered, docs),
             ArticleIds = ordered.Select(i => docs[i].Id).ToList(),
+            ArticleDates = ordered.ToDictionary(i => docs[i].Id, i => DateOnly.FromDateTime(docs[i].PublishedAt)),
             RepresentativeTitle = docs[ordered.MaxBy(i => docs[i].Title.Length)].Title,
             SpanStart = dates.Min(),
             SpanEnd = dates.Max(),

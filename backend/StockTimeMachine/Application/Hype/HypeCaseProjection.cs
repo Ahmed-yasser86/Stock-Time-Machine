@@ -183,6 +183,31 @@ public static class HypeCaseProjection
         };
     }
 
+    // Trigger/vote qualification (retrospective dating rule): a stored thread
+    // votes in signal triggers and the vector category histogram only when at
+    // least one of its articles is dated on/before the peak. Threads without
+    // any known dates (legacy rows, unknown spans) keep the legacy span rule
+    // — absence of dates must never read as absence of pre-peak coverage.
+    public static IReadOnlyList<HypeCaseThread> QualifiedThreads(HypeCaseDetail detail)
+    {
+        if (detail is null)
+            return Array.Empty<HypeCaseThread>();
+        return detail.PrePeakThreads
+            .Where(t => t is not null && (
+                t.ArticleDates.Count == 0 ||
+                t.ArticleDates.Values.Any(d => d <= detail.PeakDate)))
+            .ToList();
+    }
+
+    // Article ids behind qualified threads: the single source for content
+    // mean-pooling (indexer) and query construction (resemblance, stats).
+    // Both sides must pool the same set or cosine compares different things.
+    public static IReadOnlyList<string> QualifiedArticleIds(HypeCaseDetail detail) =>
+        QualifiedThreads(detail)
+            .SelectMany(t => t.ArticleIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
     private static HypeCaseThread ToThread(TopicCluster t) => new()
     {
         LabelTerms = t.LabelTerms.ToList(),
@@ -190,6 +215,7 @@ public static class HypeCaseProjection
         SpanStart = t.SpanStart,
         SpanEnd = t.SpanEnd,
         ArticleIds = t.ArticleIds.ToList(),
+        ArticleDates = new Dictionary<string, DateOnly>(t.ArticleDates ?? new Dictionary<string, DateOnly>()),
         RelevanceRate = t.RelevanceRate,
         TopCategory = t.TopCategory ?? "",
         BriefSummary = t.Brief is null || string.IsNullOrWhiteSpace(t.Brief.Summary)

@@ -63,9 +63,24 @@ public class HypeCaseThread
     public DateTime? SpanStart { get; set; }
     public DateTime? SpanEnd { get; set; }
     public List<string> ArticleIds { get; set; } = new();
+    // Per-article publication dates, copied from the thread (additive,
+    // reason: same as TopicCluster.ArticleDates — retrospective dating).
+    // Empty on rows frozen before this field; readers must tolerate that.
+    public Dictionary<string, DateOnly> ArticleDates { get; set; } = new();
     public double? RelevanceRate { get; set; }
     public string TopCategory { get; set; } = "";
     public string? BriefSummary { get; set; }
+}
+
+// One brief input article: dated when the date is known, span-labeled when
+// only the thread's range is known — never silently assigned to either side
+// of the peak (retrospective dating rule).
+public class HypeBriefArticle
+{
+    public string Title { get; set; } = "";
+    public string Body { get; set; } = "";
+    public DateOnly? PublishedAt { get; set; }
+    public string SpanLabel { get; set; } = "";
 }
 
 public class HypeCaseEvidence

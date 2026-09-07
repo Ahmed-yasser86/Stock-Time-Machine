@@ -12,7 +12,11 @@ public static class HypeSignals
         if (detail is null)
             throw new ArgumentNullException(nameof(detail));
         var matches = new List<HypeSignalMatch>();
-        var financial = ThreadsInCategory(detail, "FINANCIAL");
+        // Thread-based triggers vote only with temporally qualified threads
+        // (reason: a span-straddling thread whose dated articles are ALL
+        // post-peak must not vote as pre-peak evidence).
+        var qualified = HypeCaseProjection.QualifiedThreads(detail);
+        var financial = ThreadsInCategory(qualified, "FINANCIAL");
         if (financial.Count >= 2)
             matches.Add(new HypeSignalMatch
             {
@@ -24,7 +28,7 @@ public static class HypeSignals
                 TriggerThreadIds = financial.SelectMany(t => t.ArticleIds).Distinct().ToList(),
             });
 
-        var legal = detail.PrePeakThreads
+        var legal = qualified
             .Where(t => t.TopCategory == "LEGAL" || t.TopCategory == "REGULATORY")
             .ToList();
         var tenseDays = detail.RegimePath
@@ -60,7 +64,7 @@ public static class HypeSignals
                 },
             });
 
-        var management = ThreadsInCategory(detail, "MANAGEMENT");
+        var management = ThreadsInCategory(qualified, "MANAGEMENT");
         if (management.Count > 0)
             matches.Add(new HypeSignalMatch
             {
@@ -83,7 +87,7 @@ public static class HypeSignals
                 },
             });
 
-        var supply = ThreadsInCategory(detail, "SUPPLY_CHAIN");
+        var supply = ThreadsInCategory(qualified, "SUPPLY_CHAIN");
         if (supply.Count > 0 && HasWarmingToTenseShift(detail))
             matches.Add(new HypeSignalMatch
             {
@@ -99,8 +103,9 @@ public static class HypeSignals
         return matches;
     }
 
-    private static List<HypeCaseThread> ThreadsInCategory(HypeCaseDetail detail, string category) =>
-        detail.PrePeakThreads
+    private static List<HypeCaseThread> ThreadsInCategory(
+        IReadOnlyList<HypeCaseThread> threads, string category) =>
+        threads
             .Where(t => string.Equals(t.TopCategory, category, StringComparison.Ordinal))
             .ToList();
 

@@ -187,8 +187,11 @@ public static class HypeCaseVector
             v[72] = Math.Clamp(detail.SentimentMean.Value, -1, 1) * SentimentMagnitudeWeight;
 
         // Category share + volume [16–49]: share answers "what mix",
-        // volume answers "how much" (10 FINANCIAL ≠ 2 FINANCIAL).
-        var threads = detail.PrePeakThreads;
+        // volume answers "how much" (10 FINANCIAL ≠ 2 FINANCIAL). Counts
+        // only temporally qualified threads (reason: same retrospective
+        // dating rule as the triggers — post-peak-only threads must not
+        // shape the pattern vector).
+        var threads = HypeCaseProjection.QualifiedThreads(detail);
         if (threads.Count > 0)
         {
             for (int i = 0; i < CategoryOrder.Count; i++)
