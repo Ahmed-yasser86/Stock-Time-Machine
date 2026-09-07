@@ -385,6 +385,47 @@ public class MoveDetectionServiceTests
     }
 
     [Fact]
+    public async Task GetMoves_InsufficientHistory_TerminatesEvidenceStage()
+    {
+        // Regression: the evidence stage row hung forever (queued/spinner)
+        // when detection returned early — every stage must reach a terminal
+        // state even with zero moves.
+        var (db, av, directory) = BuildDb();
+        var start = new DateOnly(2020, 1, 2);
+        var prices = new List<PricePoint>();
+        for (int i = 0; i < 10; i++)
+            prices.Add(new PricePoint
+            {
+                CompanySymbol = "TSLA", Date = start.AddDays(i),
+                Open = 100m, High = 101m, Low = 99m, Close = 100m, Volume = 1000,
+            });
+        await db.PricePoints.AddRangeAsync(prices);
+        await db.SaveChangesAsync();
+        var sut = Sut(db, av, directory,
+            new NullNewsProvider(NullLogger<NullNewsProvider>.Instance));
+        var stages = new List<SnapshotProgress>();
+        var progress = new Progress<SnapshotProgress>(s => { lock (stages) stages.Add(s); });
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20), progress: progress);
+
+        Assert.Empty(window.KeyMoves);
+        Assert.False(window.Summary.SufficientHistory);
+        for (int i = 0; i < 50; i++)
+        {
+            lock (stages)
+            {
+                if (stages.Any(s => s.Stage == "evidence" &&
+                    (s.State == "complete" || s.State == "skipped")))
+                    break;
+            }
+            await Task.Delay(100);
+        }
+        Assert.Contains(stages, s => s.Stage == "detecting" && s.State == "complete");
+        Assert.Contains(stages, s => s.Stage == "evidence" && s.State == "skipped");
+        Assert.DoesNotContain(stages, s => s.Stage == "evidence" && s.State == "started");
+    }
+
+    [Fact]
     public async Task GetMoves_ProviderFailure_FetchesOncePerInvestigation()
     {
         var (db, av, directory) = BuildDb();

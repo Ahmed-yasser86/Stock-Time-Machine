@@ -92,6 +92,11 @@ public class MoveDetectionService : IMoveDetectionService
                 Array.Empty<ScoredArticle>(), _sentiment.ModelId);
             progress?.Report(new SnapshotProgress("detecting", "complete",
                 $"insufficient history ({rows.Count} days)", rows.Count));
+            // Terminal evidence state on the early return (reason: UI stage
+            // rows hang forever on a stage that never reports; no moves
+            // means no evidence to attach — stated, not left pending).
+            progress?.Report(new SnapshotProgress("evidence", "skipped",
+                "no key moves — nothing to attach evidence to", 0));
             return window;
         }
 
@@ -130,6 +135,11 @@ public class MoveDetectionService : IMoveDetectionService
         if (scored.Count > 0)
             progress?.Report(new SnapshotProgress("evidence", "complete",
                 $"{scored.Count} moves with evidence", scored.Count));
+        else
+            // Same terminal-state guarantee as above: detection can legally
+            // yield zero moves, and the UI must not wait on it.
+            progress?.Report(new SnapshotProgress("evidence", "skipped",
+                "detection found no key moves", 0));
 
         // Decision Context: score the window's cached articles through local
         // FinBERT (bounded, cache-first), then run the pure engine over the

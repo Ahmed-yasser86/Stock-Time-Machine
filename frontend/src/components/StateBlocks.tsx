@@ -80,7 +80,8 @@ export function ReconstructionProgress({
                   {label}
                   {detail && state !== 'queued' && <span className="text-fg-dim"> — {detail}</span>}
                   {state === 'failed' && <span className="text-loss"> — unavailable</span>}
-                  {state === 'skipped' && <span className="text-fg-dim"> — not requested</span>}
+                  {/* Backend-sent detail already explains the skip; the generic suffix is only a fallback. */}
+                  {state === 'skipped' && !detail && <span className="text-fg-dim"> — not requested</span>}
                 </span>
               </li>
             );
