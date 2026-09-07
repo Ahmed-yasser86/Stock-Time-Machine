@@ -5,7 +5,9 @@ namespace StockTimeMachine;
 // Recall aid only — resemblance scores assist, never trigger (see
 // HypeSignals). Cache-only vectors on both sides: no fresh embedding spend,
 // no quota; cases without cached vectors are skipped explicitly.
-public class HypeCaseResemblance
+// Record (not class): the merge step derives labeled copies via `with`
+// (reason: dual-query merge tags strong/pattern/narrative without mutating).
+public record HypeCaseResemblance
 {
     public string CaseId { get; set; } = "";
     public string Symbol { get; set; } = "";
@@ -20,6 +22,17 @@ public static class HypeResemblanceKinds
 {
     public const string Pattern = "pattern";
     public const string Narrative = "narrative";
+    // Both structural and hybrid queries agree on the case.
+    public const string Strong = "strong";
+
+    // Structural-dominant signals match on pattern regardless of news topic;
+    // content-dominant signals need the hybrid (topic-sensitive) query.
+    public static readonly ISet<string> StructuralSignals = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "regulatory-overhang",
+        "leadership-turbulence",
+        "volume-first-divergence",
+    };
 }
 
 public interface IHypeResemblanceService

@@ -12,7 +12,11 @@ namespace StockTimeMachine;
 // FULL vector is L2-normalized so cosine works directly.
 public static class HypeCaseVector
 {
-    public const int StructuralDimensions = 89;
+    // Structural side: 89 base dims + 7 filing dims (Phase 4). NOTE on the
+    // Phase-4 spec's "72-d": 72 was the pre-bigram count; the structural side
+    // is 96-d (bigrams, sentiment magnitude, and filing dims are structural
+    // too). The structural collection mirrors this full side, never content.
+    public const int StructuralDimensions = 96;
     public const int ContentDimensions = 3072;
     public const int Dimensions = StructuralDimensions + ContentDimensions;
 
@@ -27,6 +31,7 @@ public static class HypeCaseVector
     public const double ScoreWeight = 1.0;       // dims 70–71
     public const double SentimentMagnitudeWeight = 2.0; // dim 72 (sentiment family)
     public const double BigramWeight = 1.0;      // dims 73–88
+    public const double FilingSignalWeight = 2.0; // dims 89–95 (filing family)
     // Content scalar: balances the ~unit-norm content mean against the
     // weighted structural side (norm ≈ 5–7). Tunable during validation.
     public const double ContentWeight = 4.0;
@@ -67,14 +72,42 @@ public static class HypeCaseVector
         return mean.Select(x => (float)(x / norm)).ToList();
     }
 
+    // Per-filing structured values feeding dims 89–95. Callers derive these
+    // from FilingSummaryRecord rows (absent rows simply contribute nothing).
+    public sealed record FilingVectorInput(string EventType, double Relevance, double Sentiment);
+
+    public static FilingVectorInput FromRecord(FilingSummaryRecord row, string structuredJson)
+    {
+        string evt = FilingEventTypes.Other;
+        double relevance = 0, sentiment = 0;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(structuredJson);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("event_type", out var e) &&
+                FilingEventTypes.All.Contains((e.GetString() ?? "").Trim().ToLowerInvariant()))
+                evt = e.GetString()!.Trim().ToLowerInvariant();
+            if (root.TryGetProperty("market_relevance", out var r))
+                relevance = FilingRelevance.ToScore(r.GetString());
+            if (root.TryGetProperty("sentiment", out var s))
+                sentiment = FilingSentiment.ToScore(s.GetString());
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Corrupt JSON contributes zeros (never throws the indexer).
+        }
+        return new FilingVectorInput(evt, relevance, sentiment);
+    }
+
     public static float[] Build(
         HypeCaseDetail detail,
         IReadOnlyList<HypeSignalMatch> matches,
-        IReadOnlyList<float>? contentMean = null)
+        IReadOnlyList<float>? contentMean = null,
+        IReadOnlyList<FilingVectorInput>? filingInputs = null)
     {
         var v = new double[Dimensions];
         if (detail is not null)
-            FillStructural(v, detail, matches);
+            FillStructural(v, detail, matches, filingInputs);
         if (contentMean is not null)
         {
             double norm = 0;
@@ -93,8 +126,25 @@ public static class HypeCaseVector
         return v.Select(x => (float)(x / total)).ToArray();
     }
 
+    // Structural-only vector (96-d, no content): the structural collection's
+    // unit. Same math as the hybrid's structural side, L2-normalized alone.
+    public static float[] BuildStructural(
+        HypeCaseDetail detail,
+        IReadOnlyList<HypeSignalMatch>? matches,
+        IReadOnlyList<FilingVectorInput>? filingInputs = null)
+    {
+        var v = new double[StructuralDimensions];
+        if (detail is not null)
+            FillStructural(v, detail, matches, filingInputs);
+        var norm = Math.Sqrt(v.Sum(x => x * x));
+        if (norm <= 0)
+            return new float[StructuralDimensions];
+        return v.Select(x => (float)(x / norm)).ToArray();
+    }
+
     private static void FillStructural(
-        double[] v, HypeCaseDetail detail, IReadOnlyList<HypeSignalMatch>? matches)
+        double[] v, HypeCaseDetail detail, IReadOnlyList<HypeSignalMatch>? matches,
+        IReadOnlyList<FilingVectorInput>? filingInputs = null)
     {
         var fired = new HashSet<string>(
             (matches ?? Enumerable.Empty<HypeSignalMatch>()).Select(m => m.SignalId),
@@ -171,5 +221,17 @@ public static class HypeCaseVector
 
         v[70] = Math.Clamp(detail.Score, 0, 1) * ScoreWeight;
         v[71] = Math.Min(detail.Evidence.NewsCount / 5.0, 1.0) * ScoreWeight;
+
+        // Filing structured dims [89–95] (Phase 4): event one-hot (presence
+        // across the case's filings), max relevance, mean sentiment. Absent
+        // filings contribute zeros — never guessed.
+        var structured = (filingInputs ?? Enumerable.Empty<FilingVectorInput>()).ToList();
+        string[] events = { FilingEventTypes.ManagementChange, FilingEventTypes.Acquisition, FilingEventTypes.EarningsWarning, FilingEventTypes.Regulatory, FilingEventTypes.Other };
+        for (int i = 0; i < events.Length; i++)
+            v[89 + i] = structured.Any(f => string.Equals(f.EventType, events[i], StringComparison.Ordinal))
+                ? FilingSignalWeight : 0;
+        v[94] = structured.Count > 0 ? structured.Max(f => Math.Clamp(f.Relevance, 0, 1)) * FilingSignalWeight : 0;
+        v[95] = structured.Count > 0
+            ? Math.Clamp(structured.Average(f => Math.Clamp(f.Sentiment, -1, 1)), -1, 1) * FilingSignalWeight : 0;
     }
 }

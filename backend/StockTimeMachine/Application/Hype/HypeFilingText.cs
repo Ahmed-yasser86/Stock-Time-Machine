@@ -24,9 +24,14 @@ public static class HypeFilingText
     {
         if (string.IsNullOrEmpty(html))
             return "";
+        // Inline-XBRL filings hide a large metadata block (contexts, units,
+        // facts) that regex tag-stripping would otherwise turn into text
+        // soup ("0000789019 ... us-gaap:CommonStockMember ..."). Remove it
+        // and hidden elements FIRST — this was polluting brief grounding.
+        var s = Regex.Replace(html, @"(?is)<ix:header.*?</ix:header>", " ");
         // Filings are tag soup with tables; regex stripping plus entity
         // decoding is sufficient for retrieval-grade text (not rendering).
-        var s = Regex.Replace(html, @"(?is)<(script|style)[^>]*>.*?</\1>", " ");
+        s = Regex.Replace(s, @"(?is)<(script|style)[^>]*>.*?</\1>", " ");
         s = Regex.Replace(s, @"(?is)<!--.*?-->", " ");
         s = Regex.Replace(s, @"<[^>]+>", " ");
         s = System.Net.WebUtility.HtmlDecode(s);

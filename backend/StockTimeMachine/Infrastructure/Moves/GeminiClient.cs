@@ -172,6 +172,49 @@ public class GeminiClient : IGeminiClient
         }
     }
 
+    public async Task<string?> GenerateJsonAsync(string prompt, CancellationToken ct = default)
+    {
+        if (!IsEnabled)
+            return null;
+        try
+        {
+            await _generateLimiter.AcquireAsync(AdaptiveRateLimiter.EstimateTokens(prompt) + 1024, ct);
+            var body = new
+            {
+                generationConfig = new
+                {
+                    temperature = 0.0,
+                    maxOutputTokens = 1024,
+                    responseMimeType = "application/json",
+                },
+                contents = new[] { new { parts = new[] { new { text = prompt } } } },
+            };
+            using var resp = await _http.PostAsJsonAsync(
+                $"{BaseUrl}/{_summaryModel}:generateContent?key={_apiKey}", body, ct);
+            ThrowIfThrottled(resp, "generate-json");
+            _generateLimiter.ReportSuccess();
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var text = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString() ?? "";
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+            // Validate JSON shape (content validated by the caller).
+            using var _ = JsonDocument.Parse(text);
+            return text;
+        }
+        catch (Exception ex)
+        {
+            if (ex is RateLimitExceededException throttled)
+                _generateLimiter.ReportThrottled(throttled.RetryAfter);
+            _logger.LogWarning(ex, "Gemini JSON generation failed; caller falls back");
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default)
     {
         var empty = Array.Empty<NoteIssue>();

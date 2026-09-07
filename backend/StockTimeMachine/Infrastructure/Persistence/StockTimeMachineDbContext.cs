@@ -19,6 +19,10 @@ public class StockTimeMachineDbContext : DbContext
     // Hype registry: DbSet addition only (existing code untouched).
     // EnsureCreatedAsync at startup creates the table on existing databases.
     public DbSet<HypeCase> HypeCases => Set<HypeCase>();
+    // Filing summaries table (additive, reason: hype structured filing
+    // extraction). Same EnsureCreated note as HypeCases: on long-lived
+    // databases the table needs a live CREATE TABLE (see plan notes).
+    public DbSet<FilingSummaryRecord> FilingSummaries => Set<FilingSummaryRecord>();
     public DbSet<PricePoint> PricePoints => Set<PricePoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -116,6 +120,20 @@ public class StockTimeMachineDbContext : DbContext
             e.Property(h => h.Completeness).HasMaxLength(16);
             e.Property(h => h.DailyReturnPct).HasPrecision(18, 4);
             e.HasIndex(h => h.CompanySymbol);
+        });
+
+        // Filing summaries mapping (additive, reason: see DbSet note above).
+        modelBuilder.Entity<FilingSummaryRecord>(e =>
+        {
+            e.ToTable("FilingSummaries");
+            e.HasKey(f => f.AccessionNumber);
+            e.Property(f => f.AccessionNumber).HasMaxLength(30);
+            e.Property(f => f.FormType).HasMaxLength(20);
+            e.Property(f => f.ConfidenceNote).HasMaxLength(200);
+            e.Property(f => f.ContentHash).HasMaxLength(64);
+            e.Property(f => f.Findings).HasMaxLength(2000);
+            e.Property(f => f.Disclosures).HasMaxLength(2000);
+            e.HasIndex(f => f.FormType);
         });
 
         modelBuilder.Entity<PricePoint>(e =>

@@ -120,6 +120,17 @@ public class InvestigationJobRunner : IInvestigationJobRunner
                     if (detail is not null)
                         await indexer.IndexCaseAsync(detail, CancellationToken.None);
                 }
+                // Structured filing summaries, auto-generated at completion
+                // (reason: Phase 3 — briefs and vector dims read these instead
+                // of re-fetching). Bounded inside the service (5 max); stored
+                // rows are never regenerated (accessions are immutable).
+                var filings = scope.ServiceProvider.GetRequiredService<IHypeFilingService>();
+                var generated = await filings.EnsureSummariesAsync(
+                    window.CompanySymbol,
+                    window.EvidenceByDate.Values.SelectMany(e => e.Filings),
+                    asOfDate,
+                    CancellationToken.None);
+                _logger.LogInformation("Filing summaries generated: {Generated} new rows", generated);
             }
             catch (Exception ex)
             {
@@ -137,4 +148,5 @@ public class InvestigationJobRunner : IInvestigationJobRunner
             await store.FailAsync(id, JobStatuses.Failed, ex.Message, CancellationToken.None);
         }
     }
+
 }

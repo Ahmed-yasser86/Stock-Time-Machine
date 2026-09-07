@@ -19,8 +19,12 @@ public class QdrantVectorStore : IVectorStore
     public const int VectorSize = 3072;
     // Case-level pattern collection: one hybrid vector per hype case (see
     // HypeCaseVector). Versioned name: v1 was 40-d structural-only, v2 is the
-    // 3144-d hybrid. v1 stays untouched for rollback; delete after validation.
+    // hybrid. v1 stays untouched for rollback; delete after validation.
     public const string CaseCollectionName = "hype_cases_v2";
+    // Structural-only collection (Phase 4 dual-query): same cases, 96-d
+    // structural side only, so structural-dominant signals match on pattern
+    // regardless of news topic.
+    public const string StructuralCollectionName = "hype_cases_structural";
 
     private readonly QdrantClient? _client;
     private readonly ILogger<QdrantVectorStore> _logger;
@@ -74,15 +78,70 @@ public class QdrantVectorStore : IVectorStore
             await _client.HealthAsync(ct);
             await EnsureCollectionAsync(ct);
             await EnsureCollectionAsync(CaseCollectionName, (ulong)HypeCaseVector.Dimensions, ct);
+            await EnsureCollectionAsync(StructuralCollectionName, (ulong)HypeCaseVector.StructuralDimensions, ct);
             var threads = await _client.GetCollectionInfoAsync(CollectionName, ct);
             var cases = await _client.GetCollectionInfoAsync(CaseCollectionName, ct);
-            // Points = threads + cases; the UI labels the backend only.
-            return (true, threads.PointsCount + cases.PointsCount);
+            var structural = await _client.GetCollectionInfoAsync(StructuralCollectionName, ct);
+            return (true, threads.PointsCount + cases.PointsCount + structural.PointsCount);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Qdrant health check failed");
             return (false, 0);
+        }
+    }
+
+    public async Task<int> UpsertStructuralAsync(
+        string caseId, string symbol, DateOnly peakDate,
+        float[] vector, CancellationToken ct = default)
+    {
+        if (_client is null || vector is null || vector.Length != HypeCaseVector.StructuralDimensions)
+        {
+            _logger.LogWarning("Skipping structural point for {Case}: {Dims} dims, expected {Expected}",
+                caseId, vector?.Length ?? 0, HypeCaseVector.StructuralDimensions);
+            return 0;
+        }
+        try
+        {
+            await EnsureCollectionAsync(StructuralCollectionName, (ulong)HypeCaseVector.StructuralDimensions, ct);
+            await _client.UpsertAsync(StructuralCollectionName, new List<PointStruct>
+            {
+                new()
+                {
+                    Id = DeterministicId("hype-case-structural|" + caseId),
+                    Vectors = vector,
+                    Payload =
+                    {
+                        ["caseId"] = new Value { StringValue = caseId },
+                        ["symbol"] = new Value { StringValue = symbol },
+                        ["peakDate"] = new Value { StringValue = peakDate.ToString("yyyy-MM-dd") },
+                    },
+                },
+            }, cancellationToken: ct);
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Qdrant structural upsert failed for {Case}", caseId);
+            return 0;
+        }
+    }
+
+    public async Task<IReadOnlyList<VectorHit>> SearchStructuralAsync(
+        float[] query, int limit, CancellationToken ct = default)
+    {
+        var empty = Array.Empty<VectorHit>();
+        if (_client is null || query is null || query.Length != HypeCaseVector.StructuralDimensions || limit <= 0)
+            return empty;
+        try
+        {
+            await EnsureCollectionAsync(StructuralCollectionName, (ulong)HypeCaseVector.StructuralDimensions, ct);
+            return await SearchCollectionAsync(StructuralCollectionName, query, limit, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Qdrant structural search failed; caller falls back");
+            return empty;
         }
     }
 
@@ -221,7 +280,13 @@ public class QdrantVectorStore : IVectorStore
                 cancellationToken: ct);
             _logger.LogInformation("Qdrant collection {Collection} created ({Dims}d, cosine)",
                 collection, size);
+            return;
         }
+        // INVARIANT (learned the hard way): a vector redesign MUST rename the
+        // collection (v1 → v2 → …). Qdrant rejects wrong-dim writes, and this
+        // method deliberately never deletes or migrates (operator action only
+        // via explicit delete + reindex). A stale-dim collection surfaces as
+        // failed upserts/searches in the per-call warnings below.
     }
 
     // Shared ANN query: vectors return with hits so callers recompute cosine
@@ -229,7 +294,9 @@ public class QdrantVectorStore : IVectorStore
     private async Task<IReadOnlyList<VectorHit>> SearchCollectionAsync(
         string collection, float[] query, int limit, CancellationToken ct)
     {
-        var expectedSize = collection == CaseCollectionName ? HypeCaseVector.Dimensions : VectorSize;
+        var expectedSize = collection == CaseCollectionName ? HypeCaseVector.Dimensions
+            : collection == StructuralCollectionName ? HypeCaseVector.StructuralDimensions
+            : VectorSize;
         var withPayload = new WithPayloadSelector { Enable = true };
         var withVectors = new WithVectorsSelector { Enable = true };
         var dense = new DenseVector();

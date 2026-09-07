@@ -35,4 +35,11 @@ public interface IVectorStore
         float[] vector, CancellationToken ct = default);
     Task<IReadOnlyList<VectorHit>> SearchCasesAsync(
         float[] query, int limit, CancellationToken ct = default);
+    // Structural-only points (Phase 4 dual-query): same cases, structural
+    // side only, separate collection. Identical contract.
+    Task<int> UpsertStructuralAsync(
+        string caseId, string symbol, DateOnly peakDate,
+        float[] vector, CancellationToken ct = default);
+    Task<IReadOnlyList<VectorHit>> SearchStructuralAsync(
+        float[] query, int limit, CancellationToken ct = default);
 }

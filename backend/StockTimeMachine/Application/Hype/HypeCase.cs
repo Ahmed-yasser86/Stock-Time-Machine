@@ -96,6 +96,9 @@ public class HypeCaseNewsItem
 
 public class HypeCaseFiling
 {
+    // Accession links to FilingSummaryRecord (additive, reason: brief reuse
+    // reads stored summaries by accession instead of re-fetching).
+    public string AccessionNumber { get; set; } = "";
     public string FormType { get; set; } = "";
     public DateTime FiledAt { get; set; }
     public string Url { get; set; } = "";

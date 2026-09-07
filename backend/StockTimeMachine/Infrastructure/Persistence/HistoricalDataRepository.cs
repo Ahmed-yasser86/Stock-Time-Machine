@@ -204,6 +204,31 @@ public class HistoricalDataRepository : IHistoricalDataRepository
         await _db.ArticleSentiments
             .FirstOrDefaultAsync(x => x.ArticleId == articleId && x.Model == model, ct);
 
+    public async Task<FilingSummaryRecord?> GetFilingSummary(string accessionNumber, CancellationToken ct = default) =>
+        await _db.FilingSummaries.FirstOrDefaultAsync(
+            f => f.AccessionNumber == accessionNumber, ct);
+
+    public async Task StoreFilingSummary(FilingSummaryRecord row, CancellationToken ct = default)
+    {
+        var existing = await _db.FilingSummaries.FindAsync(new object[] { row.AccessionNumber }, ct);
+        if (existing is null)
+        {
+            row.GeneratedAt = DateTime.UtcNow;
+            await _db.FilingSummaries.AddAsync(row, ct);
+        }
+        else
+        {
+            existing.FormType = row.FormType;
+            existing.StructuredJson = row.StructuredJson;
+            existing.Findings = row.Findings;
+            existing.Disclosures = row.Disclosures;
+            existing.ConfidenceNote = row.ConfidenceNote;
+            existing.ContentHash = row.ContentHash;
+            existing.GeneratedAt = DateTime.UtcNow;
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default)
     {
         var existing = await _db.ArticleSentiments.FindAsync(new object[] { row.ArticleId, row.Model }, ct);

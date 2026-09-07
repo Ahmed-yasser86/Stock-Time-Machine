@@ -25,4 +25,30 @@ public interface IHypeFilingService
         HypeCaseDetail detail,
         DateOnly asOfDate,
         CancellationToken ct = default);
+
+    // Structured per-filing extraction for persistence (Phase 3): fetches the
+    // document, sizes it with the same rules, and returns a validated
+    // FilingSummaryRecord (structured JSON + short prose + content hash).
+    // Null when the form family is unsupported, the fetch fails, or the
+    // model output is invalid. Callers persist the record; briefs and vector
+    // dims read it back instead of re-fetching.
+    Task<FilingSummaryRecord?> SummarizeStructuredAsync(
+        string symbol,
+        string accessionNumber,
+        string formType,
+        DateTime filedAt,
+        string documentUrl,
+        DateOnly asOfDate,
+        CancellationToken ct = default);
+
+    // Bounded auto-generation (max 5 unique filings, most recent first):
+    // skips accessions already stored (filings are immutable per accession,
+    // so absence is the only re-generation trigger). Returns new row count.
+    // Called at investigation completion (job runner) and by the harvest
+    // endpoint — never on the read path.
+    Task<int> EnsureSummariesAsync(
+        string symbol,
+        IEnumerable<SecFiling> filings,
+        DateOnly asOfDate,
+        CancellationToken ct = default);
 }

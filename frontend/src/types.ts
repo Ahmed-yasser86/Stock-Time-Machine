@@ -367,7 +367,7 @@ export interface HypeResemblance {
   symbol: string;
   peakDate: string;
   similarity: number;
-  kind: 'pattern' | 'narrative' | string;
+  kind: 'strong' | 'pattern' | 'narrative' | string;
 }
 
 export interface HypeFollowedCase {

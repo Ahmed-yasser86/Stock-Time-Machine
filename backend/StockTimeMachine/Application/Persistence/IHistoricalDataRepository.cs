@@ -23,6 +23,10 @@ public interface IHistoricalDataRepository
     Task<bool> SetRelevanceDecision(string articleId, string symbol, string decision, string source, CancellationToken ct = default);
     Task<ArticleSentiment?> GetSentiment(string articleId, string model, CancellationToken ct = default);
     Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default);
+    // Persisted per-filing summaries (reason: hype filing structured
+    // extraction; briefs and vector dims read these instead of re-fetching).
+    Task<FilingSummaryRecord?> GetFilingSummary(string accessionNumber, CancellationToken ct = default);
+    Task StoreFilingSummary(FilingSummaryRecord row, CancellationToken ct = default);
     Task<IReadOnlyList<SecFiling>> GetFilingsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default);
     Task<IReadOnlyList<PricePoint>> GetPricesAsOf(string companySymbol, DateOnly asOfDate, int days = 30, CancellationToken ct = default);
     Task<IReadOnlyList<PricePoint>> GetPriceRange(string companySymbol, DateOnly from, DateOnly to, CancellationToken ct = default);

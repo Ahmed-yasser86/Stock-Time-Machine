@@ -19,6 +19,10 @@ public sealed class DisabledGeminiStub : IGeminiClient
         Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
     public Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<RelevanceVerdict>>(Array.Empty<RelevanceVerdict>());
+    // Interface extension (reason: hype filing structured extraction needs
+    // raw JSON generation): disabled stub returns null like production.
+    public Task<string?> GenerateJsonAsync(string prompt, CancellationToken ct = default) =>
+        Task.FromResult<string?>(null);
 }
 
 public sealed class DisabledBodyStub : IArticleContentClient
@@ -103,8 +107,13 @@ public sealed class DisabledSentimentStub : IFinancialSentimentAnalyzer
 public sealed class FuncGeminiStub : IGeminiClient
 {
     private readonly Func<string, IReadOnlyList<RelevanceVerdict>> _classify;
+    private readonly Func<string, string?>? _json;
     public List<string> SeenPrompts { get; } = new();
-    public FuncGeminiStub(Func<string, IReadOnlyList<RelevanceVerdict>> classify) => _classify = classify;
+    public FuncGeminiStub(Func<string, IReadOnlyList<RelevanceVerdict>> classify, Func<string, string?>? json = null)
+    {
+        _classify = classify;
+        _json = json;
+    }
     public bool IsEnabled => true;
     public string SummaryModel => "stub-flash";
     public string EmbeddingModel => "stub-embed";
@@ -119,6 +128,8 @@ public sealed class FuncGeminiStub : IGeminiClient
         SeenPrompts.Add(prompt);
         return Task.FromResult(_classify(prompt));
     }
+    public Task<string?> GenerateJsonAsync(string prompt, CancellationToken ct = default) =>
+        Task.FromResult(_json?.Invoke(prompt));
 }
 
 public class AiNarrativeTests
@@ -165,6 +176,8 @@ public class AiNarrativeTests
                 new RelevanceVerdict { Id = "r1", Relevant = relevant, Category = "FINANCIAL", Confidence = 0.9, Reason = "Stub." },
             });
         }
+        public Task<string?> GenerateJsonAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult<string?>(null);
     }
 
     private sealed class ThrowingGeminiStub : IGeminiClient
@@ -179,6 +192,8 @@ public class AiNarrativeTests
         public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
         public Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default) =>
+            throw new HttpRequestException("Gemini down");
+        public Task<string?> GenerateJsonAsync(string prompt, CancellationToken ct = default) =>
             throw new HttpRequestException("Gemini down");
     }
 

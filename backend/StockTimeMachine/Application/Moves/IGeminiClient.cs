@@ -28,4 +28,10 @@ public interface IGeminiClient
     // Semantic relevance batch: one verdict per headline id. Malformed items
     // are skipped (callers mark unknown); never throws for content reasons.
     Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default);
+    // Raw JSON generation for structured extraction (filing summaries).
+    // Returns the model's JSON text, or null when disabled, declined, or
+    // unusable — callers validate the shape themselves. Never throws.
+    // (Reason: hype filing structured extraction needs schemas the fixed
+    // brief/review shapes cannot express.)
+    Task<string?> GenerateJsonAsync(string prompt, CancellationToken ct = default);
 }

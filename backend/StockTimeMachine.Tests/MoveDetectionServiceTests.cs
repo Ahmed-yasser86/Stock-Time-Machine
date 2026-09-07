@@ -311,6 +311,9 @@ public class MoveDetectionServiceTests
         public Task<bool> SetRelevanceDecision(string id, string symbol, string decision, string source, CancellationToken ct = default) => _inner.SetRelevanceDecision(id, symbol, decision, source, ct);
         public Task<ArticleSentiment?> GetSentiment(string id, string model, CancellationToken ct = default) => _inner.GetSentiment(id, model, ct);
         public Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default) => _inner.StoreSentiment(row, ct);
+        // Decorator addition (reason: hype filing summaries persistence).
+        public Task<FilingSummaryRecord?> GetFilingSummary(string accession, CancellationToken ct = default) => _inner.GetFilingSummary(accession, ct);
+        public Task StoreFilingSummary(FilingSummaryRecord row, CancellationToken ct = default) => _inner.StoreFilingSummary(row, ct);
         public Task StorePrices(string s, IEnumerable<PricePoint> p, CancellationToken ct = default) => _inner.StorePrices(s, p, ct);
         public Task StoreNews(string s, IEnumerable<NewsArticle> n, CancellationToken ct = default) => _inner.StoreNews(s, n, ct);
         public Task StoreFilings(string s, IEnumerable<SecFiling> f, CancellationToken ct = default) => _inner.StoreFilings(s, f, ct);

@@ -10,17 +10,20 @@ public class HypeBriefService : IHypeBriefService
     private readonly IGeminiClient _gemini;
     private readonly ICompanyDirectory _directory;
     private readonly IHypeFilingService _filings;
+    private readonly IHistoricalDataRepository _dataRepo;
     private readonly ILogger<HypeBriefService> _logger;
 
     public HypeBriefService(
         IGeminiClient gemini,
         ICompanyDirectory directory,
         IHypeFilingService filings,
+        IHistoricalDataRepository dataRepo,
         ILogger<HypeBriefService> logger)
     {
         _gemini = gemini;
         _directory = directory;
         _filings = filings;
+        _dataRepo = dataRepo;
         _logger = logger;
     }
 
@@ -85,13 +88,14 @@ public class HypeBriefService : IHypeBriefService
                     body = body.Substring(0, MaxBodyChars);
                 inputs.Add((t.RepresentativeTitle ?? "(untitled thread)", body));
             }
-            // Regulatory context arrives as per-filing summaries (never raw
-            // filing text): each filing processed sequentially and
-            // independently before combining.
+            // Regulatory context: stored summaries first (zero re-fetch), live
+            // generation only for filings with no stored row. Either way the
+            // brief receives summaries, never raw filing text.
             IReadOnlyList<HypeFilingSummary> filingSummaries = Array.Empty<HypeFilingSummary>();
             try
             {
-                filingSummaries = await _filings.SummarizeFilingsAsync(symbol, match, detail, asOfDate, ct);
+                filingSummaries = await SummariesFromStoreAsync(detail, ct)
+                    ?? await _filings.SummarizeFilingsAsync(symbol, match, detail, asOfDate, ct);
             }
             catch (Exception ex)
             {
@@ -106,5 +110,55 @@ public class HypeBriefService : IHypeBriefService
             _logger.LogWarning(ex, "Hype signal brief failed for {Signal}; continuing without", match.SignalId);
             return null;
         }
+    }
+
+    // Stored summaries (Phase 5 reuse): one row per accession, newest three
+    // filings first. Null unless EVERY filing has a stored row — partial
+    // coverage falls back to live generation so one brief never mixes stored
+    // prose with fresh prose.
+    private async Task<IReadOnlyList<HypeFilingSummary>?> SummariesFromStoreAsync(
+        HypeCaseDetail detail, CancellationToken ct)
+    {
+        var filings = detail.Evidence.Filings
+            .OrderByDescending(f => f.FiledAt)
+            .Take(3)
+            .ToList();
+        if (filings.Count == 0)
+            return new List<HypeFilingSummary>();
+        var summaries = new List<HypeFilingSummary>();
+        foreach (var filing in filings)
+        {
+            // Same legacy fallback as the indexer: derive from directory URL
+            // when the frozen row predates accession storage.
+            var accession = string.IsNullOrWhiteSpace(filing.AccessionNumber)
+                ? HypeFilingService.DeriveAccessionNumber(filing.Url)
+                : filing.AccessionNumber;
+            if (string.IsNullOrWhiteSpace(accession))
+                return null;
+            FilingSummaryRecord? row = null;
+            try
+            {
+                row = await _dataRepo.GetFilingSummary(accession, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Stored filing summary miss for {Accession}", accession);
+                return null;
+            }
+            if (row is null)
+                return null;
+            summaries.Add(new HypeFilingSummary
+            {
+                FormType = row.FormType,
+                FiledAt = filing.FiledAt,
+                Findings = row.Findings,
+                Disclosures = row.Disclosures,
+                ConfidenceNote = row.ConfidenceNote + " (stored)",
+                TotalPages = 0,
+                PagesProcessed = 0,
+            });
+        }
+        _logger.LogInformation("Briefing from {Count} stored filing summaries (zero re-fetch)", summaries.Count);
+        return summaries;
     }
 }

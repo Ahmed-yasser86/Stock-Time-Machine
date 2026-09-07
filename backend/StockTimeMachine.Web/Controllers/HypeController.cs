@@ -24,6 +24,7 @@ public class HypeController : ControllerBase
     private readonly IHypeResemblanceService _resemblance;
     private readonly IHypeBriefService _briefs;
     private readonly IHypeCaseIndexer _indexer;
+    private readonly IHypeFilingService _filingSummaries;
     private readonly IVectorStore _vectors;
     private readonly ICompanyDirectory _directory;
     private readonly INewsProviderFactory _newsFactory;
@@ -37,6 +38,7 @@ public class HypeController : ControllerBase
         IHypeResemblanceService resemblance,
         IHypeBriefService briefs,
         IHypeCaseIndexer indexer,
+        IHypeFilingService filingSummaries,
         IVectorStore vectors,
         ICompanyDirectory directory,
         INewsProviderFactory newsFactory,
@@ -49,6 +51,7 @@ public class HypeController : ControllerBase
         _resemblance = resemblance;
         _briefs = briefs;
         _indexer = indexer;
+        _filingSummaries = filingSummaries;
         _vectors = vectors;
         _directory = directory;
         _newsFactory = newsFactory;
@@ -97,6 +100,17 @@ public class HypeController : ControllerBase
             {
                 _logger.LogWarning(ex, "Harvest indexing failed for {Case}; registry row kept", hypeCase.Id);
             }
+        }
+        // Structured filing summaries, same bound as the runner hook.
+        try
+        {
+            await _filingSummaries.EnsureSummariesAsync(window.CompanySymbol,
+                window.EvidenceByDate.Values.SelectMany(e => e.Filings),
+                parsedDate, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Harvest filing summaries failed; continuing");
         }
         _logger.LogInformation("Hype harvest for {Symbol} on {Date}: {Saved} cases, {Indexed} vectors",
             window.CompanySymbol, parsedDate, saved, indexed);

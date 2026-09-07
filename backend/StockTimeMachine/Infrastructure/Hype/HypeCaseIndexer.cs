@@ -13,17 +13,20 @@ public class HypeCaseIndexer : IHypeCaseIndexer
     private readonly IHistoricalDataRepository _dataRepo;
     private readonly IVectorStore _vectors;
     private readonly IGeminiClient _gemini;
+    private readonly IHypeFilingService _filings;
     private readonly ILogger<HypeCaseIndexer> _logger;
 
     public HypeCaseIndexer(
         IHistoricalDataRepository dataRepo,
         IVectorStore vectors,
         IGeminiClient gemini,
+        IHypeFilingService filings,
         ILogger<HypeCaseIndexer> logger)
     {
         _dataRepo = dataRepo;
         _vectors = vectors;
         _gemini = gemini;
+        _filings = filings;
         _logger = logger;
     }
 
@@ -61,15 +64,23 @@ public class HypeCaseIndexer : IHypeCaseIndexer
         }
         // Case-level pattern point: needs no threads, only any measurable
         // content (score/regimes/sentiment suffice). Thread-less cases must
-        // still join the pattern collection.
+        // still join the pattern collection. Filing structured dims ride on
+        // both the hybrid and the structural point.
         var matches = HypeSignals.Evaluate(detail);
+        var filingInputs = await LoadFilingInputsAsync(detail, ct);
         var mean = HypeCaseVector.MeanPool(vectors.Select(v => (IReadOnlyList<float>)v.Vector).ToList());
-        var caseVector = HypeCaseVector.Build(detail, matches, mean);
+        var caseVector = HypeCaseVector.Build(detail, matches, mean, filingInputs);
         if (caseVector.Any(x => x != 0))
             indexed += await _vectors.UpsertCaseAsync(
                 caseId, detail.CompanySymbol, detail.PeakDate, caseVector, ct);
         else
             _logger.LogDebug("Skipping zero case vector for {Case}", caseId);
+        // Structural-only point (Phase 4 dual-query): same case, structural
+        // side with filing structured dims from stored summaries.
+        var structural = HypeCaseVector.BuildStructural(detail, matches, filingInputs);
+        if (structural.Any(x => x != 0))
+            indexed += await _vectors.UpsertStructuralAsync(
+                caseId, detail.CompanySymbol, detail.PeakDate, structural, ct);
         if (vectors.Count > 0)
         {
             indexed += await _vectors.UpsertAsync(
@@ -77,6 +88,56 @@ public class HypeCaseIndexer : IHypeCaseIndexer
             _logger.LogInformation("Indexed hype case {Case}: {Indexed}/{Cached} vectors",
                 caseId, indexed, vectors.Count);
         }
+        // Structured filing summaries ride along with indexing (same
+        // best-effort rule): bounded inside the service, stored rows skipped,
+        // so reindexing is cheap after the first pass.
+        try
+        {
+            // Accession may be absent on rows frozen before it was stored:
+            // derive it from the directory URL (exact SEC format).
+            await _filings.EnsureSummariesAsync(detail.CompanySymbol,
+                detail.Evidence.Filings.Select(f => new SecFiling
+                {
+                    AccessionNumber = string.IsNullOrWhiteSpace(f.AccessionNumber)
+                        ? HypeFilingService.DeriveAccessionNumber(f.Url)
+                        : f.AccessionNumber,
+                    FormType = f.FormType ?? "",
+                    FiledAt = f.FiledAt,
+                    Url = f.Url ?? "",
+                    CompanySymbol = detail.CompanySymbol,
+                }),
+                detail.PeakDate, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Filing summaries failed during indexing for {Case}; continuing", caseId);
+        }
         return indexed;
+    }
+
+    private async Task<IReadOnlyList<HypeCaseVector.FilingVectorInput>> LoadFilingInputsAsync(
+        HypeCaseDetail detail, CancellationToken ct)
+    {
+        var inputs = new List<HypeCaseVector.FilingVectorInput>();
+        foreach (var filing in detail.Evidence.Filings.Take(5))
+        {
+            var accession = string.IsNullOrWhiteSpace(filing.AccessionNumber)
+                ? HypeFilingService.DeriveAccessionNumber(filing.Url)
+                : filing.AccessionNumber;
+            if (string.IsNullOrWhiteSpace(accession))
+                continue;
+            try
+            {
+                var row = await _dataRepo.GetFilingSummary(accession, ct);
+                if (row is null)
+                    continue;
+                inputs.Add(HypeCaseVector.FromRecord(row, row.StructuredJson));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Filing vector input miss for {Accession}", filing.AccessionNumber);
+            }
+        }
+        return inputs;
     }
 }

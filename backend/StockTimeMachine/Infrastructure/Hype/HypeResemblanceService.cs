@@ -22,17 +22,19 @@ public class HypeResemblanceService : IHypeResemblanceService
     // join below — never an error, never a stall.
     private const int VectorQueryVectors = 8;
     private const int VectorQueryTopK = 10;
-    // PROVISIONAL (Issue: threshold decision pending): no cut on pattern
-    // matches yet — ranked top-N flow through so the measured score
-    // distribution (see hype/case-stats) decides the real threshold.
-    // Do not ship a tuned value here without that report.
-    private const double PatternThreshold = 0.0;
+    // Measured thresholds (124-case distribution with filing dims live:
+    // min 0.547, p25 0.845, median 0.898, p75 0.951, max 0.985): hybrid 0.85
+    // keeps everything at/above p25; structural 0.85 admits same-pattern
+    // matches whose news topics legitimately differ. Uniform cut, measured
+    // basis — not a guess.
+    private const double HybridThreshold = 0.85;
+    private const double StructuralThreshold = 0.85;
     private const int PatternTopK = 10;
     private const int NarrativeTopK = 10;
-    // Merge policy: pattern hits lead, but at most PatternLeadSlots of them —
-    // the rest of the list belongs to narrative-only matches. Without the cap,
-    // the uncut pattern query (threshold pending) would starve the narrative
-    // layer entirely and the two layers could never be compared.
+    // Merge policy: strong (both queries agree) first, structural-only
+    // second, hybrid-only third — then thread-level narrative fills what
+    // remains. Pattern still leads, but can no longer starve the narrative
+    // layer (the pre-cap behavior hid it entirely).
     private const int PatternLeadSlots = 3;
 
     private readonly IHistoricalDataRepository _dataRepo;
@@ -76,30 +78,141 @@ public class HypeResemblanceService : IHypeResemblanceService
         if (currentVectors.Count == 0)
             return empty;
 
-        // Pattern layer first (hype_cases): the current case's 40-d vector is
-        // pure local math. Narrative layer second (hype_threads via vector
-        // store, else in-memory). Merge ranks pattern hits first,
-        // narrative-only after; exclusions apply to both.
-        var patternHits = await MatchPatternsAsync(current, currentVectors, ct);
+        // Dual-query retrieval (Phase 4): structural-dominant signals query
+        // BOTH the structural collection (pattern regardless of news topic)
+        // and the hybrid collection (pattern + similar content); other
+        // signals use the hybrid query only. Thread-level narrative fills
+        // the remainder. Exclusions apply to every layer.
+        var matches = HypeSignals.Evaluate(current);
+        var structuralDominant = matches.Any(m =>
+            HypeResemblanceKinds.StructuralSignals.Contains(m.SignalId));
+        var structuralHits = structuralDominant
+            ? await MatchStructuralAsync(current, matches, ct)
+            : new List<HypeCaseResemblance>();
+        var hybridHits = await MatchPatternsAsync(current, currentVectors, matches, ct);
         var narrativeHits = await JoinViaVectorStoreAsync(current, currentVectors, ct)
             ?? await JoinInMemoryAsync(current, currentVectors, model, library, ct);
-        // Pattern leads (capped), narrative fills: first-wins dedupe keeps a
-        // case both layers agree on at its pattern rank.
-        var merged = new List<HypeCaseResemblance>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var hit in patternHits.Take(PatternLeadSlots).Concat(narrativeHits))
+        var byId = new Dictionary<string, HypeCaseResemblance>(StringComparer.Ordinal);
+        // Both queries agree → strong, ranked first.
+        foreach (var hit in structuralHits)
         {
-            if (seen.Add(hit.CaseId))
-                merged.Add(hit);
-            if (merged.Count >= MaxResults)
-                break;
+            var hybrid = hybridHits.FirstOrDefault(h => h.CaseId == hit.CaseId);
+            if (hybrid is not null)
+                byId[hit.CaseId] = hit with
+                {
+                    Similarity = ReportSimilarity(Math.Max(hit.Similarity, hybrid.Similarity)),
+                    Kind = HypeResemblanceKinds.Strong,
+                };
         }
+        var strong = byId.Values.OrderByDescending(h => h.Similarity).ToList();
+        var structuralOnly = structuralHits.Where(h => !byId.ContainsKey(h.CaseId)).ToList();
+        foreach (var hit in structuralOnly)
+            byId[hit.CaseId] = hit with { Kind = HypeResemblanceKinds.Pattern };
+        var hybridOnly = hybridHits.Where(h => !byId.ContainsKey(h.CaseId)).ToList();
+        foreach (var hit in hybridOnly.Concat(narrativeHits))
+        {
+            if (byId.ContainsKey(hit.CaseId))
+                continue;
+            byId[hit.CaseId] = hit.Kind == HypeResemblanceKinds.Pattern
+                ? hit with { Kind = HypeResemblanceKinds.Narrative }
+                : hit;
+        }
+        // Strong → structural-only → hybrid/narrative, each group by
+        // similarity; pattern still leads overall via the structural cap.
+        var merged = strong
+            .Concat(structuralOnly.OrderByDescending(h => h.Similarity).Take(PatternLeadSlots))
+            .Concat(byId.Values.Where(h => h.Kind == HypeResemblanceKinds.Narrative)
+                .OrderByDescending(h => h.Similarity))
+            .Take(MaxResults)
+            .ToList();
         return merged;
+    }
+
+    private async Task<IReadOnlyList<HypeCaseResemblance>> MatchStructuralAsync(
+        HypeCaseDetail current,
+        IReadOnlyList<HypeSignalMatch> matches,
+        CancellationToken ct)
+    {
+        var empty = Array.Empty<HypeCaseResemblance>();
+        try
+        {
+            if (!await _vectors.IsAvailableAsync(ct))
+                return empty;
+            var filingInputs = await LoadFilingInputsAsync(current, ct);
+            var query = HypeCaseVector.BuildStructural(current, matches, filingInputs);
+            if (query.All(x => x == 0))
+                return empty;
+            var hits = await _vectors.SearchStructuralAsync(query, PatternTopK, ct);
+            var scored = new List<HypeCaseResemblance>();
+            foreach (var hit in hits)
+            {
+                if (string.Equals(hit.CaseId,
+                        current.CompanySymbol + ":" + current.PeakDate.ToString("yyyy-MM-dd"),
+                        StringComparison.Ordinal))
+                    continue;
+                if (Excluded(current, hit.Symbol, hit.PeakDate))
+                    continue;
+                var sim = EmbeddingClustering.Cosine(query, hit.Vector);
+                if (sim >= StructuralThreshold)
+                    scored.Add(new HypeCaseResemblance
+                    {
+                        CaseId = hit.CaseId,
+                        Symbol = hit.Symbol,
+                        PeakDate = hit.PeakDate,
+                        Similarity = ReportSimilarity(sim),
+                        Kind = HypeResemblanceKinds.Pattern,
+                    });
+            }
+            return scored.OrderByDescending(h => h.Similarity).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Structural match failed; continuing with hybrid matches");
+            return empty;
+        }
+    }
+
+    private async Task<IReadOnlyList<HypeCaseVector.FilingVectorInput>> LoadFilingInputsAsync(
+        HypeCaseDetail detail, CancellationToken ct)
+    {
+        var inputs = new List<HypeCaseVector.FilingVectorInput>();
+        foreach (var filing in detail.Evidence.Filings.Take(5))
+        {
+            // Same legacy fallback as indexer/briefs: derive from directory
+            // URL when the frozen row predates accession storage.
+            var accession = string.IsNullOrWhiteSpace(filing.AccessionNumber)
+                ? HypeFilingService.DeriveAccessionNumber(filing.Url)
+                : filing.AccessionNumber;
+            if (string.IsNullOrWhiteSpace(accession))
+                continue;
+            try
+            {
+                var row = await _dataRepo.GetFilingSummary(accession, ct);
+                if (row is null)
+                    continue;
+                inputs.Add(HypeCaseVector.FromRecord(row, row.StructuredJson));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Structural filing input miss for {Accession}", accession);
+            }
+        }
+        return inputs;
     }
 
     private async Task<IReadOnlyList<HypeCaseResemblance>> MatchPatternsAsync(
         HypeCaseDetail current,
         List<(string Id, IReadOnlyList<float> Vector)> currentVectors,
+        IReadOnlyList<HypeSignalMatch> matches,
+        CancellationToken ct)
+    {
+        return await MatchHybridAsync(current, currentVectors, matches, ct);
+    }
+
+    private async Task<IReadOnlyList<HypeCaseResemblance>> MatchHybridAsync(
+        HypeCaseDetail current,
+        List<(string Id, IReadOnlyList<float> Vector)> currentVectors,
+        IReadOnlyList<HypeSignalMatch> matches,
         CancellationToken ct)
     {
         var empty = Array.Empty<HypeCaseResemblance>();
@@ -108,7 +221,8 @@ public class HypeResemblanceService : IHypeResemblanceService
             if (!await _vectors.IsAvailableAsync(ct))
                 return empty;
             var mean = HypeCaseVector.MeanPool(currentVectors.Select(v => v.Vector).ToList());
-            var query = HypeCaseVector.Build(current, HypeSignals.Evaluate(current), mean);
+            var filingInputs = await LoadFilingInputsAsync(current, ct);
+            var query = HypeCaseVector.Build(current, matches, mean, filingInputs);
             if (query.All(x => x == 0))
                 return empty;
             var hits = await _vectors.SearchCasesAsync(query, PatternTopK, ct);
@@ -122,7 +236,7 @@ public class HypeResemblanceService : IHypeResemblanceService
                 if (Excluded(current, hit.Symbol, hit.PeakDate))
                     continue;
                 var sim = EmbeddingClustering.Cosine(query, hit.Vector);
-                if (sim >= PatternThreshold)
+                if (sim >= HybridThreshold)
                     scored.Add(new HypeCaseResemblance
                     {
                         CaseId = hit.CaseId,
@@ -198,7 +312,11 @@ public class HypeResemblanceService : IHypeResemblanceService
             .SelectMany(t => t.ArticleIds).Distinct(StringComparer.Ordinal).ToList();
         var vectors = await LoadCachedAsync(ids, model, ct);
         var mean = HypeCaseVector.MeanPool(vectors.Select(v => v.Vector).ToList());
-        var built = HypeCaseVector.Build(detail, HypeSignals.Evaluate(detail), mean);
+        // Same inputs as the live hybrid path (structural + content mean +
+        // filing dims) so the distribution endpoint measures what matching
+        // actually scores.
+        var filingInputs = await LoadFilingInputsAsync(detail, ct);
+        var built = HypeCaseVector.Build(detail, HypeSignals.Evaluate(detail), mean, filingInputs);
         return built.Any(x => x != 0) ? built : null;
     }
 

@@ -87,7 +87,7 @@ export function SignalCard({
               {signal.resemblance.map((r) => (
                 <li key={r.caseId}>
                   <Badge variant="secondary" className="mr-1 font-mono text-[10px]">
-                    {r.kind === 'pattern' ? 'pattern' : 'narrative'}
+                    {r.kind === 'strong' ? 'strong match' : r.kind === 'pattern' ? 'pattern match' : 'narrative match'}
                   </Badge>
                   <Link
                     to={`/moves?symbol=${encodeURIComponent(r.symbol)}&date=${r.peakDate}&newsSource=${newsSource}`}

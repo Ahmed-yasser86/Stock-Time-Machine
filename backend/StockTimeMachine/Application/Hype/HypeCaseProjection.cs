@@ -100,6 +100,7 @@ public static class HypeCaseProjection
             }).ToList();
             evidence.Filings = ev.Filings.Take(MaxNewsItems).Select(f => new HypeCaseFiling
             {
+                AccessionNumber = f.AccessionNumber ?? "",
                 FormType = f.FormType ?? "",
                 FiledAt = f.FiledAt,
                 Url = f.Url ?? "",

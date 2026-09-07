@@ -304,6 +304,33 @@ public class HypeTests
         Assert.Contains("NEVER predict", prompt);
         Assert.Contains("[1] Earnings beat estimates", prompt);
         Assert.Contains("DISAGREEMENTS AND GAPS", prompt);
+        // No filing summaries: no mandatory regulatory bullet, honest empty section.
+        Assert.DoesNotContain("Bullet 1 MUST", prompt);
+        Assert.Contains("REGULATORY CONTEXT: no filing summaries available", prompt);
+    }
+
+    [Fact]
+    public void BriefPrompt_RegulatorySectionMandatory()
+    {
+        // Filings with findings force both the dedicated section and the
+        // mandatory first bullet (Phase-2 fix: the model previously crowded
+        // filing content out of its output).
+        var move = Move(MoveFlags.Spike);
+        var detail = Detail(move, Topics());
+        var match = new HypeSignalMatch { SignalId = "sentiment-split", Name = "Sentiment split" };
+        var filings = new List<HypeFilingSummary>
+        {
+            new() { FormType = "8-K", FiledAt = new DateTime(2026, 6, 2),
+                Findings = "Debt offering announced.", Disclosures = "None stated.",
+                ConfidenceNote = "full", PagesProcessed = 1, TotalPages = 1 },
+        };
+        var prompt = HypeBriefPrompt.Build("MSFT", Peak, match, detail,
+            new List<(string Title, string Body)>(), null, filings);
+
+        Assert.Contains("REGULATORY CONTEXT (from filing documents", prompt);
+        Assert.Contains("Debt offering announced.", prompt);
+        Assert.Contains("Bullet 1 MUST summarize the REGULATORY CONTEXT", prompt);
+        Assert.Contains("omitting any section is a failure", prompt);
     }
 
     [Fact]
@@ -390,7 +417,7 @@ public class HypeTests
         var vec = HypeCaseVector.Build(detail, matches);
 
         Assert.Equal(HypeCaseVector.Dimensions, vec.Length);
-        Assert.Equal(89 + 3072, HypeCaseVector.Dimensions);
+        Assert.Equal(96 + 3072, HypeCaseVector.Dimensions);
         // Unit norm after weighting.
         Assert.Equal(1.0, Math.Sqrt(vec.Sum(x => (double)x * x)), 5);
         // Signal bit [0] carries weight 3.0 pre-normalization: it dominates
@@ -409,7 +436,9 @@ public class HypeTests
         Assert.True(vec[16] > 0 && vec[17] > 0);
         Assert.Equal(0, vec[18]);
         // No content mean passed: content side zero.
-        Assert.All(vec.Skip(89), x => Assert.Equal(0, x));
+        Assert.All(vec.Skip(HypeCaseVector.StructuralDimensions), x => Assert.Equal(0, x));
+        // No filing rows: filing dims [89–95] zero.
+        Assert.All(vec.Skip(89).Take(7), x => Assert.Equal(0, x));
     }
 
     [Fact]
@@ -467,6 +496,31 @@ public class HypeTests
     }
 
     [Fact]
+    public void CaseVector_FilingDims_FromRecords()
+    {
+        // Structured filing dims [89–95]: event presence one-hot, max
+        // relevance, mean sentiment. Corrupt JSON contributes zeros.
+        var good = HypeCaseVector.FromRecord(
+            new FilingSummaryRecord { AccessionNumber = "a1" },
+            """{"event_type":"acquisition","market_relevance":"high","sentiment":"positive"}""");
+        var bad = HypeCaseVector.FromRecord(
+            new FilingSummaryRecord { AccessionNumber = "a2" }, "{not json");
+        Assert.Equal((FilingEventTypes.Acquisition, 1.0, 1.0), (good.EventType, good.Relevance, good.Sentiment));
+        Assert.Equal((FilingEventTypes.Other, 0.0, 0.0), (bad.EventType, bad.Relevance, bad.Sentiment));
+
+        var detail = new HypeCaseDetail { CompanySymbol = "NVDA", PeakDate = Peak };
+        var vec = HypeCaseVector.Build(detail, new List<HypeSignalMatch>(),
+            null, new List<HypeCaseVector.FilingVectorInput> { good, bad });
+
+        // acquisition is index 1 → dim 90 nonzero; relevance max 1.0 → dim 94;
+        // sentiment mean (1+0)/2 = 0.5 → dim 95 nonzero but smaller.
+        Assert.True(vec[90] > 0);
+        Assert.Equal(0, vec[89]);
+        Assert.True(vec[94] > 0);
+        Assert.True(vec[95] > 0 && vec[95] < vec[94]);
+    }
+
+    [Fact]
     public void CaseVector_NullDetail_IsZero()
     {
         var vec = HypeCaseVector.Build(null!, new List<HypeSignalMatch>());
@@ -488,6 +542,147 @@ public class HypeTests
         Assert.Equal(2, mean!.Count);
         Assert.Equal(Math.Sqrt(0.5), mean[0], 5);
         Assert.Null(HypeCaseVector.MeanPool(new List<IReadOnlyList<float>>()));
+    }
+
+    [Theory]
+    [InlineData("https://www.sec.gov/Archives/edgar/data/1045810/000104581026000051/", "0001045810-26-000051")]
+    [InlineData("https://www.sec.gov/Archives/edgar/data/789019/000119312526258667", "0001193125-26-258667")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    [InlineData("https://example.com/no-digits-here/", "")]
+    public void FilingAccession_DerivesFromDirectoryUrl(string? url, string expected)
+    {
+        // Legacy rows froze before accession storage: exact SEC 10-2-6
+        // reconstruction from the directory URL keeps them joinable.
+        Assert.Equal(expected, HypeFilingService.DeriveAccessionNumber(url));
+    }
+
+    [Fact]
+    public void FilingPicker_SkipsNavPages_SelectsPrimaryDoc()
+    {
+        // Regression (Phase-1 root cause): {accession}-index-headers.html
+        // sorts first and used to pass every filter, so briefs narrated
+        // nav-link soup instead of disclosures.
+        var indexJson = """
+            {"directory": {"item": [
+              {"name": "0001045810-26-000051-index-headers.html"},
+              {"name": "0001045810-26-000051-index.html"},
+              {"name": "FilingSummary.xml"},
+              {"name": "nvda-20260520.htm"},
+              {"name": "R1.htm"},
+              {"name": "nvda-20260520_htm.xml"}
+            ]}}
+            """;
+
+        Assert.Equal("nvda-20260520.htm", HypeFilingService.PickPrimaryDocument(indexJson));
+    }
+
+    [Fact]
+    public void FilingPicker_FallsBackToSubmissionText()
+    {
+        var indexJson = """
+            {"directory": {"item": [
+              {"name": "0001045810-26-000051-index-headers.html"},
+              {"name": "0001045810-26-000051.txt"},
+              {"name": "R1.htm"}
+            ]}}
+            """;
+
+        Assert.Equal("0001045810-26-000051.txt", HypeFilingService.PickPrimaryDocument(indexJson));
+    }
+
+    [Fact]
+    public void FilingPicker_EmptyOrMalformed_ReturnsNull()
+    {
+        Assert.Null(HypeFilingService.PickPrimaryDocument("{}"));
+        Assert.Null(HypeFilingService.PickPrimaryDocument("{not json"));
+        Assert.Null(HypeFilingService.PickPrimaryDocument(
+            """{"directory": {"item": [{"name": "R1.htm"}]}}"""));
+    }
+
+    [Fact]
+    public void StripHtml_RemovesInlineXbrlHeader()
+    {
+        var html = "<html><body><ix:header><xbrli:context>0000789019 us-gaap:CommonStockMember</xbrli:context></ix:header><p>FORM 8-K CURRENT REPORT</p></body></html>";
+
+        var text = HypeFilingText.StripHtml(html);
+
+        Assert.Contains("FORM 8-K CURRENT REPORT", text);
+        Assert.DoesNotContain("us-gaap", text);
+        Assert.DoesNotContain("0000789019", text);
+    }
+
+    [Fact]
+    public void FilingStructured_ParsesEightK()
+    {
+        var row = HypeFilingService.ParseStructured("0001", "8-K",
+            """{"event_type":"acquisition","primary_topic":"Buys chip startup.","market_relevance":"high","sentiment":"positive","findings":"Acquired X for $1B.","disclosures":"None stated."}""",
+            "abc123");
+
+        Assert.NotNull(row);
+        Assert.Equal("0001", row!.AccessionNumber);
+        Assert.Contains("acquisition", row.StructuredJson);
+        Assert.Equal("Acquired X for $1B.", row.Findings);
+        Assert.Equal("abc123", row.ContentHash);
+    }
+
+    [Fact]
+    public void FilingStructured_ParsesTenQAndNormalizes()
+    {
+        // Unknown enum values fall back honestly (stable/bogus → stable +
+        // neutral + low); risks capped at 10 × 64 chars.
+        var row = HypeFilingService.ParseStructured("0002", "10-Q",
+            """{"financial_direction":"bogus","key_risk_flags":["litigation","supply chain"],"market_relevance":"medium","sentiment":"bogus","findings":"Revenue up.","disclosures":"Risk noted."}""",
+            "def456");
+
+        Assert.NotNull(row);
+        Assert.Contains("stable", row!.StructuredJson);
+        Assert.Contains("litigation", row.StructuredJson);
+        Assert.Contains("medium", row.StructuredJson);
+        Assert.Contains("neutral", row.StructuredJson);
+    }
+
+    [Fact]
+    public void FilingStructured_RejectsBadInput()
+    {
+        Assert.Null(HypeFilingService.ParseStructured("a", "8-K", "{not json", "h"));
+        Assert.Null(HypeFilingService.ParseStructured("a", "8-K",
+            """{"event_type":"acquisition","market_relevance":"high","sentiment":"positive","findings":"","disclosures":"x"}""", "h"));
+        // Unknown event types normalize to "other" (kept, never rejected).
+        var normalized = HypeFilingService.ParseStructured("a", "8-K",
+            """{"event_type":"bogus","primary_topic":"T","market_relevance":"high","sentiment":"positive","findings":"F","disclosures":"D"}""", "h");
+        Assert.NotNull(normalized);
+        Assert.Contains("other", normalized!.StructuredJson);
+    }
+
+    [Fact]
+    public async Task FilingStore_RoundTrip()
+    {
+        var options = new DbContextOptionsBuilder<StockTimeMachineDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var db = new StockTimeMachineDbContext(options);
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+
+        Assert.Null(await repo.GetFilingSummary("missing"));
+        await repo.StoreFilingSummary(new FilingSummaryRecord
+        {
+            AccessionNumber = "0001", FormType = "8-K",
+            StructuredJson = """{"event_type":"acquisition"}""",
+            Findings = "F", Disclosures = "D", ConfidenceNote = "full", ContentHash = "h1",
+        });
+        var fetched = await repo.GetFilingSummary("0001");
+        Assert.NotNull(fetched);
+        Assert.Equal("8-K", fetched!.FormType);
+
+        // Upsert overwrites (re-extraction replaces stale rows).
+        await repo.StoreFilingSummary(new FilingSummaryRecord
+        {
+            AccessionNumber = "0001", FormType = "8-K",
+            StructuredJson = """{"event_type":"regulatory"}""",
+            Findings = "F2", Disclosures = "D2", ConfidenceNote = "full", ContentHash = "h2",
+        });
+        Assert.Contains("regulatory", (await repo.GetFilingSummary("0001"))!.StructuredJson);
     }
 
     [Fact]
@@ -565,6 +760,22 @@ public class HypeTests
         return repo;
     }
 
+    private sealed class NullFilingService : IHypeFilingService
+    {
+        public Task<IReadOnlyList<HypeFilingSummary>> SummarizeFilingsAsync(
+            string symbol, HypeSignalMatch match, HypeCaseDetail detail,
+            DateOnly asOfDate, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<HypeFilingSummary>>(Array.Empty<HypeFilingSummary>());
+        public Task<FilingSummaryRecord?> SummarizeStructuredAsync(
+            string symbol, string accessionNumber, string formType, DateTime filedAt,
+            string documentUrl, DateOnly asOfDate, CancellationToken ct = default) =>
+            Task.FromResult<FilingSummaryRecord?>(null);
+        public Task<int> EnsureSummariesAsync(
+            string symbol, IEnumerable<SecFiling> filings, DateOnly asOfDate,
+            CancellationToken ct = default) =>
+            Task.FromResult(0);
+    }
+
     private sealed class UnavailableVectorStore : IVectorStore
     {
         public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(false);
@@ -579,6 +790,11 @@ public class HypeTests
             float[] vector, CancellationToken ct = default) =>
             Task.FromResult(0);
         public Task<IReadOnlyList<VectorHit>> SearchCasesAsync(float[] query, int limit, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<VectorHit>>(Array.Empty<VectorHit>());
+        public Task<int> UpsertStructuralAsync(string caseId, string symbol, DateOnly peakDate,
+            float[] vector, CancellationToken ct = default) =>
+            Task.FromResult(0);
+        public Task<IReadOnlyList<VectorHit>> SearchStructuralAsync(float[] query, int limit, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<VectorHit>>(Array.Empty<VectorHit>());
     }
 
@@ -759,6 +975,7 @@ public class HypeTests
             .ReturnsAsync(1);
         var indexer = new HypeCaseIndexer(repo.Object, store.Object,
             new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
+            new NullFilingService(),
             NullLogger<HypeCaseIndexer>.Instance);
         var detail = ResemblanceDetail(("a", "Current article"));
 
@@ -784,6 +1001,7 @@ public class HypeTests
             .ReturnsAsync(1);
         var indexer = new HypeCaseIndexer(repo.Object, store.Object,
             new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
+            new NullFilingService(),
             NullLogger<HypeCaseIndexer>.Instance);
         var window = Window(Move(MoveFlags.Spike));
         window.EvidenceByDate.Clear();
@@ -808,9 +1026,120 @@ public class HypeTests
         store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var indexer = new HypeCaseIndexer(repo.Object, store.Object,
             new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
+            new NullFilingService(),
             NullLogger<HypeCaseIndexer>.Instance);
 
         Assert.Equal(0, await indexer.IndexCaseAsync(ResemblanceDetail(("a", "x"))));
+    }
+
+    private static HypeCaseDetail StructuralDetail() => new()
+    {
+        CompanySymbol = "NVDA",
+        PeakDate = Peak,
+        Score = 0.5,
+        Flags = new List<string> { MoveFlags.Spike },
+        SentimentDirection = SentimentDivergence.Unknown,
+        RegimePath = new Dictionary<string, string>
+        {
+            ["2026-06-10"] = MarketRegimes.Tense,
+            ["2026-06-11"] = MarketRegimes.Tense,
+            ["2026-06-12"] = MarketRegimes.Tense,
+        },
+        PrePeakThreads = new List<HypeCaseThread>
+        {
+            new() { TopCategory = "REGULATORY", RepresentativeTitle = "Chip curbs", ArticleIds = new List<string> { "s1" } },
+        },
+        Evidence = new HypeCaseEvidence(),
+    };
+
+    private static Mock<IVectorStore> DualStore(
+        IReadOnlyList<VectorHit> structural,
+        IReadOnlyList<VectorHit> hybrid)
+    {
+        var store = new Mock<IVectorStore>();
+        store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        store.Setup(s => s.SearchStructuralAsync(It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(structural);
+        store.Setup(s => s.SearchCasesAsync(It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(hybrid);
+        return store;
+    }
+
+    private static float[] UnitVector(int dims, int hot)
+    {
+        var v = new float[dims];
+        v[hot % dims] = 1f;
+        return v;
+    }
+
+    [Fact]
+    public async Task Resemblance_DualQuery_LabelsStrongPatternNarrative()
+    {
+        // Hit vectors mirror the service's own queries (identical → cosine
+        // 1.0), so this test pins merge + labels, not arithmetic.
+        // Structural + hybrid agree on BOTH → "strong" first; C is
+        // structural-only → "pattern"; D is hybrid-only → "narrative".
+        var current = StructuralDetail();
+        var matches = HypeSignals.Evaluate(current);
+        Assert.Contains(matches, m => m.SignalId == "regulatory-overhang");
+        var structuralQuery = HypeCaseVector.BuildStructural(current, matches);
+        // Service-side hybrid query carries the content mean ([1,0] from the
+        // single cached trigger vector): mirror it exactly for cosine 1.0.
+        var mean = HypeCaseVector.MeanPool(new List<IReadOnlyList<float>> { new float[] { 1, 0 } });
+        var hybridQuery = HypeCaseVector.Build(current, matches, mean);
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["s1"] = new float[] { 1, 0 },
+        });
+        var store = DualStore(
+            new List<VectorHit>
+            {
+                new("B", structuralQuery, "NVDA:2026-08-01", "NVDA", new DateOnly(2026, 8, 1)),
+                new("C", structuralQuery, "NVDA:2026-08-02", "NVDA", new DateOnly(2026, 8, 2)),
+            },
+            new List<VectorHit>
+            {
+                new("B", hybridQuery, "NVDA:2026-08-01", "NVDA", new DateOnly(2026, 8, 1)),
+                new("D", hybridQuery, "MSFT:2026-08-01", "MSFT", new DateOnly(2026, 8, 1)),
+            });
+        var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()), store.Object);
+
+        var found = await sut.FindResemblingAsync(current, new[] { "s1" }, new List<HypeCase>());
+
+        Assert.Equal(3, found.Count);
+        Assert.Equal(HypeResemblanceKinds.Strong, found[0].Kind);
+        Assert.Equal("NVDA:2026-08-01", found[0].CaseId);
+        Assert.Contains(found, f => f.CaseId == "NVDA:2026-08-02" && f.Kind == HypeResemblanceKinds.Pattern);
+        Assert.Contains(found, f => f.CaseId == "MSFT:2026-08-01" && f.Kind == HypeResemblanceKinds.Narrative);
+    }
+
+    [Fact]
+    public async Task Resemblance_ContentSignals_SkipStructuralQuery()
+    {
+        // sentiment-split is content-dominant: no structural search issued.
+        // The hybrid hit mirrors the service query (identical → cosine 1.0).
+        var current = ResemblanceDetail(("a", "Current article"));
+        var matches = HypeSignals.Evaluate(current);
+        Assert.DoesNotContain(matches, m => HypeResemblanceKinds.StructuralSignals.Contains(m.SignalId));
+        var mean = HypeCaseVector.MeanPool(new List<IReadOnlyList<float>> { new float[] { 1, 0 } });
+        var hybridQuery = HypeCaseVector.Build(current, matches, mean);
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+        });
+        var store = DualStore(
+            new List<VectorHit>(),
+            new List<VectorHit>
+            {
+                new("b", hybridQuery, "NFLX:2026-08-01", "NFLX", new DateOnly(2026, 8, 1)),
+            });
+        var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()), store.Object);
+
+        var found = await sut.FindResemblingAsync(current, new[] { "a" }, new List<HypeCase>());
+
+        store.Verify(s => s.SearchStructuralAsync(It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        Assert.Single(found);
     }
 
     [Fact]

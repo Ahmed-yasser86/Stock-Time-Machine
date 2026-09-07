@@ -20,6 +20,8 @@ public static class HypeBriefPrompt
         IReadOnlyList<HypeCaseSocialPost>? signalSocial = null,
         IReadOnlyList<HypeFilingSummary>? filingSummaries = null)
     {
+        var hasRegulatory = filingSummaries is not null &&
+            filingSummaries.Any(f => !string.IsNullOrWhiteSpace(f.Findings));
         var symbol = companySymbol.Trim().ToUpperInvariant();
         var sb = new StringBuilder();
         sb.AppendLine($"You are a historical research assistant. Today is {asOfDate:yyyy-MM-dd}.");
@@ -59,10 +61,17 @@ public static class HypeBriefPrompt
         sb.AppendLine("- One article alone is never consensus: say 'one article reports...' when unsourced elsewhere.");
         sb.AppendLine("- Empty stages (no news, no filings, silent layers) are facts: report them as absent evidence, never invent content for them.");
         sb.AppendLine();
-        sb.AppendLine("Respond with exactly these sections:");
+        sb.AppendLine("Respond with exactly these sections (all three are mandatory —");
+        sb.AppendLine("omitting any section is a failure, even when content is thin):");
         sb.AppendLine("SUMMARY: one paragraph, max 150 words: what peaked, what the stages show, what the coverage reports.");
         sb.AppendLine("KEY POINTS: up to 6 bullets, each cited [n] or marked (case fact).");
-        sb.AppendLine("DISAGREEMENTS AND GAPS: what is contested or missing; 'none visible' if uniform.");
+        if (hasRegulatory)
+        {
+            sb.AppendLine("Bullet 1 MUST summarize the REGULATORY CONTEXT findings above (or state");
+            sb.AppendLine("plainly that the filings carried no usable content) — never skip it.");
+        }
+        sb.AppendLine("DISAGREEMENTS AND GAPS: what is contested or missing; write the literal");
+        sb.AppendLine("sentence 'none visible' if uniform — do not drop this section.");
         return sb.ToString();
     }
 
