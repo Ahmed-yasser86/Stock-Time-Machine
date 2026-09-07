@@ -16,6 +16,7 @@ public class CopilotService : ICopilotService
     private readonly IMoveDetectionService _moves;
     private readonly IGeminiClient _gemini;
     private readonly IArticleContentClient _bodies;
+    private readonly IHypeFilingService _hypeFilings;
     private readonly ILogger<CopilotService> _logger;
 
     public CopilotService(
@@ -23,12 +24,17 @@ public class CopilotService : ICopilotService
         IMoveDetectionService moves,
         IGeminiClient gemini,
         IArticleContentClient bodies,
+        IHypeFilingService hypeFilings,
         ILogger<CopilotService> logger)
     {
         _dataRepo = dataRepo;
         _moves = moves;
         _gemini = gemini;
         _bodies = bodies;
+        // Filing content pipeline (reason: drawer filing summaries fed the
+        // always-empty Summary metadata column; real text now comes from
+        // stored summaries backed by SEC extraction).
+        _hypeFilings = hypeFilings;
         _logger = logger;
     }
 
@@ -42,6 +48,17 @@ public class CopilotService : ICopilotService
             var filings = (await _dataRepo.GetFilingsAsOf(normalized, asOfDate, ct)).Take(MaxItems).ToList();
             if (filings.Count == 0)
                 return null;
+            // Real content first: ensure stored summaries (bounded, skips
+            // stored rows), then brief from them — never from the empty
+            // Summary metadata column again.
+            try
+            {
+                await _hypeFilings.EnsureSummariesAsync(normalized, filings, asOfDate, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Drawer filing summaries ensure failed for {Symbol}; briefing from metadata", normalized);
+            }
             var sb = Header(normalized, asOfDate);
             sb.AppendLine($"Below are {filings.Count} SEC filings available on or before today. Summarize what THEY disclose.");
             Containment(sb);
@@ -51,7 +68,10 @@ public class CopilotService : ICopilotService
             sb.AppendLine("DISAGREEMENTS AND GAPS: contested or missing; 'none visible' if uniform.");
             sb.AppendLine();
             for (int i = 0; i < filings.Count; i++)
-                sb.AppendLine($"[{i + 1}] {filings[i].FormType} filed {filings[i].FiledAt:yyyy-MM-dd}: {filings[i].Summary ?? filings[i].FormType}\n");
+            {
+                var body = await FilingBriefTextAsync(filings[i], ct);
+                sb.AppendLine($"[{i + 1}] {filings[i].FormType} filed {filings[i].FiledAt:yyyy-MM-dd}: {body}\n");
+            }
             return await _gemini.SummarizeClusterAsync(sb.ToString(), ct);
         }
         catch (Exception ex)
@@ -59,6 +79,31 @@ public class CopilotService : ICopilotService
             _logger.LogWarning(ex, "Copilot filings summary failed");
             return null;
         }
+    }
+
+    // One filing's brief text: stored summary (findings + disclosures) when
+    // present, else an honest metadata-only line that says exactly that.
+    private async Task<string> FilingBriefTextAsync(SecFiling filing, CancellationToken ct)
+    {
+        FilingSummaryRecord? row = null;
+        if (!string.IsNullOrWhiteSpace(filing.AccessionNumber))
+        {
+            try
+            {
+                row = await _dataRepo.GetFilingSummary(filing.AccessionNumber, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Stored filing summary miss for {Accession}", filing.AccessionNumber);
+            }
+        }
+        if (row is null)
+            return $"{filing.FormType} (metadata only — document content unavailable)";
+        var text = row.Findings;
+        if (!string.IsNullOrWhiteSpace(row.Disclosures))
+            text += " Disclosures: " + row.Disclosures;
+        text += $" [{row.ConfidenceNote}]";
+        return text.Length > MaxBodyChars ? text.Substring(0, MaxBodyChars) : text;
     }
 
     public async Task<ClusterBrief?> ContrastArticles(string symbol, DateOnly asOfDate, string? newsSource, IReadOnlyList<string> articleIds, CancellationToken ct = default)

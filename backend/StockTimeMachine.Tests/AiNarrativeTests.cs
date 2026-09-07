@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 using StockTimeMachine;
 
@@ -343,6 +344,7 @@ public class AiNarrativeTests
         StockTimeMachineDbContext db, IGeminiClient gemini) =>
         new(new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new StubMoves(), gemini, new DisabledBodyStub(),
+            new Mock<IHypeFilingService>().Object,
             NullLogger<CopilotService>.Instance);
 
     [Fact]
@@ -391,6 +393,37 @@ public class AiNarrativeTests
         });
         Assert.Contains(gemini.SeenPrompts, p => p.Contains("DISAGREE"));
         Assert.Contains(gemini.SeenPrompts, p => p.Contains("plain words"));
+    }
+
+    [Fact]
+    public async Task Copilot_FilingsSummary_UsesStoredContent()
+    {
+        // Blocker fix: the drawer fed the always-empty Summary metadata
+        // column. With a stored summary row present, the prompt must carry
+        // real findings instead.
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await db.SecFilings.AddAsync(new SecFiling
+        {
+            CompanySymbol = "TSLA", FormType = "8-K",
+            FiledAt = new DateTime(2020, 1, 5, 0, 0, 0, DateTimeKind.Utc),
+            AccessionNumber = "acc9", Url = "https://example.com/f9", Summary = "",
+        });
+        await repo.StoreFilingSummary(new FilingSummaryRecord
+        {
+            AccessionNumber = "acc9", FormType = "8-K",
+            StructuredJson = """{"event_type":"management_change"}""",
+            Findings = "CEO resigned effective immediately.",
+            Disclosures = "None stated.", ConfidenceNote = "full", ContentHash = "h",
+        });
+        await db.SaveChangesAsync();
+        var gemini = new FixedGeminiStub();
+        var sut = Copilot(db, gemini);
+
+        var filings = await sut.SummarizeFilings("TSLA", new DateOnly(2020, 1, 15));
+
+        Assert.NotNull(filings);
+        Assert.Contains(gemini.SeenPrompts, p => p.Contains("CEO resigned effective immediately."));
     }
 
     [Fact]
