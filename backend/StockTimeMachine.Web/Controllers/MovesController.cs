@@ -250,6 +250,7 @@ public class MovesController : ControllerBase
             AsOfDate: result.AsOfDate,
             NewsSource: result.NewsSource,
             ArticlesConsidered: result.ArticlesConsidered,
+            ArticlesEvaluated: result.ArticlesEvaluated,
             ArticlesClustered: result.ArticlesClustered,
             RelevantCount: result.RelevantCount,
             IrrelevantCount: result.IrrelevantCount,

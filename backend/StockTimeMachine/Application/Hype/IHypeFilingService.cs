@@ -9,6 +9,11 @@ public class HypeFilingSummary
 {
     public string FormType { get; set; } = "";
     public DateTime FiledAt { get; set; }
+    // Citation back to the primary document (SEC EDGAR): the brief prompt
+    // prints these so every filing claim is traceable. Empty when the
+    // frozen row predates accession storage and no URL was kept.
+    public string AccessionNumber { get; set; } = "";
+    public string Url { get; set; } = "";
     public string Findings { get; set; } = "";
     public string Disclosures { get; set; } = "";
     // full | partial:{reason} | unavailable:{reason} — always stated.

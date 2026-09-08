@@ -207,14 +207,15 @@ export function NarrativeTopics({
             ? `AI-grouped threads from ${data.articlesConsidered} cached article(s) — embeddings decide membership, shared terms name each thread.`
             : `Keyword-overlap clusters from ${data.articlesConsidered} cached article(s) — top terms
           label each thread, not machine understanding.`}
-          {data.articlesConsidered > data.articlesClustered && (
+          {data.relevantCount > 400 && (
             <span>
-              {' '}Newest {data.articlesClustered} of {data.articlesConsidered} clustered — the
-              embedding budget ceiling leaves older ones out, stated here instead of silently.
+              {' '}Newest {data.articlesClustered} of {data.relevantCount} relevant clustered — the
+              embedding budget ceiling (400) leaves older ones out, stated here instead of silently.
             </span>
           )}
-          {' '}Gate census over {data.articlesConsidered} evaluated candidate(s): relevant{' '}
-          {data.relevantCount} · irrelevant {data.irrelevantCount} · uncertain {data.uncertainCount}.
+          {' '}Gate census over {data.articlesEvaluated} evaluated of {data.articlesConsidered}{' '}
+          cached: relevant {data.relevantCount} · irrelevant {data.irrelevantCount} · uncertain{' '}
+          {data.uncertainCount}.
           Only relevant articles enter threads, evidence, and embeddings — the rest never leave
           the raw cache.
           {data.expansionQueries > 0 && (

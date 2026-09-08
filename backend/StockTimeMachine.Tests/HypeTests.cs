@@ -288,6 +288,31 @@ public class HypeTests
     }
 
     [Fact]
+    public void Projection_SetsRegulatoryProvenance_WindowScoped()
+    {
+        // Peak 2026-06-15 → window [2026-05-16, 2026-06-15]. The 2015 filing
+        // is company history, not movement evidence; tiers split 1/1/1.
+        var move = Move(MoveFlags.Spike);
+        var evidence = new MoveEvidence
+        {
+            Filings = new List<SecFiling>
+            {
+                new() { AccessionNumber = "old", FormType = "10-K", FiledAt = new DateTime(2015, 7, 20), Url = "https://sec.gov/old", CompanySymbol = "NFLX" },
+                new() { AccessionNumber = "f1", FormType = "8-K", FiledAt = new DateTime(2026, 5, 20), Url = "https://sec.gov/1", CompanySymbol = "NFLX" },
+                new() { AccessionNumber = "f2", FormType = "8-K", FiledAt = new DateTime(2026, 6, 10), Url = "https://sec.gov/2", CompanySymbol = "NFLX" },
+                new() { AccessionNumber = "f3", FormType = "8-K", FiledAt = new DateTime(2026, 6, 14), Url = "https://sec.gov/3", CompanySymbol = "NFLX" },
+            },
+        };
+        var detail = Detail(move, Topics(), Window(move, evidence: evidence));
+
+        Assert.Equal(30, detail.RegulatoryLookbackDays);
+        Assert.Equal("reg-v1", detail.RegulatoryMethodology);
+        Assert.Equal(1, detail.RegulatoryTiers["very_close"]);
+        Assert.Equal(1, detail.RegulatoryTiers["recent"]);
+        Assert.Equal(1, detail.RegulatoryTiers["older"]);
+    }
+
+    [Fact]
     public void BriefPrompt_ContainsStagesBansAndCitations()
     {
         var move = Move(MoveFlags.Spike, MoveFlags.HighVolume);

@@ -55,6 +55,20 @@ public class InvestigationJobStore : IInvestigationJobStore
         return true;
     }
 
+    // Backfill writer (reason: regulatory methodology migration must rewrite
+    // frozen payloads). Guarded like the CAS transitions: never touch a
+    // running job; unknown ids fail closed.
+    public async Task<bool> UpdateMovesJsonAsync(string id, string movesJson, CancellationToken ct = default)
+    {
+        var job = await _db.InvestigationJobs.FirstOrDefaultAsync(j => j.Id == id, ct);
+        if (job is null || job.Status == JobStatuses.Running)
+            return false;
+        job.MovesJson = movesJson;
+        job.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task<bool> FailAsync(string id, string status, string? error, CancellationToken ct = default)
     {
         if (!JobStatuses.IsTerminal(status) || status == JobStatuses.Complete)
@@ -88,6 +102,12 @@ public class InvestigationJobStore : IInvestigationJobStore
             _logger.LogWarning("Reaped {Count} stale investigation jobs as timed out", stale.Count);
         }
     }
+
+    public async Task<IReadOnlyList<InvestigationJob>> ListAllAsync(CancellationToken ct = default) =>
+        await _db.InvestigationJobs
+            .Include(j => j.Stages)
+            .OrderByDescending(j => j.UpdatedAtUtc)
+            .ToListAsync(ct);
 
     public async Task PruneAsync(TimeSpan retention, CancellationToken ct = default)
     {

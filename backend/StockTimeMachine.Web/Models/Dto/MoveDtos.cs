@@ -80,6 +80,7 @@ public sealed record NarrativesResponse(
     DateOnly AsOfDate,
     string NewsSource,
     int ArticlesConsidered,
+    int ArticlesEvaluated,
     int ArticlesClustered,
     int RelevantCount,
     int IrrelevantCount,

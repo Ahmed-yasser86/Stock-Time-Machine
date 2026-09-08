@@ -12,6 +12,10 @@ public class NarrativeTopicsResult
     public DateOnly AsOfDate { get; set; }
     public string NewsSource { get; set; } = NewsSources.Gdelt;
     public int ArticlesConsidered { get; set; }
+    // Articles actually sent through relevance classification. Must equal
+    // ArticlesConsidered — any gap means unevaluated input, which the
+    // census invariant below would expose.
+    public int ArticlesEvaluated { get; set; }
     public int ArticlesClustered { get; set; }
     // Actual gate output over the evaluated candidates: relevant admitted to
     // embeddings/threads/evidence; irrelevant and uncertain excluded (never

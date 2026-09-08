@@ -22,6 +22,7 @@ public class HypeController : ControllerBase
     private readonly IHypeCaseIndexer _indexer;
     private readonly IHypeFilingService _filingSummaries;
     private readonly IVectorStore _vectors;
+    private readonly IInvestigationJobStore _jobs;
     private readonly ICompanyDirectory _directory;
     private readonly INewsProviderFactory _newsFactory;
     private readonly IConfiguration _config;
@@ -36,6 +37,7 @@ public class HypeController : ControllerBase
         IHypeCaseIndexer indexer,
         IHypeFilingService filingSummaries,
         IVectorStore vectors,
+        IInvestigationJobStore jobs,
         ICompanyDirectory directory,
         INewsProviderFactory newsFactory,
         IConfiguration config,
@@ -49,6 +51,7 @@ public class HypeController : ControllerBase
         _indexer = indexer;
         _filingSummaries = filingSummaries;
         _vectors = vectors;
+        _jobs = jobs;
         _directory = directory;
         _newsFactory = newsFactory;
         _config = config;
@@ -115,7 +118,89 @@ public class HypeController : ControllerBase
 
     public sealed record ReindexResponse(int CasesScanned, int VectorsIndexed);
 
-    // One-shot backfill of cached vectors into the vector store (same
+    public sealed record BackfillRegulatoryResponse(
+        int HypeCasesUpdated, int HypeCasesSkipped, int JobsUpdated, int JobsSkipped);
+
+    // Regulatory methodology migration (reg-v1, same operator gate as
+    // harvest): recomputes movement-level regulatory evidence under the
+    // 30-day window for every frozen HypeCase and every non-running
+    // investigation job, from the payloads already stored (no provider
+    // calls). Idempotent: clean rows are detected and skipped, so reruns
+    // are cheap. Running jobs are never touched.
+    [HttpPost("backfill-regulatory")]
+    public async Task<ActionResult<BackfillRegulatoryResponse>> BackfillRegulatory(CancellationToken ct)
+    {
+        if (!string.Equals(_config["Hype:HarvestEnabled"], "true", StringComparison.OrdinalIgnoreCase))
+            return NotFound();
+        int hypeUpdated = 0, hypeSkipped = 0, jobsUpdated = 0, jobsSkipped = 0;
+
+        foreach (var row in await _cases.ListAllAsync(ct))
+        {
+            ct.ThrowIfCancellationRequested();
+            var detail = HypeCaseLibrary.TryReadDetail(row);
+            if (detail is null)
+            {
+                _logger.LogWarning("Skipping unreadable hype case {Id} in regulatory backfill", row.Id);
+                hypeSkipped++;
+                continue;
+            }
+            if (RegulatoryBackfill.IsRegulatoryClean(detail))
+            {
+                hypeSkipped++;
+                continue;
+            }
+            try
+            {
+                RegulatoryBackfill.MigrateCaseDetail(detail);
+                row.CaseJson = System.Text.Json.JsonSerializer.Serialize(detail, HypeStreamJson);
+                await _cases.SaveAsync(row, ct);
+                hypeUpdated++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Regulatory backfill failed for hype case {Id}; continuing", row.Id);
+                hypeSkipped++;
+            }
+        }
+
+        foreach (var job in await _jobs.ListAllAsync(ct))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (job.Status == JobStatuses.Running || string.IsNullOrWhiteSpace(job.MovesJson))
+            {
+                jobsSkipped++;
+                continue;
+            }
+            try
+            {
+                var window = System.Text.Json.JsonSerializer.Deserialize<MovesWindow>(job.MovesJson, HypeStreamJson);
+                if (window is null || !RegulatoryBackfill.MigrateMovesWindow(window))
+                {
+                    jobsSkipped++;
+                    continue;
+                }
+                if (!await _jobs.UpdateMovesJsonAsync(job.Id,
+                    System.Text.Json.JsonSerializer.Serialize(window, HypeStreamJson), ct))
+                    jobsSkipped++;
+                else
+                    jobsUpdated++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Regulatory backfill failed for job {Job}; continuing", job.Id);
+                jobsSkipped++;
+            }
+        }
+
+        _logger.LogInformation(
+            "Regulatory backfill (reg-v1): {HypeUpdated} cases + {JobsUpdated} jobs migrated ({HypeSkipped} cases, {JobsSkipped} jobs skipped)",
+            hypeUpdated, jobsUpdated, hypeSkipped, jobsSkipped);
+        return Ok(new BackfillRegulatoryResponse(hypeUpdated, hypeSkipped, jobsUpdated, jobsSkipped));
+    }
+
+    // Migration math lives in RegulatoryBackfill (Application layer,
+    // unit-tested); the endpoint above only owns IO. One-shot backfill of
+    // cached vectors into the vector store (same
     // operator gate as harvest). Existing rows are never modified: points
     // upsert by stable id.
     [HttpPost("reindex")]
@@ -332,7 +417,7 @@ public class HypeController : ControllerBase
                         .Select(s => new HypeCaseRefDto(
                             s.Row.Id, s.Row.CompanySymbol, s.Row.PeakDate,
                             s.Row.FlagsCsv.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList(),
-                            s.Row.Completeness))
+                            s.Row.Completeness, s.Row.NewsSource ?? ""))
                         .ToList();
                     // Realized aftermath only (Step 6 / Issue 4): post-peak
                     // closes frozen in each supporting case, plus the
@@ -343,7 +428,8 @@ public class HypeController : ControllerBase
                             s.Row.Id, s.Row.CompanySymbol, s.Row.PeakDate,
                             s.Detail.Reaction
                                 .Select(r => new HypeReactionDto(r.Date, r.Close))
-                                .ToList()))
+                                .ToList(),
+                            s.Row.NewsSource ?? ""))
                         .ToList();
                     var followedSummary = SummarizeFollowed(supporting);
                     var def = HypeSignalCatalog.ById(match.SignalId);
@@ -355,7 +441,7 @@ public class HypeController : ControllerBase
                         resemblance = (await _resemblance.FindResemblingAsync(
                                 detail, match.TriggerThreadIds, library, ct))
                             .Select(r => new HypeResemblanceDto(
-                                r.CaseId, r.Symbol, r.PeakDate, r.Similarity, r.Kind))
+                                r.CaseId, r.Symbol, r.PeakDate, r.Similarity, r.Kind, r.NewsSource ?? ""))
                             .ToList();
                     }
                     catch (Exception ex)

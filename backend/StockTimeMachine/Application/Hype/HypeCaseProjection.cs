@@ -165,6 +165,18 @@ public static class HypeCaseProjection
             UncertaintyScore = window.Uncertainty?.Score,
             UncertaintyConfidence = window.Uncertainty?.Confidence,
             CompletenessByArea = completeness,
+            RegulatoryLookbackDays = RegulatoryEvidence.LookbackDays,
+            RegulatoryMethodology = RegulatoryEvidence.MethodologyVersion,
+            RegulatoryTiers = RegulatoryEvidence.CountByTier(
+                evidence.Filings.Select(f => f.FiledAt), peak) switch
+            {
+                var t => new Dictionary<string, int>
+                {
+                    [RegulatoryEvidence.Tiers.VeryClose] = t.VeryClose,
+                    [RegulatoryEvidence.Tiers.Recent] = t.Recent,
+                    [RegulatoryEvidence.Tiers.Older] = t.Older,
+                },
+            },
         };
 
         return new HypeCase

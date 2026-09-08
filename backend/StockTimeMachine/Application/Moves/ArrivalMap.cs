@@ -31,10 +31,16 @@ public static class ArrivalStates
 // per-move evidence. No I/O, no clock, no randomness.
 public static class ArrivalMap
 {
-    public static List<ArrivalEntry> Build(DateOnly moveDate, MoveEvidence evidence)
+    // lookbackDays scopes the regulatory layer to the movement's candidate
+    // window (reg-v1, default 30): first-seen and counts below are
+    // window-scoped even if a caller passes unfiltered evidence (defense in
+    // depth — BuildEvidence already filters at the source).
+    public static List<ArrivalEntry> Build(DateOnly moveDate, MoveEvidence evidence, int? lookbackDays = null)
     {
-        DateTime? firstFiling = evidence.Filings.Count > 0
-            ? evidence.Filings.Min(f => f.FiledAt)
+        var windowFilings = RegulatoryEvidence.SelectInWindow(evidence.Filings, moveDate, lookbackDays);
+        var lookback = lookbackDays is > 0 ? lookbackDays.Value : RegulatoryEvidence.LookbackDays;
+        DateTime? firstFiling = windowFilings.Count > 0
+            ? windowFilings.Min(f => f.FiledAt)
             : null;
         DateTime? firstNews = evidence.News.Count > 0
             ? evidence.News.Min(n => n.PublishedAt)
@@ -46,8 +52,12 @@ public static class ArrivalMap
 
         var observed = new List<(string Layer, DateTime Seen, string Detail)>();
         if (firstFiling.HasValue)
+        {
+            var tiers = RegulatoryEvidence.CountByTier(evidence.Filings, moveDate, lookbackDays);
             observed.Add((ArrivalLayers.Regulatory, firstFiling.Value,
-                $"{evidence.Filings.Count} filing(s) available"));
+                $"{windowFilings.Count} filing(s) within the {lookback}-day window" +
+                $" (very close: {tiers.VeryClose}, recent: {tiers.Recent}, older: {tiers.Older})"));
+        }
         if (firstNews.HasValue)
             observed.Add((ArrivalLayers.News, firstNews.Value,
                 $"{evidence.News.Count} article(s) published"));
@@ -79,7 +89,9 @@ public static class ArrivalMap
                 FirstSeen = null,
                 State = ArrivalStates.Silent,
                 LagHours = null,
-                Detail = "no evidence in this layer before the movement",
+                Detail = layer == ArrivalLayers.Regulatory
+                    ? $"no filings within the {lookback}-day window"
+                    : "no evidence in this layer before the movement",
             });
         }
 

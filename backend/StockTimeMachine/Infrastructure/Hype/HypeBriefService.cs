@@ -187,6 +187,8 @@ public class HypeBriefService : IHypeBriefService
             {
                 FormType = row.FormType,
                 FiledAt = filing.FiledAt,
+                AccessionNumber = accession,
+                Url = filing.Url ?? "",
                 Findings = row.Findings,
                 Disclosures = row.Disclosures,
                 ConfidenceNote = row.ConfidenceNote + " (stored)",

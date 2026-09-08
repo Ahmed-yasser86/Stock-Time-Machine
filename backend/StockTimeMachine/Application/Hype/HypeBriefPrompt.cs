@@ -175,12 +175,24 @@ public static class HypeBriefPrompt
 
     private static void AppendFilings(StringBuilder sb, HypeCaseDetail detail)
     {
+        // Window + tier framing (reg-v1): only in-window filings are listed
+        // at all — history outside the window never reaches this section.
+        var lookback = detail.RegulatoryLookbackDays > 0
+            ? detail.RegulatoryLookbackDays
+            : RegulatoryEvidence.LookbackDays;
+        var method = string.IsNullOrWhiteSpace(detail.RegulatoryMethodology)
+            ? RegulatoryEvidence.MethodologyVersion
+            : detail.RegulatoryMethodology;
         var filings = detail.Evidence.Filings;
         if (filings.Count == 0)
         {
-            sb.AppendLine("- Regulatory: no filings in this peak's evidence (case fact).");
+            sb.AppendLine($"- Regulatory: no filings within the {lookback}-day window before {detail.PeakDate:yyyy-MM-dd} (methodology {method}, case fact).");
             return;
         }
+        detail.RegulatoryTiers.TryGetValue(RegulatoryEvidence.Tiers.VeryClose, out var veryClose);
+        detail.RegulatoryTiers.TryGetValue(RegulatoryEvidence.Tiers.Recent, out var recent);
+        detail.RegulatoryTiers.TryGetValue(RegulatoryEvidence.Tiers.Older, out var older);
+        sb.AppendLine($"- Regulatory window: {lookback} days before {detail.PeakDate:yyyy-MM-dd} (methodology {method}): {filings.Count} eligible filing(s) (very close: {veryClose}, recent: {recent}, older: {older}) (case fact).");
         sb.AppendLine($"- Regulatory filings ({filings.Count}): {string.Join("; ", filings.Select(f => $"{f.FormType} filed {f.FiledAt:yyyy-MM-dd}"))} (case fact).");
     }
 
@@ -198,7 +210,15 @@ public static class HypeBriefPrompt
         sb.AppendLine("REGULATORY CONTEXT (from filing documents — separate from news narrative):");
         foreach (var f in filingSummaries)
         {
-            sb.AppendLine($"- {f.FormType} filed {f.FiledAt:yyyy-MM-dd}: {f.Findings} Disclosures/risks: {f.Disclosures} [content: {f.ConfidenceNote}, {f.PagesProcessed}/{f.TotalPages} pages]".TrimEnd());
+            // Every filing claim cites its primary document: accession when
+            // stored, else the directory URL; undated-of-origin is stated,
+            // never invented.
+            var citation = !string.IsNullOrWhiteSpace(f.AccessionNumber)
+                ? "accession " + f.AccessionNumber
+                : !string.IsNullOrWhiteSpace(f.Url)
+                    ? f.Url
+                    : "origin untraced in frozen case";
+            sb.AppendLine($"- {f.FormType} filed {f.FiledAt:yyyy-MM-dd} [{citation}]: {f.Findings} Disclosures/risks: {f.Disclosures} [content: {f.ConfidenceNote}, {f.PagesProcessed}/{f.TotalPages} pages]".TrimEnd());
         }
         sb.AppendLine();
     }

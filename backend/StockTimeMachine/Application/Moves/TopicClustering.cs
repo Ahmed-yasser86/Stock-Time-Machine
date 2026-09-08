@@ -32,9 +32,9 @@ public static class TopicClustering
     public const double SimilarityThreshold = 0.25;
     // Embedding-budget ceiling: each article costs one embedding call, so the
     // cap is money, not convenience — and it is disclosed, not silent (see
-    // ArticlesClustered on the response). Raised 60 → 100 as quotas allow;
-    // the TF-IDF fallback honors the same cap for consistent behavior.
-    public const int MaxArticles = 100;
+    // ArticlesClustered on the response). Raised 60 → 100 → 400 as quotas
+    // allow; the TF-IDF fallback honors the same cap for consistent behavior.
+    public const int MaxArticles = 400;
 
     private static readonly HashSet<string> Stopwords = new(StringComparer.Ordinal)
     {

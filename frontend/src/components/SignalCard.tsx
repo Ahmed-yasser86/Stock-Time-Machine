@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import type { HypeSignal, NewsSource } from '../types';
+import { newsSourceLabel, type HypeSignal, type NewsSource } from '../types';
 import { AiBriefBlock } from './AiBriefBlock';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -66,11 +66,14 @@ export function SignalCard({
               {signal.supportingCases.map((c) => (
                 <Link
                   key={c.id}
-                  to={`/moves?symbol=${encodeURIComponent(c.symbol)}&date=${c.peakDate}&newsSource=${newsSource}`}
+                  to={`/moves?symbol=${encodeURIComponent(c.symbol)}&date=${c.peakDate}&newsSource=${c.newsSource || newsSource}`}
                   className="rounded-full border border-border px-3 py-1 font-mono text-xs hover:border-primary hover:text-fg"
-                  title={`Open ${c.symbol} peak ${c.peakDate}`}
+                  title={`Open ${c.symbol} peak ${c.peakDate}${c.newsSource ? ` (${newsSourceLabel(c.newsSource)})` : ''}`}
                 >
                   {c.symbol} {c.peakDate}
+                  {c.newsSource && (
+                    <span className="ml-1 text-fg-dim">[{newsSourceLabel(c.newsSource)}]</span>
+                  )}
                   {c.completeness !== 'full' && (
                     <span className="ml-1 text-fg-dim">({c.completeness} data)</span>
                   )}
@@ -90,11 +93,14 @@ export function SignalCard({
                     {r.kind === 'strong' ? 'strong match' : r.kind === 'pattern' ? 'pattern match' : 'narrative match'}
                   </Badge>
                   <Link
-                    to={`/moves?symbol=${encodeURIComponent(r.symbol)}&date=${r.peakDate}&newsSource=${newsSource}`}
+                    to={`/moves?symbol=${encodeURIComponent(r.symbol)}&date=${r.peakDate}&newsSource=${r.newsSource || newsSource}`}
                     className="font-mono underline decoration-dotted underline-offset-2 hover:text-fg"
                   >
                     {r.symbol} {r.peakDate}
                   </Link>{' '}
+                  {r.newsSource && (
+                    <span className="text-xs text-fg-dim">[{newsSourceLabel(r.newsSource)}] </span>
+                  )}
                   <span className="text-xs text-fg-dim">similarity {r.similarity.toFixed(2)} — resemblance, not relatedness proof</span>
                 </li>
               ))}
@@ -148,11 +154,12 @@ export function SignalCard({
                 {signal.followed.map((f) => (
                   <li key={f.caseId} className="font-mono text-xs">
                     <Link
-                      to={`/moves?symbol=${encodeURIComponent(f.symbol)}&date=${f.peakDate}&newsSource=${newsSource}`}
+                      to={`/moves?symbol=${encodeURIComponent(f.symbol)}&date=${f.peakDate}&newsSource=${f.newsSource || newsSource}`}
                       className="underline decoration-dotted underline-offset-2 hover:text-fg"
-                      title={`Open the full ${f.symbol} ${f.peakDate} investigation`}
+                      title={`Open the full ${f.symbol} ${f.peakDate} investigation${f.newsSource ? ` (${newsSourceLabel(f.newsSource)})` : ''}`}
                     >
                       {f.symbol} {f.peakDate}
+                      {f.newsSource ? ` [${newsSourceLabel(f.newsSource)}]` : ''}
                     </Link>
                     : {f.reaction.map((r) => `${r.date} ${r.close}`).join(' · ') || 'no reaction data'}
                   </li>

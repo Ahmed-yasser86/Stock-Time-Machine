@@ -136,6 +136,20 @@ public class HypeResemblanceService : IHypeResemblanceService
                 .OrderByDescending(h => h.Similarity))
             .Take(MaxResults)
             .ToList();
+        // Source provenance: vector payloads carry symbol/peak only, so
+        // stamp each hit from its registry row. Hits without a row keep ""
+        // (unknown — the DTO renders no badge rather than a wrong source).
+        var sourceById = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var row in library)
+        {
+            if (!string.IsNullOrWhiteSpace(row.NewsSource))
+                sourceById[row.Id] = row.NewsSource;
+        }
+        foreach (var hit in merged)
+        {
+            if (sourceById.TryGetValue(hit.CaseId, out var source))
+                hit.NewsSource = source;
+        }
         return merged;
     }
 

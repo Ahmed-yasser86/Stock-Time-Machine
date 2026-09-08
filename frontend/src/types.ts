@@ -302,6 +302,7 @@ export interface NarrativesResponse {
   asOfDate: string;
   newsSource: NewsSource;
   articlesConsidered: number;
+  articlesEvaluated: number;
   articlesClustered: number;
   relevantCount: number;
   irrelevantCount: number;
@@ -347,6 +348,8 @@ export interface HypeCaseRef {
   peakDate: string;
   flags: string[];
   completeness: string;
+  // Registry-case source provenance (optional: absent on older payloads).
+  newsSource?: string;
 }
 
 export interface HypeSignal {
@@ -368,6 +371,9 @@ export interface HypeResemblance {
   peakDate: string;
   similarity: number;
   kind: 'strong' | 'pattern' | 'narrative' | string;
+  // Registry-case source provenance (optional: absent on older payloads,
+  // "" when the vector hit had no registry row).
+  newsSource?: string;
 }
 
 export interface HypeFollowedCase {
@@ -375,6 +381,8 @@ export interface HypeFollowedCase {
   symbol: string;
   peakDate: string;
   reaction: { date: string; close: number }[];
+  // Registry-case source provenance (optional: absent on older payloads).
+  newsSource?: string;
 }
 
 export interface HypeFollowedSummary {

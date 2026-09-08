@@ -120,6 +120,8 @@ public class HypeFilingService : IHypeFilingService
         {
             FormType = filing.FormType ?? "",
             FiledAt = filing.FiledAt,
+            AccessionNumber = filing.AccessionNumber ?? "",
+            Url = filing.Url ?? "",
         };
         string text;
         try

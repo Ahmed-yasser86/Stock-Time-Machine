@@ -390,11 +390,14 @@ public class MoveDetectionService : IMoveDetectionService
 
         try
         {
-            // No take: every cutoff-eligible filing is qualified evidence.
-            // Display pages, downstream caps (briefs take 3 for LLM cost)
-            // slice explicitly where a technical bound actually exists.
+            // No take: every cutoff-eligible filing is qualified evidence —
+            // but movement-level eligibility is the 30-day regulatory window
+            // (reg-v1, extra layer over semantic relevance, which is
+            // untouched). A 2015 filing is never evidence for a 2026 move.
             var filings = await _dataRepo.GetFilingsAsOf(symbol, moveDate, ct);
-            evidence.Filings = filings.ToList();
+            evidence.Filings = RegulatoryEvidence
+                .SelectInWindow(filings, moveDate)
+                .ToList();
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)

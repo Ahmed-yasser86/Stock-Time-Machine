@@ -62,6 +62,52 @@ public class ArrivalMapTests
         Assert.Equal(3, entries.Count(e => e.State == "silent"));
     }
 
+    // Apple 2026-06-09 shape: a 2015 filing in storage must not become
+    // movement-level evidence — first-seen, counts, and tiers stay
+    // window-scoped (reg-v1).
+    [Fact]
+    public void Build_RegulatoryLayer_IsWindowScoped_IgnoresCompanyHistory()
+    {
+        var evidence = new MoveEvidence
+        {
+            Filings = new List<SecFiling>
+            {
+                new() { AccessionNumber = "old", FormType = "10-K", FiledAt = Utc(2015, 7, 20), Url = "https://example.com/old", CompanySymbol = "AAPL" },
+                new() { AccessionNumber = "f1", FormType = "8-K", FiledAt = Utc(2026, 5, 20), Url = "https://example.com/f1", CompanySymbol = "AAPL" },
+                new() { AccessionNumber = "f2", FormType = "8-K", FiledAt = Utc(2026, 6, 4), Url = "https://example.com/f2", CompanySymbol = "AAPL" },
+                new() { AccessionNumber = "f3", FormType = "8-K", FiledAt = Utc(2026, 6, 8), Url = "https://example.com/f3", CompanySymbol = "AAPL" },
+            },
+        };
+
+        var entries = ArrivalMap.Build(new DateOnly(2026, 6, 9), evidence);
+
+        var regulatory = Assert.Single(entries, e => e.Layer == "regulatory");
+        Assert.Equal("observed", regulatory.State);
+        Assert.Equal(Utc(2026, 5, 20), regulatory.FirstSeen);
+        Assert.Equal(
+            "3 filing(s) within the 30-day window (very close: 1, recent: 1, older: 1)",
+            regulatory.Detail);
+    }
+
+    [Fact]
+    public void Build_RegulatoryLayer_EmptyWindow_IsSilentWithWindowDetail()
+    {
+        var evidence = new MoveEvidence
+        {
+            Filings = new List<SecFiling>
+            {
+                new() { AccessionNumber = "old", FormType = "10-K", FiledAt = Utc(2015, 7, 20), Url = "https://example.com/old", CompanySymbol = "AAPL" },
+            },
+        };
+
+        var entries = ArrivalMap.Build(new DateOnly(2026, 6, 9), evidence);
+
+        var regulatory = Assert.Single(entries, e => e.Layer == "regulatory");
+        Assert.Equal("silent", regulatory.State);
+        Assert.Null(regulatory.FirstSeen);
+        Assert.Equal("no filings within the 30-day window", regulatory.Detail);
+    }
+
     [Fact]
     public void Build_IsDeterministic()
     {

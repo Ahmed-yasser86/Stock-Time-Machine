@@ -12,6 +12,11 @@ public record HypeCaseResemblance
     public string CaseId { get; set; } = "";
     public string Symbol { get; set; } = "";
     public DateOnly PeakDate { get; set; }
+    // Source provenance of the matched registry case (stamped from the
+    // registry row at query time — vector payloads carry no source, and
+    // resemblance joins the whole registry by design). Empty when the
+    // vector hit has no registry row (unknown provenance, never assumed).
+    public string NewsSource { get; set; } = "";
     public double Similarity { get; set; }
     // Which layer produced the match: "pattern" (hype_cases) or "narrative"
     // (hype_threads). Shown as a badge so the resemblance story is auditable.

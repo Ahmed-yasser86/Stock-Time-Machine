@@ -275,6 +275,62 @@ public class AiNarrativeTests
     }
 
     [Fact]
+    public async Task NarrativeService_ClassifiesEntireInput_NoGateCap()
+    {
+        // 180 cached articles (> the removed 150 cap): every one must be
+        // evaluated, and the census must sum to the evaluated total.
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("TSLA", Enumerable.Range(1, 180).Select(i =>
+            new NewsArticle
+            {
+                Id = $"g{i}", Title = $"Tesla story number {i} earnings quarter",
+                Description = "Cached body", Source = "GDELT",
+                PublishedAt = new DateTime(2020, 1, 10), Url = $"https://example.com/g{i}",
+                CompanySymbol = "TSLA",
+            }));
+        var sut = new NarrativeService(repo,
+            new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(),
+            new FixedRelevanceStub(), NullLogger<NarrativeService>.Instance);
+
+        var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        Assert.Equal(180, result.ArticlesConsidered);
+        Assert.Equal(180, result.ArticlesEvaluated);
+        Assert.Equal(180, result.RelevantCount + result.IrrelevantCount + result.UncertainCount);
+        Assert.Equal(180, result.RelevantCount);
+        Assert.Equal(180, result.ArticlesClustered);
+    }
+
+    [Fact]
+    public async Task NarrativeService_EmbeddingCeilingIs400()
+    {
+        // 410 relevant articles: classification covers all 410, while the
+        // embedding-cost ceiling caps clustering at 400 (disclosed, not silent).
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("TSLA", Enumerable.Range(1, 410).Select(i =>
+            new NewsArticle
+            {
+                Id = $"h{i}", Title = $"Tesla story number {i} earnings quarter",
+                Description = "Cached body", Source = "GDELT",
+                PublishedAt = new DateTime(2020, 1, 10), Url = $"https://example.com/h{i}",
+                CompanySymbol = "TSLA",
+            }));
+        var sut = new NarrativeService(repo,
+            new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(),
+            new FixedRelevanceStub(), NullLogger<NarrativeService>.Instance);
+
+        var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        Assert.Equal(410, result.ArticlesConsidered);
+        Assert.Equal(410, result.ArticlesEvaluated);
+        Assert.Equal(410, result.RelevantCount);
+        Assert.Equal(400, result.ArticlesClustered);
+        Assert.True(result.RelevantCount > 400);
+    }
+
+    [Fact]
     public async Task BriefSharedThread_MatchesAcrossSymbols()
     {
         var db = NewDb();

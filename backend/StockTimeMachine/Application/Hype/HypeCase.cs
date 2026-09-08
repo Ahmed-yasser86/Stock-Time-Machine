@@ -54,6 +54,12 @@ public class HypeCaseDetail
     public double? UncertaintyScore { get; set; }
     public string? UncertaintyConfidence { get; set; }
     public Dictionary<string, string> CompletenessByArea { get; set; } = new();
+    // Regulatory methodology provenance (additive, reason: reproducibility —
+    // every frozen case records which window rule produced its regulatory
+    // evidence plus the tier distribution actually observed).
+    public int RegulatoryLookbackDays { get; set; }
+    public string RegulatoryMethodology { get; set; } = "";
+    public Dictionary<string, int> RegulatoryTiers { get; set; } = new();
 }
 
 public class HypeCaseThread

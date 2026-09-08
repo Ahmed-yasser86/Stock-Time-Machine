@@ -7,14 +7,19 @@ public sealed record HypeCaseRefDto(
     string Symbol,
     DateOnly PeakDate,
     IReadOnlyList<string> Flags,
-    string Completeness);
+    string Completeness,
+    // Source provenance of the registry case (registry joins are
+    // cross-source by design; the badge tells which source it came from).
+    string NewsSource);
 
 public sealed record HypeResemblanceDto(
     string CaseId,
     string Symbol,
     DateOnly PeakDate,
     double Similarity,
-    string Kind);
+    string Kind,
+    // Same provenance rule as supporters; "" = unknown (no badge).
+    string NewsSource);
 
 public sealed record HypeReactionDto(DateOnly Date, decimal Close);
 
@@ -22,7 +27,9 @@ public sealed record HypeFollowedCaseDto(
     string CaseId,
     string Symbol,
     DateOnly PeakDate,
-    IReadOnlyList<HypeReactionDto> Reaction);
+    IReadOnlyList<HypeReactionDto> Reaction,
+    // Same provenance rule as supporters.
+    string NewsSource);
 
 // Aggregate realized aftermath across supporting cases: first→last recorded
 // close per case, then median/high/low. Description only — the UI labels it

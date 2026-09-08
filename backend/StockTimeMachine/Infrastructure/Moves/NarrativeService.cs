@@ -60,10 +60,11 @@ public class NarrativeService : INarrativeService
             return result;
         }
 
-        // Relevance gate: classify first (bounded), then cluster/embed ONLY
-        // gated articles. Empty map (AI off/failed) passes everything through:
-        // unknown relevance is never treated as irrelevant.
-        const int GateCap = 150;
+        // Relevance gate: classify the ENTIRE input first (no pre-
+        // classification cap — batching/rate limiting control speed, never
+        // completeness), then cluster/embed ONLY gated articles. Empty map
+        // (AI off/failed) passes everything through: unknown relevance is
+        // never treated as irrelevant.
         const int MinRelevantEvidence = 5;
         string? companyName = null;
         string? sector = null;
@@ -72,11 +73,12 @@ public class NarrativeService : INarrativeService
             companyName = info.Name;
             sector = string.IsNullOrWhiteSpace(info.Sector) ? null : info.Sector;
         }
-        var gateInput = articles.Take(GateCap).ToList();
+        var gateInput = articles.ToList();
         var verdicts = await ClassifyQuietly(normalized, asOfDate, companyName, sector, gateInput, ct);
         var gated = gateInput.Where(d => verdicts.Count == 0 || RelevanceService.PassesGate(
             verdicts.TryGetValue(d.Id, out var v) ? v : null)).ToList();
         result.ArticlesConsidered = articles.Count;
+        result.ArticlesEvaluated = gateInput.Count;
         CountVerdicts(result, gateInput, verdicts);
 
         // Bounded retrieval expansion: too few relevant articles triggers a
@@ -95,7 +97,8 @@ public class NarrativeService : INarrativeService
                 articles = (await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct))
                     .Where(n => IsFromSource(n, selected)).ToList();
                 result.ArticlesConsidered = articles.Count;
-                gateInput = articles.Take(GateCap).ToList();
+                gateInput = articles.ToList();
+                result.ArticlesEvaluated = gateInput.Count;
                 verdicts = await ClassifyQuietly(normalized, asOfDate, companyName, sector, gateInput, ct);
                 gated = gateInput.Where(d => verdicts.Count == 0 || RelevanceService.PassesGate(
                     verdicts.TryGetValue(d.Id, out var v) ? v : null)).ToList();
