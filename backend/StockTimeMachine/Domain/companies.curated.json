@@ -1,0 +1,22 @@
+{
+  "TSLA": { "name": "Tesla, Inc.", "cik": "0001318605", "exchange": "NASDAQ", "sector": "Consumer Discretionary", "industry": "Automobiles" },
+  "AAPL": { "name": "Apple Inc.", "cik": "0000320193", "exchange": "NASDAQ", "sector": "Technology", "industry": "Consumer Electronics" },
+  "MSFT": { "name": "Microsoft Corporation", "cik": "0000789019", "exchange": "NASDAQ", "sector": "Technology", "industry": "Software" },
+  "GOOGL": { "name": "Alphabet Inc.", "cik": "0001652044", "exchange": "NASDAQ", "sector": "Communication Services", "industry": "Interactive Media & Services" },
+  "AMZN": { "name": "Amazon.com, Inc.", "cik": "0001018724", "exchange": "NASDAQ", "sector": "Consumer Discretionary", "industry": "Internet & Direct Marketing Retail" },
+  "NVDA": { "name": "NVIDIA Corporation", "cik": "0001045810", "exchange": "NASDAQ", "sector": "Technology", "industry": "Semiconductors" },
+  "META": { "name": "Meta Platforms, Inc.", "cik": "0001326801", "exchange": "NASDAQ", "sector": "Communication Services", "industry": "Interactive Media & Services" },
+  "NFLX": { "name": "Netflix, Inc.", "cik": "0001065280", "exchange": "NASDAQ", "sector": "Communication Services", "industry": "Entertainment" },
+  "BRK.B": { "name": "Berkshire Hathaway Inc.", "cik": "0001067983", "exchange": "NYSE", "sector": "Financials", "industry": "Diversified Financials" },
+  "JPM": { "name": "JPMorgan Chase & Co.", "cik": "0000019617", "exchange": "NYSE", "sector": "Financials", "industry": "Banks" },
+  "V": { "name": "Visa Inc.", "cik": "0001403172", "exchange": "NYSE", "sector": "Financials", "industry": "Diversified Financials" },
+  "JNJ": { "name": "Johnson & Johnson", "cik": "0000200406", "exchange": "NYSE", "sector": "Health Care", "industry": "Pharmaceuticals" },
+  "WMT": { "name": "Walmart Inc.", "cik": "0000024024", "exchange": "NYSE", "sector": "Consumer Staples", "industry": "Food & Staples Retailing" },
+  "PG": { "name": "Procter & Gamble Co.", "cik": "0000080424", "exchange": "NYSE", "sector": "Consumer Staples", "industry": "Household Products" },
+  "MA": { "name": "Mastercard Inc.", "cik": "0001141391", "exchange": "NYSE", "sector": "Financials", "industry": "Diversified Financials" },
+  "UNH": { "name": "UnitedHealth Group Inc.", "cik": "0000731766", "exchange": "NYSE", "sector": "Health Care", "industry": "Health Care Providers & Services" },
+  "HD": { "name": "Home Depot, Inc.", "cik": "0000354950", "exchange": "NYSE", "sector": "Consumer Discretionary", "industry": "Specialty Retail" },
+  "DIS": { "name": "Walt Disney Co.", "cik": "0001001039", "exchange": "NYSE", "sector": "Communication Services", "industry": "Entertainment" },
+  "BAC": { "name": "Bank of America Corp.", "cik": "000070858", "exchange": "NYSE", "sector": "Financials", "industry": "Banks" },
+  "XOM": { "name": "Exxon Mobil Corp.", "cik": "0000034088", "exchange": "NYSE", "sector": "Energy", "industry": "Oil, Gas & Consumable Fuels" }
+}

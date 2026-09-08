@@ -35,7 +35,9 @@ public class JsonCompanyDirectory : ICompanyDirectory
                 symbol.ToUpperInvariant(),
                 entry.Name ?? symbol,
                 entry.Cik ?? "",
-                entry.Exchange ?? "",
+                // Mirror sources vary in case ("Nasdaq" vs "NASDAQ");
+                // display codes are normalized at load.
+                (entry.Exchange ?? "").ToUpperInvariant(),
                 entry.Sector ?? "",
                 entry.Industry ?? "");
         }

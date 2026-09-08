@@ -83,4 +83,35 @@ public class JsonCompanyDirectoryTests
 
         Assert.True(all.Count >= 20);
     }
+
+    [Fact]
+    public void TryGetCik_NonCuratedSecFiler_ResolvesCik()
+    {
+        // Production coverage: any SEC filer resolves, not just the
+        // curated mega-caps (AMD was previously unresolvable).
+        var dir = new JsonCompanyDirectory(NullLogger<JsonCompanyDirectory>.Instance);
+
+        var ok = dir.TryGetCik("AMD", out var cik);
+
+        Assert.True(ok);
+        Assert.Equal("0000002488", cik);
+    }
+
+    [Fact]
+    public void All_HasBroadSecCoverage()
+    {
+        var dir = new JsonCompanyDirectory(NullLogger<JsonCompanyDirectory>.Instance);
+
+        Assert.True(dir.All().Count >= 9000);
+    }
+
+    [Fact]
+    public void Search_CommonTerm_ReturnsCappedResults()
+    {
+        var dir = new JsonCompanyDirectory(NullLogger<JsonCompanyDirectory>.Instance);
+
+        var results = dir.Search("A");
+
+        Assert.Equal(10, results.Count);
+    }
 }
