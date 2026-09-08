@@ -1018,6 +1018,36 @@ public class AiNarrativeTests
     }
 
     [Fact]
+    public void EmbeddingClustering_ThresholdIs075()
+    {
+        // Operating point chosen by offline A/B evaluation (322 cached
+        // vectors, two investigations): average linkage at 0.75 separates
+        // narratives without fragmenting them. Changing this constant
+        // re-tunes every thread in the product — do it with measurements.
+        Assert.Equal(0.75, EmbeddingClustering.SimilarityThreshold);
+    }
+
+    [Fact]
+    public void EmbeddingClustering_BridgePairDoesNotChainClusters()
+    {
+        // Chaining regression (Issue: 166-article mega-thread): two tight
+        // pairs (cos 0.94 within) joined by ONE bridge pair at cos 0.82.
+        // Single/max linkage would fuse all four via the bridge; average
+        // linkage keeps the pairs apart (cross-mean 0.56 < 0.75).
+        // Angles: p1@0°, p2@20°, q1@55°, q2@75°.
+        var topics = EmbeddingClustering.Cluster(new[]
+        {
+            new float[] { 1f, 0f },
+            new float[] { 0.93969f, 0.34202f },
+            new float[] { 0.57358f, 0.81915f },
+            new float[] { 0.25882f, 0.96593f },
+        });
+
+        Assert.Equal(2, topics.Count);
+        Assert.All(topics, t => Assert.Equal(2, t.Count));
+    }
+
+    [Fact]
     public void BriefBatcher_SplitsOverBudget()
     {
         var inputs = new[]

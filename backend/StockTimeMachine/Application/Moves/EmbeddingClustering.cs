@@ -6,6 +6,10 @@ namespace StockTimeMachine;
 // and lives separately: tuning one must never move the other.
 // Deterministic given the same vectors; vectors themselves come from the
 // (versioned, non-deterministic) embedding model — hence the AI label.
+// Linkage is AVERAGE (mean pairwise cosine), not single/max: max-pair
+// merging chains distinct narratives through bridge articles (measured:
+// a 164-article blob with median pairwise 0.70 and 81% of pairs below the
+// threshold). Average linkage keeps the merge bar honest for every member.
 public static class EmbeddingClustering
 {
     public const double SimilarityThreshold = 0.75;
@@ -65,11 +69,17 @@ public static class EmbeddingClustering
 
     private static double ClusterSimilarity(List<int> a, List<int> b, IReadOnlyList<float[]> vectors)
     {
-        double best = 0;
+        // Average linkage: every cross-pair votes, so a lone bridge article
+        // cannot fuse two otherwise weakly related subgroups.
+        double sum = 0;
+        int count = 0;
         foreach (var i in a)
             foreach (var j in b)
-                best = Math.Max(best, Cosine(vectors[i], vectors[j]));
-        return best;
+            {
+                sum += Cosine(vectors[i], vectors[j]);
+                count++;
+            }
+        return count == 0 ? 0 : sum / count;
     }
 
     private static string Short(string title) =>
