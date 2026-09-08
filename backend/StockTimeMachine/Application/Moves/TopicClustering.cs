@@ -25,6 +25,12 @@ public class TopicCluster
     // failed) — never zero-filled.
     public double? RelevanceRate { get; set; }
     public string TopCategory { get; set; } = "";
+    // Why the thread carries TopCategory (Issue 2): the basis that produced
+    // the majority vote ("ai" model verdicts, "rule" keyword match, "user"
+    // admission, "mixed", or "" when unclassified) plus a human sentence.
+    // Empty on rows frozen before this field — readers must tolerate that.
+    public string CategoryBasis { get; set; } = "";
+    public string CategoryRationale { get; set; } = "";
 }
 
 public static class TopicClustering

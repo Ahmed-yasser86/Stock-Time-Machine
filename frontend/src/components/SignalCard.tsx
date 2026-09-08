@@ -42,13 +42,26 @@ export function SignalCard({
           <Badge variant="secondary" className="font-mono">{signal.id}</Badge>
         </div>
         <p className="text-xs text-fg-dim">{signal.trigger}</p>
+        {signal.directionalNote && (
+          <p className="text-xs text-fg-dim italic">{signal.directionalNote}</p>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
           <p className="text-xs font-medium text-fg-dim">Triggering evidence</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
             {signal.triggerEvidence.map((e, i) => (
-              <li key={i}>{e}</li>
+              <li key={i}>
+                {e.text}
+                {e.threadSize > 0 && (
+                  <span className="text-xs text-fg-dim">
+                    {' '}· {e.threadSize} article{e.threadSize === 1 ? '' : 's'}
+                    {e.relevanceRate !== null && e.relevanceRate !== undefined
+                      ? ` · relevance ${e.relevanceRate.toFixed(1)}` : ''}
+                    {e.categoryBasis ? ` · ${e.categoryBasis}` : ''}
+                  </span>
+                )}
+              </li>
             ))}
           </ul>
         </div>
@@ -81,6 +94,9 @@ export function SignalCard({
               ))}
             </div>
           )}
+          {signal.regimeNote && (
+            <p className="mt-1 text-xs text-fg-dim italic">{signal.regimeNote}</p>
+          )}
         </div>
 
         {signal.resemblance && signal.resemblance.length > 0 && (
@@ -105,6 +121,9 @@ export function SignalCard({
                 </li>
               ))}
             </ul>
+            {signal.regimeNote && (
+              <p className="mt-1 text-xs text-fg-dim italic">{signal.regimeNote}</p>
+            )}
           </div>
         )}
 

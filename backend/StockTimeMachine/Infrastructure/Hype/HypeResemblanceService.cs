@@ -150,7 +150,11 @@ public class HypeResemblanceService : IHypeResemblanceService
             if (sourceById.TryGetValue(hit.CaseId, out var source))
                 hit.NewsSource = source;
         }
-        return merged;
+        // No hindsight (Issue 1): resemblance may only recall peaks no
+        // later than the current one. The bound comes from the current
+        // case itself, so every retrieval path (structural, hybrid,
+        // narrative, in-memory) is covered by this single drop.
+        return merged.Where(h => h.PeakDate <= current.PeakDate).ToList();
     }
 
     private async Task<IReadOnlyList<HypeCaseResemblance>> MatchStructuralAsync(

@@ -93,7 +93,7 @@ export const api = {
       `/api/timemachine/hype/signals?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
         (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : ''),
     ),
-  hypeBrief: (body: { symbol: string; date: string; newsSource?: NewsSource; peakDate: string; signalId: string }) =>
+  hypeBrief: (body: { symbol: string; date: string; newsSource?: NewsSource; peakDate: string; signalId: string; caseId?: string }) =>
     request<{ brief: ClusterBrief | null }>(`/api/timemachine/hype/brief`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

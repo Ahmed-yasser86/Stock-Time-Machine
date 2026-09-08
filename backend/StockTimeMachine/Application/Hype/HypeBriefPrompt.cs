@@ -177,6 +177,16 @@ public static class HypeBriefPrompt
     {
         // Window + tier framing (reg-v1): only in-window filings are listed
         // at all — history outside the window never reaches this section.
+        // Legacy guard (Issue 3): rows never migrated carry no methodology
+        // or tiers; they render an explicit label, never a silent fallback.
+        if (string.IsNullOrWhiteSpace(detail.RegulatoryMethodology) &&
+            detail.RegulatoryTiers.Count == 0)
+        {
+            sb.AppendLine("- Regulatory: evidence not yet migrated to reg-v1 — proximity tiers unavailable for this peak (case fact).");
+            if (detail.Evidence.Filings.Count > 0)
+                sb.AppendLine($"- Regulatory filings ({detail.Evidence.Filings.Count}): {string.Join("; ", detail.Evidence.Filings.Select(f => $"{f.FormType} filed {f.FiledAt:yyyy-MM-dd}"))} (case fact, unwindowed legacy row).");
+            return;
+        }
         var lookback = detail.RegulatoryLookbackDays > 0
             ? detail.RegulatoryLookbackDays
             : RegulatoryEvidence.LookbackDays;
@@ -192,7 +202,8 @@ public static class HypeBriefPrompt
         detail.RegulatoryTiers.TryGetValue(RegulatoryEvidence.Tiers.VeryClose, out var veryClose);
         detail.RegulatoryTiers.TryGetValue(RegulatoryEvidence.Tiers.Recent, out var recent);
         detail.RegulatoryTiers.TryGetValue(RegulatoryEvidence.Tiers.Older, out var older);
-        sb.AppendLine($"- Regulatory window: {lookback} days before {detail.PeakDate:yyyy-MM-dd} (methodology {method}): {filings.Count} eligible filing(s) (very close: {veryClose}, recent: {recent}, older: {older}) (case fact).");
+        // Tier labels name time proximity only, never importance (Issue 5).
+        sb.AppendLine($"- Regulatory window: {lookback} days before {detail.PeakDate:yyyy-MM-dd} (methodology {method}): {filings.Count} eligible filing(s) (filed 0–1 days ago: {veryClose}, filed 2–7 days ago: {recent}, filed 8–{lookback} days ago: {older}; proximity only — not importance; a routine filing filed yesterday outranks no enforcement action) (case fact).");
         sb.AppendLine($"- Regulatory filings ({filings.Count}): {string.Join("; ", filings.Select(f => $"{f.FormType} filed {f.FiledAt:yyyy-MM-dd}"))} (case fact).");
     }
 

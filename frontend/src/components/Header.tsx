@@ -60,6 +60,10 @@ export function Header() {
           <NavLink to="/hype" className={linkCls}>
             Hype signals
           </NavLink>
+          {/* Sector link is additive (reason: Issue 10 sector sweep): no existing link altered. */}
+          <NavLink to="/sector" className={linkCls}>
+            Sector
+          </NavLink>
           <NavLink to="/methodology" className={linkCls}>
             Methodology
           </NavLink>
@@ -88,6 +92,10 @@ export function Header() {
           {/* Hype link is additive (reason: hype feature Step 3): no existing link altered. */}
           <NavLink to="/hype" className={linkCls} onClick={() => setOpen(false)}>
             <span className="block">Hype signals</span>
+          </NavLink>
+          {/* Sector link is additive (reason: Issue 10 sector sweep): no existing link altered. */}
+          <NavLink to="/sector" className={linkCls} onClick={() => setOpen(false)}>
+            <span className="block">Sector</span>
           </NavLink>
           <NavLink to="/methodology" className={linkCls} onClick={() => setOpen(false)}>
             <span className="block">Methodology</span>

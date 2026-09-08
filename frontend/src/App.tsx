@@ -12,6 +12,9 @@ import Compare from './pages/Compare';
 // Hype route is additive (reason: Step 3 of hype-intelligence-plan): no
 // existing route or screen is altered by its presence.
 import Hype from './pages/Hype';
+// Sector route is additive (reason: Issue 10 sector sweep): no existing
+// route or screen is altered by its presence.
+import Sector from './pages/Sector';
 import { StageNav } from './components/StageNav';
 
 export default function App() {
@@ -38,6 +41,7 @@ export default function App() {
             <Route path="/moves" element={<Moves />} />
             <Route path="/compare" element={<Compare />} />
 <Route path="/hype" element={<Hype />} />
+<Route path="/sector" element={<Sector />} />
             {/* The legacy status dashboard is retired; the investigation is the product. */}
             <Route path="/dashboard" element={<Navigate to="/investigate" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />

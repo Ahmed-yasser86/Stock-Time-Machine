@@ -256,7 +256,11 @@ export function NarrativeTopics({
                   <p className="mt-1 text-xs text-fg-dim">
                     Relevant {Math.round(t.relevanceRate * t.articleIds.length)}/{t.articleIds.length}
                     {t.topCategory ? ` · ${t.topCategory}` : ''} — semantic verdicts, verify against the articles
+                    {t.categoryBasis ? ` · category: ${t.categoryBasis}` : ''}
                   </p>
+                )}
+                {t.categoryRationale && (
+                  <p className="mt-1 text-xs text-fg-dim italic">{t.categoryRationale}</p>
                 )}
                 {NON_ASCII.test(t.representativeTitle) && !t.brief && (
                   <ThreadGist

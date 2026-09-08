@@ -155,7 +155,7 @@ public class HypeTests
         var match = HypeSignals.Evaluate(detail).SingleOrDefault(m => m.SignalId == "regulatory-overhang");
 
         Assert.NotNull(match);
-        Assert.Contains(match!.TriggerEvidence, e => e.Contains("tense regime on 3 pre-peak days"));
+        Assert.Contains(match!.TriggerEvidence, e => e.RenderedText.Contains("tense regime on 3 pre-peak days"));
     }
 
     [Fact]
@@ -200,10 +200,15 @@ public class HypeTests
     }
 
     [Fact]
-    public void Signal_LeadershipTurbulence_FiresOnManagementThread()
+    public void Signal_LeadershipTurbulence_FiresOnTwoManagementThreads()
     {
+        // Issue 2 corroboration: a lone single thread no longer fires alone
+        // (see LeadershipTurbulence_SingleLoneThread_DoesNotFire); two
+        // MANAGEMENT threads corroborate each other.
         var d = new DateTime(2026, 6, 10);
-        var detail = Detail(Move(), Topics(Thread("MANAGEMENT", "CEO steps down abruptly", d, d)));
+        var detail = Detail(Move(), Topics(
+            Thread("MANAGEMENT", "CEO steps down abruptly", d, d),
+            Thread("MANAGEMENT", "CFO resigns unexpectedly", d, d)));
 
         Assert.Contains(HypeSignals.Evaluate(detail), m => m.SignalId == "leadership-turbulence");
     }
@@ -489,6 +494,159 @@ public class HypeTests
 
         Assert.Equal(2, qualified.Count);
         Assert.Contains(HypeSignals.Evaluate(detail), m => m.SignalId == "earnings-chatter");
+    }
+
+    [Fact]
+    public void LeadershipTurbulence_SingleLoneThread_DoesNotFire()
+    {
+        // Issue 2 corroboration: one lone single-article MANAGEMENT thread
+        // is a mention, not turbulence — no second feature, no signal.
+        var detail = DatedCase(DatedThread("MANAGEMENT", "CEO steps down", "m1", new DateOnly(2026, 6, 4)));
+
+        Assert.DoesNotContain(HypeSignals.Evaluate(detail), m => m.SignalId == "leadership-turbulence");
+    }
+
+    [Fact]
+    public void LeadershipTurbulence_SingleThreadPlusTenseRegime_FiresWithBasis()
+    {
+        // Same lone thread plus a tense regime day: corroborated, fires,
+        // and the evidence carries the stored category basis.
+        var thread = DatedThread("MANAGEMENT", "CEO steps down amid probe", "m1", new DateOnly(2026, 6, 4));
+        thread.CategoryBasis = "rule:keyword 'ceo'";
+        var detail = DatedCase(thread);
+        detail.RegimePath["2026-06-01"] = MarketRegimes.Tense;
+
+        var match = Assert.Single(HypeSignals.Evaluate(detail),
+            m => m.SignalId == "leadership-turbulence");
+        Assert.Contains("(rule:keyword 'ceo')", match.TriggerEvidence.Single().RenderedText);
+    }
+
+    [Fact]
+    public void TriggerEvidence_LegacyThread_RendersUntracedBasis()
+    {
+        // Issue 2: rows frozen before basis storage render an explicit
+        // untraced label, never a blank.
+        var detail = DatedCase(
+            DatedThread("FINANCIAL", "Earnings beat again", "a1", new DateOnly(2026, 6, 4)),
+            DatedThread("FINANCIAL", "Revenue guidance raised", "a2", new DateOnly(2026, 6, 3)));
+
+        var match = Assert.Single(HypeSignals.Evaluate(detail),
+            m => m.SignalId == "earnings-chatter");
+        Assert.All(match.TriggerEvidence,
+            e => Assert.Contains("(basis untraced in frozen case)", e.RenderedText));
+    }
+
+    [Fact]
+    public void CategoryBasis_RuleMajority_NamesMatchedKeyword()
+    {
+        // Issue 2: RULE voters surface the exact matched keyword + counts.
+        var rated = new List<ArticleRelevance?>
+        {
+            new() { Relevant = true, Category = "LEGAL", DecisionSource = RelevanceSources.Rule,
+                Reason = "Company mentioned with a material legal signal (\"sued\"). Rule fallback; AI review supersedes." },
+            new() { Relevant = true, Category = "LEGAL", DecisionSource = RelevanceSources.Rule,
+                Reason = "Company mentioned with a material legal signal (\"lawsuit\"). Rule fallback; AI review supersedes." },
+            new() { Relevant = false, Category = "UNRELATED", DecisionSource = RelevanceSources.Rule, Reason = "x" },
+        };
+
+        var (basis, rationale) = NarrativeService.ResolveCategoryBasis("LEGAL", rated);
+
+        Assert.Equal("rule:keyword 'sued'", basis);
+        Assert.Contains("2 of 3 rated members classified LEGAL by keyword rule (matched 'sued')", rationale);
+    }
+
+    [Fact]
+    public void CategoryBasis_AiMajority_NamesAiVerdicts()
+    {
+        var rated = new List<ArticleRelevance?>
+        {
+            new() { Relevant = true, Category = "REGULATORY", DecisionSource = RelevanceSources.Ai,
+                Reason = "Model: discusses AI policy appointment." },
+            new() { Relevant = true, Category = "REGULATORY", DecisionSource = RelevanceSources.Ai,
+                Reason = "Model: discusses AI rules." },
+        };
+
+        var (basis, rationale) = NarrativeService.ResolveCategoryBasis("REGULATORY", rated);
+
+        Assert.Equal("ai:gemini-verdict", basis);
+        Assert.Contains("2 of 2 rated members classified REGULATORY by AI verdicts", rationale);
+    }
+
+    [Fact]
+    public void CategoryBasis_NoVoters_ReturnsEmpty()
+    {
+        var (basis, rationale) = NarrativeService.ResolveCategoryBasis("LEGAL",
+            new List<ArticleRelevance?>());
+
+        Assert.Equal("", basis);
+        Assert.Equal("", rationale);
+    }
+
+    [Fact]
+    public void MatchesFrozen_SameVersionSameThreads_Matches()
+    {
+        // Issue 4: identical version + thread count reads as frozen-current.
+        var live = DatedCase(DatedThread("FINANCIAL", "t1", "a1", new DateOnly(2026, 6, 4)));
+        live.ProjectionVersion = HypeCaseProjection.ProjectionVersion;
+        var frozen = DatedCase(DatedThread("FINANCIAL", "t1", "a1", new DateOnly(2026, 6, 4)));
+        frozen.ProjectionVersion = HypeCaseProjection.ProjectionVersion;
+
+        Assert.True(HypeCaseProjection.MatchesFrozen(frozen, live));
+    }
+
+    [Fact]
+    public void MatchesFrozen_DivergedOrLegacy_DoesNotMatch()
+    {
+        // Different thread count (cache growth / new AI run) → diverged.
+        // Empty version (legacy row) → always diverged, never assumed.
+        var live = DatedCase(
+            DatedThread("FINANCIAL", "t1", "a1", new DateOnly(2026, 6, 4)),
+            DatedThread("FINANCIAL", "t2", "a2", new DateOnly(2026, 6, 3)));
+        live.ProjectionVersion = HypeCaseProjection.ProjectionVersion;
+        var frozen = DatedCase(DatedThread("FINANCIAL", "t1", "a1", new DateOnly(2026, 6, 4)));
+        frozen.ProjectionVersion = HypeCaseProjection.ProjectionVersion;
+
+        Assert.False(HypeCaseProjection.MatchesFrozen(frozen, live));
+
+        var legacy = DatedCase(DatedThread("FINANCIAL", "t1", "a1", new DateOnly(2026, 6, 4)));
+        Assert.False(HypeCaseProjection.MatchesFrozen(legacy, live));
+        Assert.False(HypeCaseProjection.MatchesFrozen(null, live));
+        Assert.False(HypeCaseProjection.MatchesFrozen(frozen, null));
+    }
+
+    [Fact]
+    public void TryParseCaseId_AcceptsRegistryFormat_RejectsGarbage()
+    {
+        var parsed = HypeCaseProjection.TryParseCaseId("nvda:2026-06-05");
+        Assert.NotNull(parsed);
+        Assert.Equal("NVDA", parsed.Value.Symbol);
+        Assert.Equal(new DateOnly(2026, 6, 5), parsed.Value.PeakDate);
+
+        Assert.Null(HypeCaseProjection.TryParseCaseId(null));
+        Assert.Null(HypeCaseProjection.TryParseCaseId(""));
+        Assert.Null(HypeCaseProjection.TryParseCaseId("NVDA"));
+        Assert.Null(HypeCaseProjection.TryParseCaseId("NVDA:not-a-date"));
+    }
+
+    [Fact]
+    public void TriggerEvidence_CarriesThreadMetadata_ForUserWeighting()
+    {
+        // Issue 7: thread-backed items carry size/relevance/category/basis;
+        // non-thread lines (regime spans) carry text only, zero-filled.
+        var thread = DatedThread("MANAGEMENT", "CEO steps down amid probe", "m1", new DateOnly(2026, 6, 4));
+        thread.CategoryBasis = "rule:keyword 'ceo'";
+        thread.RelevanceRate = 1.0;
+        var detail = DatedCase(thread);
+        detail.RegimePath["2026-06-01"] = MarketRegimes.Tense;
+
+        var match = Assert.Single(HypeSignals.Evaluate(detail),
+            m => m.SignalId == "leadership-turbulence");
+        var item = Assert.Single(match.TriggerEvidence);
+        Assert.Equal(1, item.ThreadSize);
+        Assert.Equal(1.0, item.RelevanceRate);
+        Assert.Equal("MANAGEMENT", item.Category);
+        Assert.Equal("rule:keyword 'ceo'", item.CategoryBasis);
+        Assert.Contains("(rule:keyword 'ceo')", item.RenderedText);
     }
 
     [Fact]
@@ -994,15 +1152,44 @@ public class HypeTests
         var current = ResemblanceDetail(("a", "Current article"));
         var library = new List<HypeCase>
         {
-            ResemblanceRow("NFLX:2026-08-01", ResemblanceDetail(("b", "Library article")),
-                peak: new DateOnly(2026, 8, 1)),
+            // Past + distant: recallable (Issue 1 — future peaks never are,
+            // so this fixture peaks 2026-05-01, not 2026-08-01).
+            ResemblanceRow("NFLX:2026-05-01", ResemblanceDetail(("b", "Library article")),
+                peak: new DateOnly(2026, 5, 1)),
         };
 
         var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
 
         var match = Assert.Single(found);
-        Assert.Equal("NFLX:2026-08-01", match.CaseId);
+        Assert.Equal("NFLX:2026-05-01", match.CaseId);
         Assert.Equal(0.8, match.Similarity, 3);
+    }
+
+    [Fact]
+    public async Task Resemblance_ExcludesFuturePeaks()
+    {
+        // Issue 1: a highly similar case peaking after the current one is
+        // hindsight, not precedent — excluded from resemblance entirely.
+        var repo = VectorRepo(new Dictionary<string, float[]>
+        {
+            ["a"] = new float[] { 1, 0 },
+            ["b"] = new float[] { 0.8f, 0.6f },
+            ["c"] = new float[] { 0.8f, 0.6f },
+        });
+        var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()));
+        var current = ResemblanceDetail(("a", "Current article"));
+        var library = new List<HypeCase>
+        {
+            ResemblanceRow("MSFT:2026-06-12", ResemblanceDetail(("b", "Past article")),
+                peak: new DateOnly(2026, 6, 12), symbol: "MSFT"),
+            ResemblanceRow("MSFT:2026-06-20", ResemblanceDetail(("c", "Future article")),
+                peak: new DateOnly(2026, 6, 20), symbol: "MSFT"),
+        };
+
+        var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
+
+        var match = Assert.Single(found);
+        Assert.Equal("MSFT:2026-06-12", match.CaseId);
     }
 
     [Fact]
@@ -1028,8 +1215,10 @@ public class HypeTests
         var current = ResemblanceDetail(("a", "Current article"));
         var library = new List<HypeCase>
         {
-            ResemblanceRow("NFLX:2026-06-25", ResemblanceDetail(("b", "Neighbor article")),
-                peak: new DateOnly(2026, 6, 25)),
+            // Past neighbor (Issue 1 guard would also drop a future row, so
+            // this fixture peaks 2026-06-05 to isolate the 30-day rule).
+            ResemblanceRow("NFLX:2026-06-05", ResemblanceDetail(("b", "Neighbor article")),
+                peak: new DateOnly(2026, 6, 5)),
         };
 
         var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
@@ -1050,10 +1239,12 @@ public class HypeTests
         var current = ResemblanceDetail(("a", "Current article"));
         var library = new List<HypeCase>
         {
-            ResemblanceRow("NFLX:2026-08-01", ResemblanceDetail(("b", "Distant article")),
-                peak: new DateOnly(2026, 8, 1)),
-            ResemblanceRow("MSFT:2026-06-18", ResemblanceDetail(("c", "Other symbol article")),
-                peak: new DateOnly(2026, 6, 18), symbol: "MSFT"),
+            // Both peaks predate the current 2026-06-15 (Issue 1): distant
+            // same-symbol past + near other-symbol past both stay recallable.
+            ResemblanceRow("NFLX:2026-05-01", ResemblanceDetail(("b", "Distant article")),
+                peak: new DateOnly(2026, 5, 1)),
+            ResemblanceRow("MSFT:2026-06-12", ResemblanceDetail(("c", "Other symbol article")),
+                peak: new DateOnly(2026, 6, 12), symbol: "MSFT"),
         };
 
         var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
@@ -1076,8 +1267,11 @@ public class HypeTests
         store.Setup(s => s.SearchAsync(It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<VectorHit>
             {
-                new("b", new float[] { 0.8f, 0.6f }, "NFLX:2026-08-01", "NFLX", new DateOnly(2026, 8, 1)),
-                new("c", new float[] { 1, 0 }, "NFLX:2026-06-25", "NFLX", new DateOnly(2026, 6, 25)),
+                // Distant past survives; the neighbor is dropped by the
+                // 30-day rule and the future hit by the Issue 1 date bound.
+                new("b", new float[] { 0.8f, 0.6f }, "MSFT:2026-06-12", "MSFT", new DateOnly(2026, 6, 12)),
+                new("c", new float[] { 1, 0 }, "NFLX:2026-06-05", "NFLX", new DateOnly(2026, 6, 5)),
+                new("d", new float[] { 0.8f, 0.6f }, "MSFT:2026-06-20", "MSFT", new DateOnly(2026, 6, 20)),
             });
         var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()), store.Object);
         var current = ResemblanceDetail(("a", "Current article"));
@@ -1085,11 +1279,11 @@ public class HypeTests
         var found = await sut.FindResemblingAsync(current, new[] { "a" }, new List<HypeCase>());
 
         // The vector path ran (current vector cached locally): only the
-        // distant case survives exclusion.
+        // distant past case survives exclusion.
         store.Verify(s => s.SearchAsync(It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
         Assert.Single(found);
-        Assert.Equal("NFLX:2026-08-01", found[0].CaseId);
+        Assert.Equal("MSFT:2026-06-12", found[0].CaseId);
     }
 
     [Fact]
@@ -1106,14 +1300,14 @@ public class HypeTests
         var current = ResemblanceDetail(("a", "Current article"));
         var library = new List<HypeCase>
         {
-            ResemblanceRow("NFLX:2026-08-01", ResemblanceDetail(("b", "Library article")),
-                peak: new DateOnly(2026, 8, 1)),
+            ResemblanceRow("NFLX:2026-05-01", ResemblanceDetail(("b", "Library article")),
+                peak: new DateOnly(2026, 5, 1)),
         };
 
         var found = await sut.FindResemblingAsync(current, new[] { "a" }, library);
 
         Assert.Single(found);
-        Assert.Equal("NFLX:2026-08-01", found[0].CaseId);
+        Assert.Equal("NFLX:2026-05-01", found[0].CaseId);
     }
 
     [Fact]
@@ -1252,13 +1446,15 @@ public class HypeTests
         var store = DualStore(
             new List<VectorHit>
             {
-                new("B", structuralQuery, "NVDA:2026-08-01", "NVDA", new DateOnly(2026, 8, 1)),
-                new("C", structuralQuery, "NVDA:2026-08-02", "NVDA", new DateOnly(2026, 8, 2)),
+                // Past peaks only (Issue 1): future hits are dropped before
+                // merge, so these fixtures peak in May, not August.
+                new("B", structuralQuery, "NVDA:2026-05-01", "NVDA", new DateOnly(2026, 5, 1)),
+                new("C", structuralQuery, "NVDA:2026-05-02", "NVDA", new DateOnly(2026, 5, 2)),
             },
             new List<VectorHit>
             {
-                new("B", hybridQuery, "NVDA:2026-08-01", "NVDA", new DateOnly(2026, 8, 1)),
-                new("D", hybridQuery, "MSFT:2026-08-01", "MSFT", new DateOnly(2026, 8, 1)),
+                new("B", hybridQuery, "NVDA:2026-05-01", "NVDA", new DateOnly(2026, 5, 1)),
+                new("D", hybridQuery, "MSFT:2026-05-01", "MSFT", new DateOnly(2026, 5, 1)),
             });
         var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()), store.Object);
 
@@ -1266,9 +1462,9 @@ public class HypeTests
 
         Assert.Equal(3, found.Count);
         Assert.Equal(HypeResemblanceKinds.Strong, found[0].Kind);
-        Assert.Equal("NVDA:2026-08-01", found[0].CaseId);
-        Assert.Contains(found, f => f.CaseId == "NVDA:2026-08-02" && f.Kind == HypeResemblanceKinds.Pattern);
-        Assert.Contains(found, f => f.CaseId == "MSFT:2026-08-01" && f.Kind == HypeResemblanceKinds.Narrative);
+        Assert.Equal("NVDA:2026-05-01", found[0].CaseId);
+        Assert.Contains(found, f => f.CaseId == "NVDA:2026-05-02" && f.Kind == HypeResemblanceKinds.Pattern);
+        Assert.Contains(found, f => f.CaseId == "MSFT:2026-05-01" && f.Kind == HypeResemblanceKinds.Narrative);
     }
 
     [Fact]
@@ -1289,7 +1485,9 @@ public class HypeTests
             new List<VectorHit>(),
             new List<VectorHit>
             {
-                new("b", hybridQuery, "NFLX:2026-08-01", "NFLX", new DateOnly(2026, 8, 1)),
+                // Past peak (Issue 1): a future hit would be dropped by the
+                // date bound instead of exercising the structural skip.
+                new("b", hybridQuery, "NFLX:2026-05-01", "NFLX", new DateOnly(2026, 5, 1)),
             });
         var sut = ResemblanceSut(repo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()), store.Object);
 
@@ -1319,5 +1517,70 @@ public class HypeTests
         var emptyRepo = VectorRepo(new Dictionary<string, float[]>());
         var uncached = ResemblanceSut(emptyRepo, new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()));
         Assert.Empty(await uncached.FindResemblingAsync(current, new[] { "a" }, library));
+    }
+
+    [Fact]
+    public void BriefPrompt_LegacyRow_RendersMigrationLabel_NotSilentFallback()
+    {
+        // Issue 3 guard: a pre-reg-v1 row (no methodology, no tiers) must
+        // say so explicitly instead of degrading to default wording.
+        var detail = Detail(Move(), Topics());
+        detail.RegulatoryMethodology = "";
+        detail.RegulatoryTiers.Clear();
+        detail.Evidence.Filings.Add(new HypeCaseFiling
+        {
+            FormType = "8-K",
+            FiledAt = new DateTime(2026, 6, 10),
+            AccessionNumber = "acc-1",
+            Url = "https://sec.gov/acc-1",
+        });
+        var match = new HypeSignalMatch { SignalId = "regulatory-overhang", Name = "Regulatory overhang" };
+        var prompt = HypeBriefPrompt.Build("NFLX", new DateOnly(2026, 6, 15), match, detail,
+            new List<HypeBriefArticle>());
+
+        Assert.Contains("not yet migrated to reg-v1 — proximity tiers unavailable", prompt);
+        Assert.Contains("unwindowed legacy row", prompt);
+    }
+
+    [Fact]
+    public void BriefPrompt_MigratedRow_ShowsProximityRanges_NotSeverityLabels()
+    {
+        // Issue 5: tier presentation names time ranges + proximity disclaimer.
+        var detail = Detail(Move(), Topics());
+        detail.RegulatoryLookbackDays = 30;
+        detail.RegulatoryMethodology = "reg-v1";
+        detail.RegulatoryTiers = new Dictionary<string, int>
+        {
+            [RegulatoryEvidence.Tiers.VeryClose] = 1,
+            [RegulatoryEvidence.Tiers.Recent] = 1,
+            [RegulatoryEvidence.Tiers.Older] = 1,
+        };
+        detail.Evidence.Filings.Add(new HypeCaseFiling
+        {
+            FormType = "8-K",
+            FiledAt = new DateTime(2026, 6, 14),
+            AccessionNumber = "acc-2",
+            Url = "https://sec.gov/acc-2",
+        });
+        var match = new HypeSignalMatch { SignalId = "regulatory-overhang", Name = "Regulatory overhang" };
+        var prompt = HypeBriefPrompt.Build("NFLX", new DateOnly(2026, 6, 15), match, detail,
+            new List<HypeBriefArticle>());
+
+        Assert.Contains("filed 0–1 days ago: 1", prompt);
+        Assert.Contains("filed 2–7 days ago: 1", prompt);
+        Assert.Contains("filed 8–30 days ago: 1", prompt);
+        Assert.Contains("proximity only — not importance", prompt);
+    }
+
+    [Fact]
+    public void SignalCatalog_AllSignals_CarryNonDirectionalNote()
+    {
+        // Issue 6: every catalog definition discloses non-directionality.
+        Assert.Equal(6, HypeSignalCatalog.All.Count);
+        foreach (var def in HypeSignalCatalog.All)
+        {
+            Assert.True(def.NonDirectional);
+            Assert.False(string.IsNullOrWhiteSpace(def.DirectionalNote));
+        }
     }
 }

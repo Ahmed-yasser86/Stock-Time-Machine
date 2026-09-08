@@ -12,6 +12,10 @@ public static class HypeCaseProjection
     // Pre-peak narrative window in calendar days (news carries timestamps).
     public const int PrePeakDays = 20;
 
+    // Projection code version (Issue 4): stamped on every built detail so
+    // live recomputation can be compared against frozen registry rows.
+    public const string ProjectionVersion = "hcp-v1";
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static HypeCase Build(MovesWindow window, KeyMove move, NarrativeTopicsResult? topics)
@@ -177,6 +181,11 @@ public static class HypeCaseProjection
                     [RegulatoryEvidence.Tiers.Older] = t.Older,
                 },
             },
+            ProjectionVersion = ProjectionVersion,
+            // Decision-date anchored (not wall-clock): the projection must
+            // stay byte-deterministic for identical inputs, so "computed at"
+            // means the investigation date it was computed for.
+            ComputedAtUtc = window.DecisionDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
         };
 
         return new HypeCase
@@ -194,6 +203,31 @@ public static class HypeCaseProjection
             CaseJson = JsonSerializer.Serialize(detail, Json),
             CreatedAtUtc = DateTime.UtcNow,
         };
+    }
+
+    // Frozen-vs-live comparison (Issue 4, pure): the live recomputation
+    // matches the frozen row only when both were built by the same
+    // projection version with the same thread count. Anything else —
+    // including legacy rows with no version — reads as diverged, and the
+    // caller labels it instead of silently presenting recomputed data as
+    // the frozen record.
+    public static bool MatchesFrozen(HypeCaseDetail? frozen, HypeCaseDetail? live) =>
+        frozen is not null && live is not null &&
+        frozen.ProjectionVersion == ProjectionVersion &&
+        live.ProjectionVersion == ProjectionVersion &&
+        frozen.PrePeakThreads.Count == live.PrePeakThreads.Count;
+
+    // Registry case id format "SYMBOL:yyyy-MM-dd" (same construction as
+    // Build). Parsed for the frozen-row brief path; null when malformed.
+    public static (string Symbol, DateOnly PeakDate)? TryParseCaseId(string? caseId)
+    {
+        if (string.IsNullOrWhiteSpace(caseId))
+            return null;
+        var parts = caseId.Split(':');
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) ||
+            !DateOnly.TryParse(parts[1], out var peak))
+            return null;
+        return (parts[0].Trim().ToUpperInvariant(), peak);
     }
 
     // Trigger/vote qualification (retrospective dating rule): a stored thread
@@ -231,6 +265,8 @@ public static class HypeCaseProjection
         ArticleDates = new Dictionary<string, DateOnly>(t.ArticleDates ?? new Dictionary<string, DateOnly>()),
         RelevanceRate = t.RelevanceRate,
         TopCategory = t.TopCategory ?? "",
+        CategoryBasis = t.CategoryBasis ?? "",
+        CategoryRationale = t.CategoryRationale ?? "",
         BriefSummary = t.Brief is null || string.IsNullOrWhiteSpace(t.Brief.Summary)
             ? null
             : t.Brief.Summary.Length > 2000 ? t.Brief.Summary.Substring(0, 2000) : t.Brief.Summary,

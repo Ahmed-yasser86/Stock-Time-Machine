@@ -60,6 +60,14 @@ public class HypeCaseDetail
     public int RegulatoryLookbackDays { get; set; }
     public string RegulatoryMethodology { get; set; } = "";
     public Dictionary<string, int> RegulatoryTiers { get; set; } = new();
+    // Projection provenance (Issue 4): which projection code version built
+    // this detail and for which investigation date (decision-date anchored,
+    // never wall-clock, so identical inputs stay byte-identical). Live
+    // recomputation is compared against the frozen row to label divergence;
+    // empty version = frozen before versioning (legacy — always labeled,
+    // never assumed current).
+    public string ProjectionVersion { get; set; } = "";
+    public DateTime ComputedAtUtc { get; set; }
 }
 
 public class HypeCaseThread
@@ -75,6 +83,10 @@ public class HypeCaseThread
     public Dictionary<string, DateOnly> ArticleDates { get; set; } = new();
     public double? RelevanceRate { get; set; }
     public string TopCategory { get; set; } = "";
+    // Category provenance (Issue 2, carried from TopicCluster): basis +
+    // rationale, or "" on rows frozen before this field ("basis untraced").
+    public string CategoryBasis { get; set; } = "";
+    public string CategoryRationale { get; set; } = "";
     public string? BriefSummary { get; set; }
 }
 

@@ -23,7 +23,7 @@ public static class HypeSignals
                 SignalId = "earnings-chatter",
                 Name = "Earnings-chatter clustering",
                 TriggerEvidence = financial
-                    .Select(t => $"FINANCIAL thread: {t.RepresentativeTitle}")
+                    .Select(t => Ev(t, $"FINANCIAL thread: {t.RepresentativeTitle} ({BasisLabel(t)})"))
                     .ToList(),
                 TriggerThreadIds = financial.SelectMany(t => t.ArticleIds).Distinct().ToList(),
             });
@@ -42,8 +42,11 @@ public static class HypeSignals
                 SignalId = "regulatory-overhang",
                 Name = "Regulatory overhang",
                 TriggerEvidence = legal
-                    .Select(t => $"{t.TopCategory} thread: {t.RepresentativeTitle}")
-                    .Concat(new[] { $"tense regime on {tenseDays.Count} pre-peak days ({tenseDays.First()}→{tenseDays.Last()})" })
+                    .Select(t => Ev(t, $"{t.TopCategory} thread: {t.RepresentativeTitle} ({BasisLabel(t)})"))
+                    .Concat(new[] { new TriggerEvidenceItem
+                    {
+                        Text = $"tense regime on {tenseDays.Count} pre-peak days ({tenseDays.First()}→{tenseDays.Last()})",
+                    } })
                     .ToList(),
                 TriggerThreadIds = legal.SelectMany(t => t.ArticleIds).Distinct().ToList(),
             });
@@ -57,21 +60,24 @@ public static class HypeSignals
             {
                 SignalId = "volume-first-divergence",
                 Name = "Volume-first divergence",
-                TriggerEvidence = new List<string>
+                TriggerEvidence = new List<TriggerEvidenceItem>
                 {
-                    $"peak flags: {string.Join(", ", detail.Flags)}",
-                    $"only {detail.Evidence.NewsCount} pre-peak news item(s) in move evidence",
+                    new() { Text = $"peak flags: {string.Join(", ", detail.Flags)}" },
+                    new() { Text = $"only {detail.Evidence.NewsCount} pre-peak news item(s) in move evidence" },
                 },
             });
 
         var management = ThreadsInCategory(qualified, "MANAGEMENT");
-        if (management.Count > 0)
+        // Corroboration (Issue 2): one lone single-article thread is a
+        // mention, not turbulence — it needs a second feature to fire.
+        if (management.Count >= 2 ||
+            (management.Count == 1 && HasSecondFeature(detail, tenseDays)))
             matches.Add(new HypeSignalMatch
             {
                 SignalId = "leadership-turbulence",
                 Name = "Leadership turbulence",
                 TriggerEvidence = management
-                    .Select(t => $"MANAGEMENT thread: {t.RepresentativeTitle}")
+                    .Select(t => Ev(t, $"MANAGEMENT thread: {t.RepresentativeTitle} ({BasisLabel(t)})"))
                     .ToList(),
                 TriggerThreadIds = management.SelectMany(t => t.ArticleIds).Distinct().ToList(),
             });
@@ -81,21 +87,28 @@ public static class HypeSignals
             {
                 SignalId = "sentiment-split",
                 Name = "Sentiment split",
-                TriggerEvidence = new List<string>
+                TriggerEvidence = new List<TriggerEvidenceItem>
                 {
-                    "scored pre-peak news leans against the price move (contrarian divergence)",
+                    new() { Text = "scored pre-peak news leans against the price move (contrarian divergence)" },
                 },
             });
 
         var supply = ThreadsInCategory(qualified, "SUPPLY_CHAIN");
-        if (supply.Count > 0 && HasWarmingToTenseShift(detail))
+        // Same corroboration bar as leadership (Issue 2): the regime shift
+        // alone does not promote a single lone thread.
+        if ((supply.Count >= 2 ||
+            (supply.Count == 1 && HasSecondFeature(detail, tenseDays))) &&
+            HasWarmingToTenseShift(detail))
             matches.Add(new HypeSignalMatch
             {
                 SignalId = "supply-tremor",
                 Name = "Supply-chain tremor",
                 TriggerEvidence = supply
-                    .Select(t => $"SUPPLY_CHAIN thread: {t.RepresentativeTitle}")
-                    .Concat(new[] { "regime path shifts warming→tense inside the pre-peak window" })
+                    .Select(t => Ev(t, $"SUPPLY_CHAIN thread: {t.RepresentativeTitle} ({BasisLabel(t)})"))
+                    .Concat(new[] { new TriggerEvidenceItem
+                    {
+                        Text = "regime path shifts warming→tense inside the pre-peak window",
+                    } })
                     .ToList(),
                 TriggerThreadIds = supply.SelectMany(t => t.ArticleIds).Distinct().ToList(),
             });
@@ -111,6 +124,31 @@ public static class HypeSignals
 
     private static bool HasFlag(HypeCaseDetail detail, string flag) =>
         detail.Flags.Any(f => string.Equals(f, flag, StringComparison.OrdinalIgnoreCase));
+
+    // Second supporting feature for single-thread triggers (Issue 2): a
+    // tense regime day, contrarian sentiment, or a high-volume flag.
+    private static bool HasSecondFeature(HypeCaseDetail detail, IReadOnlyList<string> tenseDays) =>
+        tenseDays.Count > 0 ||
+        detail.SentimentDirection == SentimentDivergence.Disagree ||
+        HasFlag(detail, MoveFlags.HighVolume);
+
+    // Category provenance tag for trigger evidence (Issue 2): the stored
+    // basis, or an explicit untraced label on legacy rows — never blank.
+    private static string BasisLabel(HypeCaseThread t) =>
+        string.IsNullOrWhiteSpace(t.CategoryBasis)
+            ? "basis untraced in frozen case"
+            : t.CategoryBasis;
+
+    // Thread-backed evidence item (Issue 7): display line plus the thread
+    // metadata users need to weight it (size, relevance, category, basis).
+    private static TriggerEvidenceItem Ev(HypeCaseThread t, string text) => new()
+    {
+        Text = text,
+        ThreadSize = t.ArticleIds.Count,
+        RelevanceRate = t.RelevanceRate,
+        Category = t.TopCategory ?? "",
+        CategoryBasis = t.CategoryBasis ?? "",
+    };
 
     private static bool AreaOk(HypeCaseDetail detail, string area) =>
         detail.CompletenessByArea.TryGetValue(area, out var status) &&

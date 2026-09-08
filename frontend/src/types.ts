@@ -242,6 +242,9 @@ export interface TopicCluster {
   brief: ClusterBrief | null;
   relevanceRate: number | null;
   topCategory: string;
+  // Category provenance (Issue 2). Optional so older payloads still render.
+  categoryBasis?: string;
+  categoryRationale?: string;
 }
 
 export interface CompareBriefResponse {
@@ -356,7 +359,12 @@ export interface HypeSignal {
   id: string;
   name: string;
   trigger: string;
-  triggerEvidence: string[];
+  // Non-directionality disclosure (Issue 6) + regime-relativity footnote
+  // (Issue 8). Optional so older payloads still render.
+  directionalNote?: string;
+  regimeNote?: string;
+  // Structured trigger evidence (Issue 7): text plus thread metadata.
+  triggerEvidence: TriggerEvidenceItem[];
   supportingCases: HypeCaseRef[];
   // Steps 4–6 attach here (all optional so v1 renders without them).
   resemblance?: HypeResemblance[];
@@ -392,6 +400,14 @@ export interface HypeFollowedSummary {
   observedLowPct: number | null;
 }
 
+export interface TriggerEvidenceItem {
+  text: string;
+  threadSize: number;
+  relevanceRate: number | null;
+  category: string;
+  categoryBasis: string;
+}
+
 export interface HypePeak {
   peakDate: string;
   dailyReturnPct: number;
@@ -399,6 +415,21 @@ export interface HypePeak {
   flags: string[];
   completeness: string;
   signals: HypeSignal[];
+  // Freeze-then-read label (Issue 4). Optional so older payloads render.
+  recomputedNote?: string;
+}
+
+export interface HypeSectorRow {
+  symbol: string;
+  company: CompanySummary;
+  error: string | null;
+  peaks: HypePeak[];
+}
+
+export interface HypeSectorResponse {
+  asOfDate: string;
+  newsSource: NewsSource;
+  rows: HypeSectorRow[];
 }
 
 export interface HypeSignalsResponse {

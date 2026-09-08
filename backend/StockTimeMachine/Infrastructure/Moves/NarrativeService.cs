@@ -359,7 +359,57 @@ public class NarrativeService : INarrativeService
                 .OrderByDescending(g => g.Count())
                 .Select(g => g.Key)
                 .FirstOrDefault() ?? "";
+            // Category provenance (Issue 2): the majority basis among the
+            // members voting for TopCategory (pure helper, unit-tested).
+            var (basis, rationale) = ResolveCategoryBasis(topic.TopCategory, rated);
+            topic.CategoryBasis = basis;
+            topic.CategoryRationale = rationale;
         }
+    }
+
+    // Category provenance (Issue 2, pure): majority DecisionSource among
+    // the members voting for topCategory. AI verdicts carry the model's own
+    // rationale in Reason; RULE verdicts name the matched keyword there in
+    // quotes — surfaced, never invented. Empty basis when nobody voted.
+    public static (string Basis, string Rationale) ResolveCategoryBasis(
+        string topCategory, IReadOnlyList<ArticleRelevance?> rated)
+    {
+        var voters = (rated ?? Array.Empty<ArticleRelevance?>())
+            .Where(v => v is not null && v.Relevant == true && v.Category == topCategory)
+            .ToList();
+        if (voters.Count == 0 || string.IsNullOrEmpty(topCategory))
+            return ("", "");
+        var total = (rated ?? Array.Empty<ArticleRelevance?>()).Count;
+        var basis = voters
+            .GroupBy(v => v!.DecisionSource ?? "")
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefault() ?? "";
+        var term = voters
+            .Select(v => ExtractQuotedTerm(v!.Reason))
+            .FirstOrDefault(t => t is not null);
+        var label = basis == RelevanceSources.Rule && term is not null
+            ? $"rule:keyword '{term}'"
+            : basis == RelevanceSources.Rule ? "rule:keyword"
+            : basis == RelevanceSources.Ai ? "ai:gemini-verdict"
+            : basis == RelevanceSources.User ? "user-admitted"
+            : "mixed";
+        var rationale = basis == RelevanceSources.Rule && term is not null
+            ? $"{voters.Count} of {total} rated members classified {topCategory} by keyword rule (matched '{term}')"
+            : basis == RelevanceSources.Ai
+                ? $"{voters.Count} of {total} rated members classified {topCategory} by AI verdicts"
+                : $"{voters.Count} of {total} rated members classified {topCategory} ({label})";
+        return (label, rationale);
+    }
+
+    // First double-quoted term in a RULE verdict reason
+    // (MaterialityRules writes the matched keyword in quotes).
+    private static string? ExtractQuotedTerm(string? reason)
+    {
+        if (string.IsNullOrEmpty(reason))
+            return null;
+        var m = System.Text.RegularExpressions.Regex.Match(reason, "\"([^\"]+)\"");
+        return m.Success ? m.Groups[1].Value : null;
     }
 
     private TopicCluster ToCluster(List<int> members, List<NewsArticle> docs, IReadOnlyList<float[]> vectors)

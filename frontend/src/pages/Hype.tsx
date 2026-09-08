@@ -133,7 +133,9 @@ export default function Hype() {
     if (briefs[key]?.busy || briefs[key]?.brief) return;
     setBriefs((prev) => ({ ...prev, [key]: { busy: true } }));
     api
-      .hypeBrief({ symbol, date, newsSource, peakDate, signalId })
+      // Frozen-row brief path (Issue 4): the registry id for this window's
+      // own peak — readable rows brief frozen evidence, otherwise live.
+      .hypeBrief({ symbol, date, newsSource, peakDate, signalId, caseId: `${symbol}:${peakDate}` })
       .then((r) => {
         setBriefs((prev) => ({
           ...prev,
@@ -265,6 +267,9 @@ export default function Hype() {
                     Detection score {peak.score.toFixed(3)} · signals below co-occurred with this
                     peak — proximity in time is never presented as causation.
                   </p>
+                  {peak.recomputedNote && (
+                    <p className="text-xs text-fg-dim italic">{peak.recomputedNote}</p>
+                  )}
                 </CardHeader>
               </Card>
               {peak.signals.length === 0 ? (

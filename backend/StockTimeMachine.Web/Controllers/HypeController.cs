@@ -379,6 +379,132 @@ public class HypeController : ControllerBase
         }
     }
 
+    // Regime-relativity footnote (Issue 8), shared by every signal payload.
+    public const string RegimeRelativityNote =
+        "Regime labels are tertiled within each case's own window — 'tense' in different cases is not the same absolute volatility.";
+
+    // Sector sweep cap (Issue 10): N full pipelines per request is expensive;
+    // 8 symbols keeps the sweep responsive without degrading single-symbol paths.
+    private const int MaxSectorSymbols = 8;
+
+    // Sector sweep (Issue 10): up to 8 symbols under one shared as-of cutoff,
+    // each evaluated independently by the same signals pipeline — no pooled
+    // verdicts, no cross-symbol scoring or ranking. Per-symbol failures
+    // degrade to error rows; one bad symbol never kills the sweep.
+    [HttpGet("sector")]
+    public async Task<ActionResult<HypeSectorResponse>> Sector(
+        [FromQuery] string? symbols,
+        [FromQuery] string? date,
+        [FromQuery] string? newsSource,
+        CancellationToken ct)
+    {
+        var (parsedSymbols, parsedDate) = ParseSectorRequest(symbols, date);
+        var rows = new List<HypeSectorRowDto>();
+        foreach (var symbol in parsedSymbols)
+        {
+            ct.ThrowIfCancellationRequested();
+            rows.Add(await BuildSectorRowAsync(symbol, parsedDate, newsSource, progress: null, ct));
+        }
+        return Ok(new HypeSectorResponse(parsedDate,
+            NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource),
+            rows));
+    }
+
+    // Streaming sector sweep (same SSE pattern as signals/stream): per-symbol
+    // stage events (symbol-prefixed), one `sector` event with the full
+    // payload. Validation errors are normal 400s; per-symbol failures arrive
+    // as error rows, catastrophic failures as an `error` event.
+    [HttpGet("sector/stream")]
+    public async Task SectorStream(
+        [FromQuery] string? symbols,
+        [FromQuery] string? date,
+        [FromQuery] string? newsSource,
+        CancellationToken ct)
+    {
+        var (parsedSymbols, parsedDate) = ParseSectorRequest(symbols, date);
+        var normalizedSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
+
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+
+        async Task WriteEvent(string name, object payload)
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, HypeStreamJson);
+            await Response.WriteAsync($"event: {name}\ndata: {json}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
+
+        try
+        {
+            var rows = new List<HypeSectorRowDto>();
+            foreach (var symbol in parsedSymbols)
+            {
+                ct.ThrowIfCancellationRequested();
+                var progress = new Progress<SnapshotProgress>(stage =>
+                {
+                    WriteEvent("stage", new
+                    {
+                        stage = stage.Stage,
+                        state = stage.State,
+                        detail = $"{symbol}: {stage.Detail}",
+                        count = stage.Count
+                    }).GetAwaiter().GetResult();
+                });
+                rows.Add(await BuildSectorRowAsync(symbol, parsedDate, newsSource, progress, ct));
+                await WriteEvent("row", rows[^1]);
+            }
+            await WriteEvent("sector", new HypeSectorResponse(parsedDate, normalizedSource, rows));
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Hype sector stream failed for {Symbols} on {Date}", symbols, parsedDate);
+            await WriteEvent("error", new { detail = "Something went wrong. Please try again." });
+        }
+    }
+
+    // Shared sector validation: 1–8 distinct upper-cased symbols, one valid
+    // past date. Throws InvalidHistoricalDateException (400) otherwise —
+    // before any pipeline work starts.
+    private static (IReadOnlyList<string> Symbols, DateOnly Date) ParseSectorRequest(
+        string? symbols, string? date)
+    {
+        var parsed = (symbols ?? "")
+            .Split(new[] { ',', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim().ToUpperInvariant())
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (parsed.Count == 0)
+            throw new InvalidHistoricalDateException("At least one symbol is required (symbols=AAA,BBB,...).");
+        if (parsed.Count > MaxSectorSymbols)
+            throw new InvalidHistoricalDateException(
+                $"At most {MaxSectorSymbols} symbols per sector sweep (got {parsed.Count}).");
+        if (!DateOnly.TryParse(date, out var parsedDate))
+            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        HistoricalDate.Create(parsedDate);
+        return (parsed, parsedDate);
+    }
+
+    // One sector row: the full single-symbol pipeline, failure-isolated.
+    private async Task<HypeSectorRowDto> BuildSectorRowAsync(
+        string symbol, DateOnly parsedDate, string? newsSource,
+        IProgress<SnapshotProgress>? progress, CancellationToken ct)
+    {
+        try
+        {
+            var response = await BuildSignalsAsync(symbol, parsedDate, newsSource, progress, ct);
+            return new HypeSectorRowDto(symbol, MapCompany(response.Company.Symbol), null, response.Peaks);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Sector row failed for {Symbol}; degrading to error row", symbol);
+            return new HypeSectorRowDto(symbol, MapCompany(symbol),
+                "This symbol could not be evaluated — other rows are unaffected.", Array.Empty<HypePeakDto>());
+        }
+    }
+
     private static readonly System.Text.Json.JsonSerializerOptions HypeStreamJson = new(System.Text.Json.JsonSerializerDefaults.Web);
 
     private async Task<HypeSignalsResponse> BuildSignalsAsync(
@@ -412,7 +538,7 @@ public class HypeController : ControllerBase
             {
                 foreach (var match in HypeSignals.Evaluate(detail))
                 {
-                    var supporting = FindSupportingCases(library, match.SignalId, current.Id);
+                    var supporting = FindSupportingCases(library, match.SignalId, current.Id, move.Date);
                     var supporters = supporting
                         .Select(s => new HypeCaseRefDto(
                             s.Row.Id, s.Row.CompanySymbol, s.Row.PeakDate,
@@ -453,12 +579,29 @@ public class HypeController : ControllerBase
                         match.SignalId,
                         match.Name,
                         def?.Trigger ?? "",
-                        match.TriggerEvidence,
+                        match.TriggerEvidence
+                            .Select(e => new TriggerEvidenceItemDto(
+                                e.RenderedText, e.ThreadSize, e.RelevanceRate,
+                                e.Category ?? "", e.CategoryBasis ?? ""))
+                            .ToList(),
                         supporters,
                         resemblance,
                         followed,
-                        followedSummary));
+                        followedSummary,
+                        def?.DirectionalNote ?? "",
+                        RegimeRelativityNote));
                 }
+            }
+            // Freeze-then-read label (Issue 4): compare the live detail
+            // against the frozen registry row for this same case id.
+            // No row yet (fresh investigation) or a match → no label.
+            var recomputedNote = "";
+            var frozenRow = library.FirstOrDefault(r => r.Id == current.Id);
+            if (detail is not null && frozenRow is not null)
+            {
+                var frozen = HypeCaseLibrary.TryReadDetail(frozenRow);
+                if (!HypeCaseProjection.MatchesFrozen(frozen, detail))
+                    recomputedNote = "Recomputed now — may differ from frozen registry record.";
             }
             peaks.Add(new HypePeakDto(
                 move.Date,
@@ -466,7 +609,8 @@ public class HypeController : ControllerBase
                 move.Score,
                 move.Flags.ToList(),
                 current.Completeness,
-                signals));
+                signals,
+                recomputedNote));
         }
         progress?.Report(new SnapshotProgress("matching", "complete",
             $"{peaks.Sum(p => p.Signals.Count)} signals on {peaks.Count} peaks", peaks.Count));
@@ -497,7 +641,28 @@ public class HypeController : ControllerBase
             throw new InvalidHistoricalDateException("SignalId is required.");
         HistoricalDate.Create(parsedDate);
 
+        // Frozen-row brief path (Issue 4): a resolvable registry case id
+        // briefs the frozen detail — reproducible prose over frozen evidence.
+        // Unresolvable or unreadable rows fall back to live recomputation
+        // below (the request still carries full live context; a 404 here
+        // would silently kill briefs for unharvested windows).
         var selectedNewsSource = NewsSources.Normalize(req.NewsSource ?? _newsFactory.DefaultSource);
+        var frozenRef = HypeCaseProjection.TryParseCaseId(req.CaseId);
+        if (frozenRef is not null)
+        {
+            var frozenRow = await _cases.GetAsync(frozenRef.Value.Symbol, frozenRef.Value.PeakDate, ct);
+            var frozenDetail = frozenRow is null ? null : HypeCaseLibrary.TryReadDetail(frozenRow);
+            if (frozenDetail is not null)
+            {
+                var frozenMatch = HypeSignals.Evaluate(frozenDetail).FirstOrDefault(m => m.SignalId == req.SignalId);
+                if (frozenMatch is null)
+                    return Ok(new HypeBriefResponse(null));
+                var frozenBrief = await _briefs.BriefSignalAsync(
+                    frozenDetail.CompanySymbol, parsedDate, frozenMatch, frozenDetail, ct);
+                return Ok(new HypeBriefResponse(
+                    frozenBrief is null ? null : new ClusterBriefDto(frozenBrief.Summary, frozenBrief.KeyPoints, frozenBrief.Model)));
+            }
+        }
         var window = await _moves.GetMoves(req.Symbol, parsedDate, selectedNewsSource, ct);
         var move = window.KeyMoves.FirstOrDefault(m => m.Date == peakDate)
             ?? throw new HistoricalDataNotFoundException($"No peak {peakDate:yyyy-MM-dd} in this window.");
@@ -519,12 +684,17 @@ public class HypeController : ControllerBase
     // panel). Unreadable rows are skipped (never fatal: mining degrades to
     // fewer supporters, logged loudly).
     private List<(HypeCase Row, HypeCaseDetail Detail)> FindSupportingCases(
-        IReadOnlyList<HypeCase> library, string signalId, string excludeId)
+        IReadOnlyList<HypeCase> library, string signalId, string excludeId, DateOnly peakDate)
     {
         var supporters = new List<(HypeCase, HypeCaseDetail)>();
         foreach (var row in library)
         {
             if (row.Id == excludeId)
+                continue;
+            // No hindsight (Issue 1): a supporter must have peaked no later
+            // than the peak it explains — future cases never count as
+            // "seen before", even when they sit inside the as-of window.
+            if (row.PeakDate > peakDate)
                 continue;
             var detail = HypeCaseLibrary.TryReadDetail(row);
             if (detail is null)

@@ -126,7 +126,7 @@ public class RegulatoryBackfillTests
         {
             SignalId = "regulatory-overhang",
             Name = "Regulatory overhang",
-            TriggerEvidence = new List<string> { "t" },
+            TriggerEvidence = new List<TriggerEvidenceItem> { new() { Text = "t" } },
             TriggerThreadIds = new List<string>(),
         };
         var summaries = new List<HypeFilingSummary>
