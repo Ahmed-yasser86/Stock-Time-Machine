@@ -30,6 +30,57 @@ public class CompanyRepositoryTests
     }
 
     [Fact]
+    public async Task Add_NormalizesAndClampsProviderStringsToColumns()
+    {
+        // Regression (XOM 2026-06-17): SEC EDGAR returns full exchange names
+        // ("NEW YORK STOCK EXCHANGE", 22 chars) against nvarchar(20). One
+        // long field voided the save and poisoned every later save sharing
+        // the tracked context. InMemory ignores column widths, so this pins
+        // the code-level contract: mapped codes + hard clamps, always.
+        using var db = CreateDb();
+        var repo = new CompanyRepository(db, NullLogger<CompanyRepository>.Instance);
+
+        var saved = await repo.Add(new Company
+        {
+            Symbol = "XOM",
+            Name = "Exxon Mobil Corp.",
+            Cik = "34088",
+            Exchange = "NEW YORK STOCK EXCHANGE",
+            Sector = new string('s', 150),
+            Industry = new string('i', 250),
+        });
+
+        Assert.Equal("NYSE", saved.Exchange);
+        Assert.Equal("0000034088", saved.Cik);
+        Assert.Equal(100, saved.Sector.Length);
+        Assert.Equal(200, saved.Industry.Length);
+        Assert.NotNull(await db.Companies.FindAsync("XOM"));
+    }
+
+    [Theory]
+    [InlineData("NEW YORK STOCK EXCHANGE", "NYSE")]
+    [InlineData("New York Stock Exchange Arca", "NYSE ARCA")]
+    [InlineData("NASDAQ STOCK MARKET", "NASDAQ")]
+    [InlineData("Nasdaq", "NASDAQ")]
+    [InlineData("NYSE ARCA", "NYSE ARCA")]
+    [InlineData("OTC Markets", "OTC")]
+    public async Task Add_MapsExchangeVariantsToCodes(string raw, string expected)
+    {
+        using var db = CreateDb();
+        var repo = new CompanyRepository(db, NullLogger<CompanyRepository>.Instance);
+
+        var saved = await repo.Add(new Company
+        {
+            Symbol = $"T{expected.Length}",
+            Name = "Test",
+            Cik = "0000000001",
+            Exchange = raw,
+        });
+
+        Assert.Equal(expected, saved.Exchange);
+    }
+
+    [Fact]
     public async Task GetBySymbol_ShouldReturnCompany()
     {
         using var db = CreateDb();
