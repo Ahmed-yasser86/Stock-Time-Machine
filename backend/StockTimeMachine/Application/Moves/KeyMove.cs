@@ -43,6 +43,12 @@ public class MoveEvidence
     public List<SocialSignal> Social { get; set; } = new();
     public List<MarketReaction> Reaction { get; set; } = new();
     public List<string> UnavailableLayers { get; set; } = new();
+    // Proof-of-work for empty news: true when the per-move fallback fetch
+    // actually executed against the provider (regardless of row count), so
+    // an empty list reads as "searched, nothing returned" rather than "never
+    // tried". False means the cache served (or the fetch was skipped after
+    // a known outage, which is then marked in UnavailableLayers instead).
+    public bool NewsFetchedLive { get; set; }
     public List<ArrivalEntry> Arrival { get; set; } = new();
     // Mean of the measured per-article sentiment scores behind
     // SentimentDirection (provider + FinBERT fallback). Null when fewer than

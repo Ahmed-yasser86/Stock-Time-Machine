@@ -43,6 +43,8 @@ public sealed record MoveEvidenceDto(
     IReadOnlyList<SocialSignalDto> Social,
     IReadOnlyList<MarketReactionDto> Reaction,
     IReadOnlyList<string> UnavailableLayers,
+    // Proof-of-work for empty news (see MoveEvidence.NewsFetchedLive).
+    bool NewsFetchedLive,
     IReadOnlyList<ArrivalEntryDto> Arrival);
 
 public sealed record WindowSummaryDto(

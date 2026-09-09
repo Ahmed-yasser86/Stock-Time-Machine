@@ -196,6 +196,8 @@ export interface MoveEvidence {
   social: SocialSignal[];
   reaction: MarketReaction[];
   unavailableLayers: string[];
+  // Proof-of-work for empty news (optional: absent on older payloads).
+  newsFetchedLive?: boolean;
   arrival: ArrivalEntry[];
 }
 

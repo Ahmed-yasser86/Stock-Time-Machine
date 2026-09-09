@@ -190,7 +190,15 @@ export function MoveDrawer({
       <h3 className="mt-4 text-sm font-semibold">News published before this movement</h3>
       {!ev || ev.news.length === 0 ? (
         <div className="mt-1">
-          <LayerNote text="No historical news was found before this movement. This does not mean nothing happened." />
+          <LayerNote
+            text={
+              ev?.unavailableLayers.includes('news')
+                ? 'News unavailable for this movement — the provider fetch failed. This does not mean nothing happened.'
+                : ev?.newsFetchedLive
+                  ? `No stories returned — cache searched and provider fetched live through ${move.date}. Zero rows came back, so this is an empty result, not an untried search.`
+                  : `No cached stories dated on or before ${move.date} were admitted for this movement.`
+            }
+          />
         </div>
       ) : (
         <ul className="evidence-rail mt-1 space-y-2">

@@ -428,6 +428,10 @@ public class MoveDetectionService : IMoveDetectionService
                     try
                     {
                         var provider = _newsFactory.Get(newsSource);
+                        // Proof-of-work (recorded before the call so even a
+                        // zero-row or failed fetch leaves the attempt visible;
+                        // failures additionally mark the layer unavailable).
+                        evidence.NewsFetchedLive = true;
                         var fresh = await provider.SearchAsync(symbol, companyName, moveDate, ct);
                         if (fresh.Count > 0)
                         {

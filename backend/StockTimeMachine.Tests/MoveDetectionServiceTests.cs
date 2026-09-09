@@ -91,6 +91,47 @@ public class MoveDetectionServiceTests
     }
 
     [Fact]
+    public async Task GetMoves_EmptyCacheLiveFetch_MarksNewsFetchedLive()
+    {
+        // Proof-of-work: when the cache is empty the per-move fallback fetch
+        // executes — even a zero-row result records the attempt, so empty
+        // news reads as "searched, nothing returned", never "never tried".
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        var sut = Sut(db, av, directory, new NullNewsProvider(NullLogger<NullNewsProvider>.Instance));
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        var spike = window.KeyMoves.First(m => m.Flags.Contains(MoveFlags.Spike));
+        var evidence = window.EvidenceByDate[spike.Date.ToString("yyyy-MM-dd")];
+        Assert.Empty(evidence.News);
+        Assert.True(evidence.NewsFetchedLive);
+        Assert.DoesNotContain("news", evidence.UnavailableLayers);
+    }
+
+    [Fact]
+    public async Task GetMoves_CacheServedNews_LeavesFetchedLiveFalse()
+    {
+        var (db, av, directory) = BuildDb();
+        await SeedSpike(db);
+        await db.NewsArticles.AddAsync(new NewsArticle
+        {
+            Id = "cached", Title = "Cached story", Source = "GDELT",
+            PublishedAt = new DateTime(2020, 2, 1, 0, 0, 0, DateTimeKind.Utc),
+            Url = "https://example.com/cached", CompanySymbol = "TSLA",
+        });
+        await db.SaveChangesAsync();
+        var sut = Sut(db, av, directory, new NullNewsProvider(NullLogger<NullNewsProvider>.Instance));
+
+        var window = await sut.GetMoves("TSLA", new DateOnly(2020, 2, 20));
+
+        var spike = window.KeyMoves.First(m => m.Flags.Contains(MoveFlags.Spike));
+        var evidence = window.EvidenceByDate[spike.Date.ToString("yyyy-MM-dd")];
+        Assert.NotEmpty(evidence.News);
+        Assert.False(evidence.NewsFetchedLive);
+    }
+
+    [Fact]
     public async Task GetMoves_AttachesArrivalMap()
     {
         var (db, av, directory) = BuildDb();
