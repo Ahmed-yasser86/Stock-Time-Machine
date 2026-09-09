@@ -494,6 +494,18 @@ public class HypeController : ControllerBase
         try
         {
             var response = await BuildSignalsAsync(symbol, parsedDate, newsSource, progress, ct);
+            if (response.Peaks.Count == 0)
+            {
+                // Silent empty rows read as "not investigated". Resolve the
+                // reason from data already in hand: unknown symbol (directory
+                // miss) vs thin/calm history — no new plumbing required.
+                var reason = _directory.TryGet(symbol, out var info) && info is not null
+                    ? $"{symbol} returned no key moves for this window — price history too thin or no significant moves. Try another date."
+                    : $"{symbol} is not a known symbol — check the ticker. No investigation ran for this row.";
+                _logger.LogInformation("Sector row empty for {Symbol}: {Reason}", symbol, reason);
+                return new HypeSectorRowDto(symbol, MapCompany(response.Company.Symbol), reason,
+                    Array.Empty<HypePeakDto>());
+            }
             return new HypeSectorRowDto(symbol, MapCompany(response.Company.Symbol), null, response.Peaks);
         }
         catch (OperationCanceledException) { throw; }
@@ -582,7 +594,8 @@ public class HypeController : ControllerBase
                         match.TriggerEvidence
                             .Select(e => new TriggerEvidenceItemDto(
                                 e.RenderedText, e.ThreadSize, e.RelevanceRate,
-                                e.Category ?? "", e.CategoryBasis ?? ""))
+                                e.Category ?? "", e.CategoryBasis ?? "",
+                                e.CategoryRationale ?? ""))
                             .ToList(),
                         supporters,
                         resemblance,

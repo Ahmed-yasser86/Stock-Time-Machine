@@ -61,6 +61,9 @@ export function SignalCard({
                     {e.categoryBasis ? ` · ${e.categoryBasis}` : ''}
                   </span>
                 )}
+                {e.categoryRationale && (
+                  <span className="block text-xs text-fg-dim italic">{e.categoryRationale}</span>
+                )}
               </li>
             ))}
           </ul>

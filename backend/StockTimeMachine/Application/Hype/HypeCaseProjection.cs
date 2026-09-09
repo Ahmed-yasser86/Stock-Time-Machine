@@ -249,11 +249,20 @@ public static class HypeCaseProjection
     // Article ids behind qualified threads: the single source for content
     // mean-pooling (indexer) and query construction (resemblance, stats).
     // Both sides must pool the same set or cosine compares different things.
-    public static IReadOnlyList<string> QualifiedArticleIds(HypeCaseDetail detail) =>
-        QualifiedThreads(detail)
-            .SelectMany(t => t.ArticleIds)
+    // Post-peak quarantine: members dated after the peak stay visible in the
+    // thread display but stop participating here. Only positively post-peak
+    // ids are excluded — undated members and legacy dateless threads ride
+    // along (absence of dates must never read as absence of coverage).
+    public static IReadOnlyList<string> QualifiedArticleIds(HypeCaseDetail detail)
+    {
+        if (detail is null)
+            return Array.Empty<string>();
+        return QualifiedThreads(detail)
+            .SelectMany(t => t.ArticleIds.Where(id =>
+                !t.ArticleDates.TryGetValue(id, out var d) || d <= detail.PeakDate))
             .Distinct(StringComparer.Ordinal)
             .ToList();
+    }
 
     private static HypeCaseThread ToThread(TopicCluster t) => new()
     {

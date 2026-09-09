@@ -59,7 +59,8 @@ public sealed record TriggerEvidenceItemDto(
     int ThreadSize,
     double? RelevanceRate,
     string Category,
-    string CategoryBasis);
+    string CategoryBasis,
+    string CategoryRationale);
 
 public sealed record HypeSignalDto(
     string Id,

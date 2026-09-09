@@ -36,19 +36,29 @@ public static class HypeSignals
             .Select(kv => kv.Key)
             .OrderBy(d => d)
             .ToList();
-        if (legal.Count > 0 && tenseDays.Count >= 3)
+        // Corroboration (narrative boundary): only multi-article threads vote.
+        // A lone single-article thread is a mention, not a condition, and the
+        // usual second features cannot rescue it here — every firing case has
+        // tense days by construction, so a tense-day clause would admit every
+        // singleton it was meant to exclude. Non-voting threads stay visible
+        // in drill-down; they simply cast no trigger vote and contribute no
+        // resemblance ids.
+        var voting = legal
+            .Where(t => t.ArticleIds.Count > 1)
+            .ToList();
+        if (voting.Count > 0 && tenseDays.Count >= 3)
             matches.Add(new HypeSignalMatch
             {
                 SignalId = "regulatory-overhang",
                 Name = "Regulatory overhang",
-                TriggerEvidence = legal
+                TriggerEvidence = voting
                     .Select(t => Ev(t, $"{t.TopCategory} thread: {t.RepresentativeTitle} ({BasisLabel(t)})"))
                     .Concat(new[] { new TriggerEvidenceItem
                     {
                         Text = $"tense regime on {tenseDays.Count} pre-peak days ({tenseDays.First()}→{tenseDays.Last()})",
                     } })
                     .ToList(),
-                TriggerThreadIds = legal.SelectMany(t => t.ArticleIds).Distinct().ToList(),
+                TriggerThreadIds = voting.SelectMany(t => t.ArticleIds).Distinct().ToList(),
             });
 
         // Requires real evidence data: a missing evidence layer must not read
@@ -148,6 +158,7 @@ public static class HypeSignals
         RelevanceRate = t.RelevanceRate,
         Category = t.TopCategory ?? "",
         CategoryBasis = t.CategoryBasis ?? "",
+        CategoryRationale = t.CategoryRationale ?? "",
     };
 
     private static bool AreaOk(HypeCaseDetail detail, string area) =>

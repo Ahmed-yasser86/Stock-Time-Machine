@@ -123,6 +123,84 @@ public class HypeSectorTests
         Assert.Empty(response.Rows[1].Peaks);
     }
 
+    [Fact]
+    public async Task Sector_UnknownSymbolRow_CarriesReason_NotSilentEmpty()
+    {
+        // MST bug: an unresolvable symbol returned a bare "0 peaks" row.
+        // Empty rows must state why no investigation ran.
+        var moves = new Mock<IMoveDetectionService>();
+        moves.Setup(m => m.GetMoves(It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<IProgress<SnapshotProgress>?>(), It.IsAny<int?>()))
+            .ReturnsAsync((string s, DateOnly d, string? n, CancellationToken _, IProgress<SnapshotProgress>? __, int? ___) =>
+                new MovesWindow
+                {
+                    CompanySymbol = s,
+                    DecisionDate = d,
+                    NewsSource = NewsSources.Gdelt,
+                    KeyMoves = new List<KeyMove>(),
+                    Regimes = new Dictionary<string, string>(),
+                    EvidenceByDate = new Dictionary<string, MoveEvidence>(),
+                });
+        var narratives = new Mock<INarrativeService>();
+        narratives.Setup(n => n.GetTopics(It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<IProgress<SnapshotProgress>?>()))
+            .ReturnsAsync((string s, DateOnly d, string? n, CancellationToken _, IProgress<SnapshotProgress>? __) =>
+                Topics(s));
+        var sut = Sut(moves, narratives);
+
+        var result = await sut.Sector("MST", "2026-06-15", "gdelt", CancellationToken.None);
+        var response = Assert.IsType<HypeSectorResponse>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        var row = Assert.Single(response.Rows);
+        Assert.Empty(row.Peaks);
+        Assert.Contains("not a known symbol", row.Error);
+    }
+
+    [Fact]
+    public async Task Sector_KnownSymbolEmptyWindow_ExplainsThinHistory()
+    {
+        var moves = new Mock<IMoveDetectionService>();
+        moves.Setup(m => m.GetMoves(It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<IProgress<SnapshotProgress>?>(), It.IsAny<int?>()))
+            .ReturnsAsync((string s, DateOnly d, string? n, CancellationToken _, IProgress<SnapshotProgress>? __, int? ___) =>
+                new MovesWindow
+                {
+                    CompanySymbol = s,
+                    DecisionDate = d,
+                    NewsSource = NewsSources.Gdelt,
+                    KeyMoves = new List<KeyMove>(),
+                    Regimes = new Dictionary<string, string>(),
+                    EvidenceByDate = new Dictionary<string, MoveEvidence>(),
+                });
+        var narratives = new Mock<INarrativeService>();
+        narratives.Setup(n => n.GetTopics(It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<IProgress<SnapshotProgress>?>()))
+            .ReturnsAsync((string s, DateOnly d, string? n, CancellationToken _, IProgress<SnapshotProgress>? __) =>
+                Topics(s));
+        var directory = new Mock<ICompanyDirectory>();
+        CompanyInfo? info = new CompanyInfo("NVDA", "NVIDIA Corp", "0001045810", "NASDAQ", "Technology", "Semiconductors");
+        directory.Setup(d => d.TryGet(It.IsAny<string>(), out info)).Returns(true);
+        var cases = new Mock<IHypeCaseStore>();
+        cases.Setup(c => c.ListAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<HypeCase>());
+        var sut = new HypeController(
+            moves.Object, narratives.Object, cases.Object,
+            Mock.Of<IHypeResemblanceService>(), Mock.Of<IHypeBriefService>(),
+            Mock.Of<IHypeCaseIndexer>(), Mock.Of<IHypeFilingService>(),
+            Mock.Of<IVectorStore>(), Mock.Of<IInvestigationJobStore>(),
+            directory.Object, Mock.Of<INewsProviderFactory>(),
+            Mock.Of<IConfiguration>(), NullLogger<HypeController>.Instance);
+
+        var result = await sut.Sector("NVDA", "2026-06-15", "gdelt", CancellationToken.None);
+        var response = Assert.IsType<HypeSectorResponse>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        var row = Assert.Single(response.Rows);
+        Assert.Empty(row.Peaks);
+        Assert.Contains("no key moves", row.Error);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

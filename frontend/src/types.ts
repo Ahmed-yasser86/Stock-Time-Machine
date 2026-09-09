@@ -416,6 +416,9 @@ export interface TriggerEvidenceItem {
   relevanceRate: number | null;
   category: string;
   categoryBasis: string;
+  // Majority-vote rationale stored on the thread (optional: absent on
+  // older payloads and legacy rows).
+  categoryRationale?: string;
 }
 
 export interface HypePeak {

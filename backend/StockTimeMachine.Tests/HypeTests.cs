@@ -142,6 +142,7 @@ public class HypeTests
     [Fact]
     public void Signal_RegulatoryOverhang_NeedsThreadPlusTenseRegime()
     {
+        // Multi-article REGULATORY thread + 3 tense days: fires.
         var d = new DateTime(2026, 6, 10);
         var regimes = new Dictionary<string, string>
         {
@@ -149,13 +150,30 @@ public class HypeTests
             ["2026-06-11"] = MarketRegimes.Tense,
             ["2026-06-12"] = MarketRegimes.Tense,
         };
-        var detail = Detail(Move(), Topics(Thread("REGULATORY", "FCC proposes streaming rules", d, d)),
-            Window(Move(), regimes));
+        var thread = Thread("REGULATORY", "FCC proposes streaming rules", d, d);
+        thread.ArticleIds.Add("r2");
+        var detail = Detail(Move(), Topics(thread), Window(Move(), regimes));
 
         var match = HypeSignals.Evaluate(detail).SingleOrDefault(m => m.SignalId == "regulatory-overhang");
 
         Assert.NotNull(match);
         Assert.Contains(match!.TriggerEvidence, e => e.RenderedText.Contains("tense regime on 3 pre-peak days"));
+    }
+
+    [Fact]
+    public void Signal_RegulatoryOverhang_LoneSingletonNeverVotes()
+    {
+        // Narrative boundary: one lone single-article thread is a mention,
+        // not a condition — silent even with tense days present (tense days
+        // are near-universal, so accepting them as corroboration would admit
+        // every singleton the rule exists to exclude).
+        var thread = DatedThread("REGULATORY", "Bondi health story", "b1", new DateOnly(2026, 6, 4));
+        var detail = DatedCase(thread);
+        detail.RegimePath["2026-06-01"] = MarketRegimes.Tense;
+        detail.RegimePath["2026-06-02"] = MarketRegimes.Tense;
+        detail.RegimePath["2026-06-03"] = MarketRegimes.Tense;
+
+        Assert.DoesNotContain(HypeSignals.Evaluate(detail), m => m.SignalId == "regulatory-overhang");
     }
 
     [Fact]
@@ -635,6 +653,7 @@ public class HypeTests
         // non-thread lines (regime spans) carry text only, zero-filled.
         var thread = DatedThread("MANAGEMENT", "CEO steps down amid probe", "m1", new DateOnly(2026, 6, 4));
         thread.CategoryBasis = "rule:keyword 'ceo'";
+        thread.CategoryRationale = "1 of 1 rated members classified MANAGEMENT by keyword rule (matched 'ceo')";
         thread.RelevanceRate = 1.0;
         var detail = DatedCase(thread);
         detail.RegimePath["2026-06-01"] = MarketRegimes.Tense;
@@ -646,7 +665,40 @@ public class HypeTests
         Assert.Equal(1.0, item.RelevanceRate);
         Assert.Equal("MANAGEMENT", item.Category);
         Assert.Equal("rule:keyword 'ceo'", item.CategoryBasis);
+        Assert.Contains("matched 'ceo'", item.CategoryRationale);
         Assert.Contains("(rule:keyword 'ceo')", item.RenderedText);
+    }
+
+    [Fact]
+    public void QualifiedArticleIds_QuarantinesPostPeakMembers()
+    {
+        // Post-peak members stay visible in the thread but stop feeding
+        // resemblance pooling and brief citations.
+        var thread = DatedThread("FINANCIAL", "Mixed span story", "pre", new DateOnly(2026, 6, 4));
+        thread.ArticleIds.Add("post");
+        thread.ArticleDates["post"] = new DateOnly(2026, 6, 8);
+        var detail = DatedCase(thread);
+
+        var ids = HypeCaseProjection.QualifiedArticleIds(detail);
+
+        Assert.Equal(new[] { "pre" }, ids.ToArray());
+    }
+
+    [Fact]
+    public void QualifiedArticleIds_LegacyDatelessThreadsPoolFully()
+    {
+        // No dates anywhere: nothing is positively post-peak, so all ids
+        // participate (absence of dates never reads as absence).
+        var detail = DatedCase(new HypeCaseThread
+        {
+            TopCategory = "FINANCIAL",
+            RepresentativeTitle = "t",
+            ArticleIds = new List<string> { "a", "b" },
+        });
+
+        var ids = HypeCaseProjection.QualifiedArticleIds(detail);
+
+        Assert.Equal(new[] { "a", "b" }, ids.ToArray());
     }
 
     [Fact]
@@ -1399,7 +1451,10 @@ public class HypeTests
         },
         PrePeakThreads = new List<HypeCaseThread>
         {
-            new() { TopCategory = "REGULATORY", RepresentativeTitle = "Chip curbs", ArticleIds = new List<string> { "s1" } },
+            // Two members: regulatory-overhang requires a corroborated
+            // (multi-article) trigger thread. Only s1 has a cached vector,
+            // so the hybrid query mean is unchanged.
+            new() { TopCategory = "REGULATORY", RepresentativeTitle = "Chip curbs", ArticleIds = new List<string> { "s1", "s1b" } },
         },
         Evidence = new HypeCaseEvidence(),
     };

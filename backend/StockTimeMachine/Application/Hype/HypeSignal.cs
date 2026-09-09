@@ -33,6 +33,10 @@ public class TriggerEvidenceItem
     public double? RelevanceRate { get; set; }
     public string Category { get; set; } = "";
     public string CategoryBasis { get; set; } = "";
+    // Majority-vote rationale stored on the thread (counts + basis); empty
+    // on legacy rows. Rendered next to the basis chip so the next Bondi
+    // arrives pre-flagged instead of discovered by users.
+    public string CategoryRationale { get; set; } = "";
     // String form for text-only consumers (brief prompts, logs).
     public string RenderedText => Text;
 }
