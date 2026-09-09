@@ -21,6 +21,17 @@ import { SignalCard } from '../components/SignalCard';
  * mirrors the hype stream: per-symbol stage events, `row` events as each
  * symbol resolves, then the full `sector` payload.
  */
+const SECTOR_STAGES = [
+  { key: 'detecting', label: 'Detecting key movements' },
+  { key: 'evidence', label: 'Attaching evidence to each move' },
+  { key: 'embedding', label: 'Embedding articles for grouping' },
+  { key: 'clustering', label: 'Clustering narrative threads' },
+  { key: 'briefing', label: 'Writing AI briefs for the largest threads' },
+  { key: 'projecting', label: 'Freezing peaks into hype cases' },
+  { key: 'matching', label: 'Evaluating signal triggers' },
+  { key: 'resembling', label: 'Joining resembling past peaks' },
+];
+
 function useSectorStream(symbols: string, date: string, newsSource: NewsSource, nonce: number) {
   const [stages, setStages] = useState<StageEvent[]>([]);
   const [data, setData] = useState<HypeSectorResponse | null>(null);
@@ -192,6 +203,7 @@ export default function Sector() {
       {ready && query.isPending && (
         <ReconstructionProgress
           stages={stream.stages}
+          defs={SECTOR_STAGES}
           title="Sweeping symbols — live."
           footnote="One full signals pipeline per symbol, sequentially. Per-symbol failures become error rows, never a failed sweep."
         />
