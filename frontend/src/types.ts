@@ -326,6 +326,14 @@ export interface NewsCandidate {
   reason: string;
 }
 
+export interface ThreadArticlesResponse {
+  symbol: string;
+  asOfDate: string;
+  newsSource: NewsSource;
+  requestedCount: number;
+  items: NewsCandidate[];
+}
+
 export interface CandidatesResponse {
   symbol: string;
   asOfDate: string;

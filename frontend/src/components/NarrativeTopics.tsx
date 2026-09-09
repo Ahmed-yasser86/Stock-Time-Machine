@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { fmtDate } from '../lib/format';
 import { whyNoThreads } from '../lib/whyEmpty';
-import type { ClusterBrief, NarrativesResponse, NewsCandidate, NewsSource } from '../types';
+import type { ClusterBrief, NarrativesResponse, NewsCandidate, NewsSource, ThreadArticlesResponse, TopicCluster } from '../types';
 import { AiBriefBlock } from './AiBriefBlock';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { MethodLink } from './MethodLink';
@@ -19,6 +19,109 @@ import { EmptySection, ErrorState } from './StateBlocks';
  * empty state (warmed by snapshot/moves runs).
  */
 const NON_ASCII = /[^\x00-\x7F]/;
+
+/**
+ * Thread evidence drill-down: the thread title toggles an inline section
+ * listing the ACTUAL cluster members — the exact article ids from the
+ * rendered thread, resolved against the cached rows clustering consumed.
+ * Wording is deliberately "Articles in this thread", never "related
+ * articles": this is membership inspection, not a new retrieval. Expanding
+ * never re-runs clustering and never alters results.
+ */
+function ThreadArticles({
+  symbol,
+  date,
+  newsSource,
+  thread,
+}: {
+  symbol: string;
+  date: string;
+  newsSource: NewsSource;
+  thread: TopicCluster;
+}) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<ThreadArticlesResponse | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const toggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (data || busy) return;
+    setBusy(true);
+    setFailed(false);
+    api
+      .threadArticles(symbol, date, newsSource, thread.articleIds)
+      .then((r) => {
+        setData(r);
+        setBusy(false);
+      })
+      .catch(() => {
+        setBusy(false);
+        setFailed(true);
+      });
+  };
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className="text-xs text-primary underline-offset-4 hover:underline"
+      >
+        {open ? 'Hide articles in this thread' : `Show articles in this thread (${thread.articleIds.length})`}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-border p-3">
+          {busy && <p className="text-xs text-fg-dim">Loading thread members…</p>}
+          {failed && !busy && (
+            <p className="text-xs text-fg-dim">Could not load thread members. The clustering result above is unchanged.</p>
+          )}
+          {data && (
+            <>
+              <p className="text-xs font-medium text-fg-dim">
+                Articles in this thread ({data.items.length}
+                {data.items.length !== data.requestedCount ? ` of ${data.requestedCount} requested` : ''})
+              </p>
+              {data.items.length !== data.requestedCount && (
+                <p className="mt-1 text-xs text-fg-dim">
+                  Some members are no longer in cache and were skipped — never substituted.
+                </p>
+              )}
+              <ul className="mt-2 space-y-2 text-sm">
+                {data.items.map((c) => (
+                  <li key={c.article.id}>
+                    {c.article.url ? (
+                      <a
+                        href={c.article.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline decoration-dotted underline-offset-2 hover:text-fg"
+                      >
+                        {c.article.title || '(untitled article)'}
+                      </a>
+                    ) : (
+                      <span>{c.article.title || '(untitled article)'}</span>
+                    )}
+                    <span className="block text-xs text-fg-dim">
+                      {c.article.source || 'unknown source'}
+                      {c.article.publishedAt ? ` · ${fmtDate(c.article.publishedAt)}` : ''}
+                      {c.category && c.category !== 'UNRELATED' ? ` · ${c.category}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** English gist for non-English threads: explicit opt-in, same AI contract. */
 function ThreadGist({
@@ -275,6 +378,7 @@ export function NarrativeTopics({
                     <AiBriefBlock brief={t.brief} context="labels name shared vocabulary" />
                   </div>
                 )}
+                <ThreadArticles symbol={symbol} date={date} newsSource={newsSource} thread={t} />
               </li>
             ))}
           </ul>

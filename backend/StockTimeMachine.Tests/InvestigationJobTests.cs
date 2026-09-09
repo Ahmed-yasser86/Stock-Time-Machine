@@ -80,6 +80,11 @@ public class InvestigationJobTests
 
         public Task<IReadOnlyList<NewsCandidate>> GetCandidates(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<NewsCandidate>>(Array.Empty<NewsCandidate>());
+
+        public Task<IReadOnlyList<NewsCandidate>> GetThreadArticles(
+            string symbol, DateOnly asOfDate, string? newsSource,
+            IReadOnlyList<string> articleIds, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<NewsCandidate>>(Array.Empty<NewsCandidate>());
     }
 
     private sealed class Harness

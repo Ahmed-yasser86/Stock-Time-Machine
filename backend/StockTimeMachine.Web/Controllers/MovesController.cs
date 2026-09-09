@@ -220,6 +220,51 @@ public class MovesController : ControllerBase
                 c.Relevance.Category, c.Relevance.Confidence, c.Relevance.Reason)).ToList()));
     }
 
+    // Thread member inspection: exact article ids from a rendered thread,
+    // resolved against the cached rows the clustering consumed. No
+    // re-clustering, no similarity search — membership comes from the
+    // caller's thread, metadata from the cache. Article URLs are the stored
+    // canonical URLs, verbatim; a missing URL renders as "" (honest, the UI
+    // shows title-only with no link).
+    [HttpGet("narratives/articles")]
+    public async Task<ActionResult<ThreadArticlesResponse>> ThreadArticles(
+        [FromQuery] string? symbol,
+        [FromQuery] string? date,
+        [FromQuery] string? newsSource,
+        [FromQuery] string? ids,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        if (!DateOnly.TryParse(date, out var parsedDate))
+            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        var requested = (ids ?? "")
+            .Split(new[] { ',', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(id => id.Trim())
+            .Where(id => id.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (requested.Count == 0)
+            throw new InvalidHistoricalDateException("At least one article id is required (ids=a,b,...).");
+        if (requested.Count > 500)
+            throw new InvalidHistoricalDateException("At most 500 article ids per request.");
+
+        var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
+        var items = await _narratives.GetThreadArticles(symbol, parsedDate, selectedNewsSource, requested, ct);
+
+        return Ok(new ThreadArticlesResponse(
+            Symbol: symbol.Trim().ToUpperInvariant(),
+            AsOfDate: parsedDate,
+            NewsSource: selectedNewsSource,
+            RequestedCount: requested.Count,
+            Items: items.Select(c => new NewsCandidateDto(
+                new MoveNewsDto(
+                    c.Article.Id, c.Article.Title, c.Article.Source ?? "",
+                    c.Article.PublishedAt, c.Article.Url ?? "", null),
+                c.Relevance.Decision, c.Relevance.DecisionSource,
+                c.Relevance.Category, c.Relevance.Confidence, c.Relevance.Reason)).ToList()));
+    }
+
     [HttpPost("narratives/candidates/{articleId}/approve")]
     public async Task<ActionResult<object>> ApproveCandidate(
         [FromRoute] string articleId,

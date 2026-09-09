@@ -148,6 +148,52 @@ public class NarrativeService : INarrativeService
             .ToList();
     }
 
+    // Thread member inspection: exact-id resolution against the cached rows
+    // the clustering consumed. Read-only throughout: stored verdicts only,
+    // no classification, no embeddings, no quota.
+    public async Task<IReadOnlyList<NewsCandidate>> GetThreadArticles(
+        string symbol, DateOnly asOfDate, string? newsSource,
+        IReadOnlyList<string> articleIds, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            throw new InvalidHistoricalDateException("Symbol is required.");
+        HistoricalDate.Create(asOfDate);
+        var normalized = symbol.Trim().ToUpperInvariant();
+        var selected = NewsSources.Normalize(newsSource);
+        // Distinct preserves first-seen order; capped well above the 400
+        // clustering ceiling (abuse guard, not a data limit).
+        var wanted = (articleIds ?? Array.Empty<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Take(500)
+            .ToList();
+        if (wanted.Count == 0)
+            return Array.Empty<NewsCandidate>();
+        var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
+        var byId = cached.Where(n => IsFromSource(n, selected))
+            .ToDictionary(n => n.Id, StringComparer.Ordinal);
+        var found = new List<NewsCandidate>();
+        foreach (var id in wanted)
+        {
+            if (!byId.TryGetValue(id, out var article))
+            {
+                _logger.LogWarning("Thread article {Article} not in {Symbol} cache; skipping (never invented)", id, normalized);
+                continue;
+            }
+            ArticleRelevance? relevance = null;
+            try
+            {
+                relevance = await _dataRepo.GetRelevance(id, normalized, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Stored verdict miss for {Article}; returning untraced metadata", id);
+            }
+            found.Add(new NewsCandidate { Article = article, Relevance = relevance ?? new ArticleRelevance() });
+        }
+        return found;
+    }
+
     // Verdict census over the evaluated candidates. Unknown admission is
     // impossible here by construction (ClassifyAsync always returns full
     // coverage); the empty-map branch preserves the legacy total-failure

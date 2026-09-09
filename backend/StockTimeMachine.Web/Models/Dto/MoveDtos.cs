@@ -105,6 +105,17 @@ public sealed record CandidatesResponse(
     string NewsSource,
     IReadOnlyList<NewsCandidateDto> Items);
 
+// Thread member inspection (traceability): the exact cached articles behind
+// the requested ids — the same rows the clustering consumed. RequestedCount
+// vs Items.Count exposes cache shortfalls; missing ids are skipped loudly
+// server-side, never invented.
+public sealed record ThreadArticlesResponse(
+    string Symbol,
+    DateOnly AsOfDate,
+    string NewsSource,
+    int RequestedCount,
+    IReadOnlyList<NewsCandidateDto> Items);
+
 public sealed record CompareBriefResponse(
     IReadOnlyList<string> Symbols,
     DateOnly AsOfDate,

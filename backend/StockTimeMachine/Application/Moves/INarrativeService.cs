@@ -46,6 +46,17 @@ public interface INarrativeService
     // USER provenance; approved rows enter the normal pipeline downstream.
     Task<IReadOnlyList<NewsCandidate>> GetCandidates(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default);
 
+    // Thread member inspection (traceability): resolves exact article ids
+    // from the SAME cached read the clustering consumed — no re-clustering,
+    // no similarity search, no approximation. Order follows the requested
+    // ids; ids absent from cache are skipped and logged (the response
+    // carries the requested count so shortfalls are visible, never silent).
+    // Relevance metadata comes from stored verdicts only — nothing here
+    // classifies, embeds, or spends quota.
+    Task<IReadOnlyList<NewsCandidate>> GetThreadArticles(
+        string symbol, DateOnly asOfDate, string? newsSource,
+        IReadOnlyList<string> articleIds, CancellationToken ct = default);
+
     // Cross-pick shared-story brief: articles matching the shared terms across
     // the given symbols' caches, briefed as ONE story with per-article
     // citations. Never a joint verdict — the prompt bans cross-company

@@ -18,6 +18,7 @@ import type {
   SimulationRequest,
   SimulationResponse,
   SnapshotResponse,
+  ThreadArticlesResponse,
 } from '../types';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5251';
@@ -99,6 +100,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
     }),
+  threadArticles: (symbol: string, date: string, newsSource: NewsSource | undefined, ids: string[]) =>
+    request<ThreadArticlesResponse>(
+      `/api/timemachine/narratives/articles?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
+        (newsSource ? `&newsSource=${encodeURIComponent(newsSource)}` : '') +
+        `&ids=${encodeURIComponent(ids.join(','))}`,
+    ),
   candidates: (symbol: string, date: string, newsSource?: NewsSource) =>
     request<CandidatesResponse>(
       `/api/timemachine/narratives/candidates?symbol=${encodeURIComponent(symbol)}&date=${encodeURIComponent(date)}` +
