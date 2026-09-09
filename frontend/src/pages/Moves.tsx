@@ -333,6 +333,14 @@ export default function Moves() {
           >
             Detect hype signals in this window
           </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setNonce((n) => n + 1)}
+            title="Revisiting this page reattaches to the saved run. This starts a completely new investigation instead."
+          >
+            Run fresh investigation
+          </Button>
         </div>
         <p className="text-xs text-fg-dim">
           Movements detected deterministically (see Methodology); each carries only evidence

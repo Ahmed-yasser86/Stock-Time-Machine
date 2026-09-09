@@ -141,8 +141,15 @@ public class HistoricalDataRepository : IHistoricalDataRepository
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
+        var dayAfter = TemporalBoundary.StartOfDayAfterUtc(asOfDate);
         return await _db.NewsArticles
             .Where(n => n.CompanySymbol == companySymbol.ToUpperInvariant() && n.PublishedAt <= cutoff)
+            // Day-granularity rows (GDELT Cloud stores story_date as midnight
+            // UTC) must not leak via the Eastern-evening tail of the instant
+            // cutoff: a row dated D+1 is excluded even though its midnight
+            // instant precedes end-of-day-D Eastern. Same rule SEC filings
+            // already follow (see StartOfDayAfterUtc).
+            .Where(n => !n.Source.Contains("GDELT Cloud") || n.PublishedAt < dayAfter)
             .OrderByDescending(n => n.PublishedAt)
             .ToListAsync(ct);
     }
@@ -289,8 +296,13 @@ public class HistoricalDataRepository : IHistoricalDataRepository
     public async Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default)
     {
         var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
+        var dayAfter = TemporalBoundary.StartOfDayAfterUtc(asOfDate);
         var query = _db.NewsArticles
-            .Where(n => n.CompanySymbol == companySymbol.ToUpperInvariant() && n.PublishedAt <= cutoff);
+            .Where(n => n.CompanySymbol == companySymbol.ToUpperInvariant() && n.PublishedAt <= cutoff)
+            // Calendar-day bound for GDELT Cloud day-granularity rows (see
+            // overload above): story_date D+1 at midnight UTC must not leak
+            // into an as-of-D read through the Eastern-evening cutoff tail.
+            .Where(n => !n.Source.Contains("GDELT Cloud") || n.PublishedAt < dayAfter);
         // Same membership rule as every service-side IsFromSource: cached rows
         // carry their origin in Source, so per-source reads never mix providers.
         if (newsSource == NewsSources.AlphaVantage)

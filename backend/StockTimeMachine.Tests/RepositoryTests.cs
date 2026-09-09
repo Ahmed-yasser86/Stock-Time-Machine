@@ -203,6 +203,68 @@ public class HistoricalDataRepositoryTests
     }
 
     [Fact]
+    public async Task GetNewsAsOf_ExcludesNextDayCloudRows()
+    {
+        // Regression (NVDA 2026-06-01 move showed 2026-06-02 articles):
+        // GDELT Cloud stores story_date as midnight UTC, which precedes the
+        // end-of-day-Eastern instant cutoff — so without a calendar-day bound
+        // the next day's stories leak into the read. True-timestamp rows
+        // (Alpha Vantage) keep the instant rule.
+        using var db = CreateDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        var asOf = new DateOnly(2026, 6, 1);
+        db.NewsArticles.AddRange(
+            new NewsArticle
+            {
+                Id = "cloud-ok", Title = "June 1 story", Source = "GDELT Cloud via example.com",
+                PublishedAt = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/1", CompanySymbol = "NVDA",
+            },
+            new NewsArticle
+            {
+                Id = "cloud-next", Title = "June 2 story", Source = "GDELT Cloud via example.com",
+                PublishedAt = new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/2", CompanySymbol = "NVDA",
+            },
+            new NewsArticle
+            {
+                Id = "av-late", Title = "June 1 evening story", Source = "Alpha Vantage",
+                PublishedAt = new DateTime(2026, 6, 2, 2, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/3", CompanySymbol = "NVDA",
+            });
+        await db.SaveChangesAsync();
+
+        var result = await repo.GetNewsAsOf("NVDA", asOf, NewsSources.Gdelt);
+
+        Assert.DoesNotContain(result, n => n.Id == "cloud-next");
+        Assert.Contains(result, n => n.Id == "cloud-ok");
+
+        // True-timestamp rows keep the instant rule: June 2 02:00 UTC is
+        // June 1 22:00 Eastern — knowable on June 1, correctly admitted.
+        var av = await repo.GetNewsAsOf("NVDA", asOf, NewsSources.AlphaVantage);
+        Assert.Contains(av, n => n.Id == "av-late");
+    }
+
+    [Fact]
+    public async Task GetNewsAsOf_UnfilteredOverload_ExcludesNextDayCloudRows()
+    {
+        using var db = CreateDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        db.NewsArticles.AddRange(
+            new NewsArticle
+            {
+                Id = "cloud-next", Title = "June 2 story", Source = "GDELT Cloud",
+                PublishedAt = new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc),
+                Url = "https://example.com/2", CompanySymbol = "NVDA",
+            });
+        await db.SaveChangesAsync();
+
+        var result = await repo.GetNewsAsOf("NVDA", new DateOnly(2026, 6, 1));
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
     public async Task GetPricesAsOf_ShouldFilterByDate()
     {
         using var db = CreateDb();
