@@ -39,17 +39,27 @@ public static class SseWriter
 
     // Stage-progress adapter shared by the live streams: services report
     // sequentially, and the callback blocks briefly to preserve wire order
-    // (same semantics as the per-controller adapters this replaces).
+    // (same semantics as the per-controller adapters this replaces), with
+    // one hardening the originals lacked: Progress<T> invokes the callback
+    // on the thread pool, so a write racing a disconnected client would
+    // surface as an unhandled threadpool exception and crash the host.
+    // A dead client is not an application failure — swallow transport and
+    // cancellation errors here; the service still observes `ct` itself.
     public static IProgress<SnapshotProgress> StageProgress(HttpResponse response, CancellationToken ct) =>
         new Progress<SnapshotProgress>(stage =>
         {
-            WriteEventAsync(response, "stage", new
+            try
             {
-                stage = stage.Stage,
-                state = stage.State,
-                detail = stage.Detail,
-                count = stage.Count
-            }, ct).GetAwaiter().GetResult();
+                WriteEventAsync(response, "stage", new
+                {
+                    stage = stage.Stage,
+                    state = stage.State,
+                    detail = stage.Detail,
+                    count = stage.Count
+                }, ct).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) { }
+            catch (IOException) { }
         });
 }
 

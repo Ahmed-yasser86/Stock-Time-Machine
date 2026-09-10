@@ -285,3 +285,23 @@ without providers. Never overlap `dotnet run` with `dotnet test`. Full
 guide: [development](docs/development.md).
 
 **Status: Proof of Concept.**
+
+## Documentation index
+
+| Document | What it covers |
+|---|---|
+| [Overview](docs/overview.md) | What the system reconstructs and why hindsight separation matters |
+| [Methodology](docs/methodology.md) | Knowable-vs-aftermath framework, cutoffs, relevance, resemblance rules |
+| [Pipelines](docs/pipelines.md) | Stage-by-stage research pipeline: rules, formulas, failure behavior |
+| [Signals](docs/signals.md) | Deterministic trigger catalog (`hs-v1`) and firing conditions |
+| [Analytics](docs/analytics.md) | Moves scoring, regimes, uncertainty, sentiment math |
+| [Architecture](docs/architecture.md) | Layer responsibilities, boundaries, and honest limitations |
+| [Data](docs/data.md) | Cache tables, schemas, retention, frozen rows |
+| [Providers](docs/providers.md) | External providers, keys, pacing, degradation behavior |
+| [Caching](docs/caching.md) | Cache patterns, invalidation story, quotas, limitations |
+| [API](docs/api.md) | Endpoint reference: routes, payloads, SSE events, throttling |
+| [Reproducibility](docs/reproducibility.md) | Version stamps, re-runs, byte-identical guarantees |
+| [Testing](docs/testing.md) | 461 tests / 38 classes: invariants pinned per area, conventions |
+| [Thread clustering](docs/thread-clustering.md) | Average-linkage decision: A/B evidence, traceability, verification |
+| [Limitations](docs/limitations.md) | Corpus holes, uncertainty scoping, what the system does not claim |
+| [Development](docs/development.md) | Local setup, secrets, scripts, contributor notes |

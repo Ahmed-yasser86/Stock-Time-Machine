@@ -158,6 +158,7 @@ docs/*
 !docs/data.md
 !docs/providers.md
 !docs/caching.md
+!docs/api.md
 !docs/reproducibility.md
 !docs/testing.md
 !docs/limitations.md

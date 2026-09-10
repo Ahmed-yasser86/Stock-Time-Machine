@@ -160,8 +160,13 @@ Expected consequences of the new behavior (not separately measured):
 
 ## 9. Operations
 
-- GDELT quota is the binding live constraint: each full investigation
-  traverses ~100 provider days. Verification batteries should be budgeted.
+- GDELT quota is the binding live constraint. Each provider fetch traverses
+  a 7-day trailing window (one day at a time), and a full investigation
+  issues several such fetches (snapshot sections, per-move evidence where
+  the cache is empty, one stale-refresh at most, plus up to 8 relevance-
+  expansion queries) — not to be confused with the 100-trading-day price
+  window used for move detection, which costs no provider calls.
+  Verification batteries should be budgeted.
 - Known honest limits: GDELT entity-anchored corpus under-covers small-cap
   ETFs (verified: AAAU returns `data: []` upstream with correct entity);
   keyword fallback was measured and rejected (substring noise).
