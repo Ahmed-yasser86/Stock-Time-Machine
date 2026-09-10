@@ -153,3 +153,4 @@ docs/*
 !docs/technical.md
 !docs/overview.md
 !docs/data-snapshot.md
+!docs/pipelines.md
