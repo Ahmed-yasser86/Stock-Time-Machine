@@ -9,117 +9,57 @@
 ![Vectors](https://img.shields.io/badge/vectors-Qdrant-blue)
 ![Status](https://img.shields.io/badge/status-proof_of_concept-lightgrey)
 
----
+Stock Time Machine reconstructs the information environment available up to
+a historical cutoff, detects significant price moves and the evidence
+available before each one, and checks whether each move's pre-event
+information shape occurred before — reporting what followed, descriptively.
+It detects patterns and surfaces resemblances. It never predicts, never
+recommends, never claims causation.
 
-## Key achievements
-
-### Zero-quota repeat investigations
-Article embeddings are cached per article per model. Re-running any
-investigation reuses stored vectors instead of re-spending embedding quota —
-repeat analysis costs the system nothing.
-
-### One failed fetch covers all moves
-A provider outage triggers exactly one live retry path per investigation;
-every move then reads the honest result (cached rows or a named unavailable
-layer) instead of re-hammering a throttled source.
-
-### Reads never fail on vector outage
-Resemblance degrades Qdrant → in-memory join → empty, each step logged.
-A dead vector store costs recall quality, never a failed response.
-
-### One limiter paces every provider
-A single global adaptive limiter sets per-provider rhythms (Alpha Vantage
-12s pacing, GDELT small batches, Gemini 30k tokens/min shared across
-embeddings and generation) instead of scattered sleeps. Typed 429s carry
-Retry-After backoff with bounded attempts; GDELT day-traversal runs under a
-fetch budget so one throttled window can't stall an investigation. Shared
-quota waits instead of failing — throttling degrades gracefully by design,
-not by accident.
-
-### Day-boundary leakage closed
-Day-granularity evidence (filings, GDELT story dates stored as midnight UTC)
-used to slip through the end-of-day instant cutoff into the wrong
-investigation. Both news reads now apply the calendar-day bound filings
-already followed.
-
-### Chained mega-threads split
-Single-linkage clustering fused distinct narratives through bridge articles.
-Offline A/B measurement selected average linkage at the unchanged threshold;
-the same input now resolves into single-narrative threads with honest
-singleton non-matches.
-
-### Full suite green in ~2 minutes
-The backend suite runs fully offline (InMemory stores, stubbed providers) —
-temporal guards, trigger math, merge behavior, and failure paths pinned
-without keys, quota, or network.
-
-### Research achievements
-- **Re-derivable detections.** Every signal trigger names its threads,
-  flags, and regime dates; every resemblance is labeled by which query
-  agreed; every brief cites numbered claims. A detection can be checked by
-  hand from frozen evidence — no black box to take on faith.
-- **Hindsight-proof comparisons.** Supporters must have peaked no later
-  than the explained peak; resemblance pools exclude post-peak members;
-  future rows never enter historical state. Precedent means precedent.
-- **Evidence-backed matching.** Cross-company pairs expose cohesion per
-  thread, thread-level mean, shared terms, and full member lists with
-  canonical URLs — plus duplicate-content exclusion with counts. Similarity
-  is the discovery signal; the member lists are the verdict material.
-- **Version-stamped methodology.** Projection, regulatory window, and
-  relevance-prompt versions ride on every frozen case, so a later
-  re-study can state exactly what changed and what held.
-
-### Business achievements
-- **Diligence with proof.** Pre-decision reviews show what was knowable
-  before a date, each item timestamped and sourced — the kind of record
-  compliance reviews and investment committees ask for and rarely get.
-- **Quota economy.** Caching at every layer (prices, filings, articles,
-  verdicts, embeddings, summaries) means repeat and comparative analysis
-  costs a fraction of first-run spend — the cost structure favors
-  re-examination over re-fetching.
-- **No-forecast positioning.** The system describes and resembles; it never
-  predicts, recommends, or implies causation — in prompts, UI copy, and
-  API shapes alike. That restraint is what makes its output usable inside
-  regulated workflows.
-- **One-cutoff multi-name review.** Sector sweeps evaluate several names
-  under a single shared cutoff with failure-isolated rows — a morning
-  research routine in one view instead of scattered tabs.
-
----
-
-## Executive summary
+## The problem: hindsight corrupts retrospective analysis
 
 Financial analysis almost always reasons backward from outcomes. Prices,
-filings, threads, and aftermath collapse into one story told from today —
-but nobody standing at any historical date could see what came next. They
-saw information arriving through some channels, with gaps everywhere, in
-some order, at some speed.
+filings, threads, and aftermath collapse into a single story told from
+today — but nobody standing at any historical date could see what came
+next. Explanations written after the fact silently borrow later knowledge:
+the filing everyone cites arrived after the decision; the "obvious"
+narrative formed weeks later; the empty news day is read as calm instead
+of as a coverage gap.
 
-This project is built around a single distinction most systems blur:
-**what happened** vs **what was knowable** vs **what followed afterward**.
-Given a company and a date, it reconstructs the information environment
-available up to 23:59 US/Eastern — prices, filings, news, discussion — with
-proof of what was knowable and what was not. It then detects the significant
-price moves in the prior window, attaches only the evidence available before
-each one, and checks whether each move's pre-event information shape
-occurred before, across frozen historical cases. What followed those
-precedents is reported descriptively, collapsed behind a click, disclaimed
-on every surface. It detects patterns and surfaces resemblances. It never
-predicts, never recommends, never claims causation.
+The methodological problem is therefore prior to any model: **before asking
+what a historical moment means, establish what was knowable then, with
+proof, and keep everything afterward strictly separated.** Most tooling
+answers "what happened" from today's vantage point. This system is built to
+answer the harder prior question.
 
-## Why this exists
+## What the system does
 
-Retrospective diligence, journalism, compliance review, and researcher
-training all share one unserved need: a citable reconstruction of *what
-could have been known then*. Existing tools answer "what happened" from
-today's vantage point. Explanations written after the fact silently borrow
-later knowledge — the filing everyone cites arrived after the decision, the
-"obvious" narrative formed weeks later. This system makes that borrowing
-structurally impossible: per-item timestamps, cutoff enforcement, quarantined
-aftermath, provenance on every item. The moat was never the data (all
-public). It is the epistemic discipline.
+Given a company and a historical date, it rebuilds prices, filings, news,
+and discussion as knowable up to 23:59 US/Eastern — each item timestamped,
+each section cutoff-filtered, each gap marked rather than filled. It detects
+the significant moves in the prior window, attaches only the evidence
+available before each move, clusters coverage into inspectable narrative
+threads, and freezes each move with its information state. It then evaluates
+deterministic trigger predicates over those frozen states and compares each
+case against stored precedent by structural and semantic resemblance. What
+followed precedent cases is reported as recorded closes with aggregates,
+collapsed behind a click, disclaimed on every surface.
 
-## Conceptual framework
+## Core framework: three moments that must never mix
+
+- **What happened** — recorded prices, filed documents, published coverage.
+  The raw material, timestamped per item.
+- **What was knowable** — the subset source-timestamped at or before the
+  cutoff. Instant cutoffs for true-timestamp rows; calendar-day bounds for
+  day-granularity rows (a story dated after the investigation date is
+  excluded even when its midnight timestamp precedes the instant cutoff).
+- **What followed afterward** — realized prices and later filings, appended
+  to quarantined aftermath panels only, never fed back into analysis.
+
+Threads vote only with members dated on or before each peak. Resemblance
+pools exclude post-peak members. Supporters must have peaked no later than
+the explained peak. The design goal is simple to state and expensive to
+implement: hindsight has no code path into the historical state.
 
 ```mermaid
 flowchart LR
@@ -128,106 +68,129 @@ flowchart LR
     A -.->|never flows back| K
 ```
 
-Three moments that must never mix: **T** (the date picked), **knowable by T**
-(everything source-timestamped at or before the cutoff), **after T**
-(realized prices, later filings — description only). Threads vote only with
-members dated on or before each peak; resemblance pools exclude post-peak
-members; supporters must have peaked no later than the explained peak.
-Hindsight has no code path into the historical state — several shipped fixes
-closed the ones it briefly had (day-boundary leak, future supporters,
-post-peak pooling).
+Details: [methodology](docs/methodology.md).
 
-## Operationalization
+## What a researcher can inspect
 
-| Research concept | Computational representation | Implementation |
-|---|---|---|
-| Knowability | Cutoff instant + calendar-day bound | `TemporalBoundary`, `HistoricalDataRepository` |
-| Significant move | Weighted z-score/volume/range formula, top 5 | `MoveDetectionService` |
-| Material evidence | Tri-state verdicts, AI-first with RULE fallback | `RelevanceService`, `MaterialityRules` |
-| Narrative thread | Average-linkage cluster (0.75) + TF-IDF label + majority category | `EmbeddingClustering`, `TopicClustering` |
-| Information arrival | Per-layer first-seen instants + lags vs earliest | `ArrivalMap` |
-| Regulatory claim | 30-day filing window with proximity tiers (`reg-v1`) | `RegulatoryEvidence` |
-| Recurring shape | Six deterministic predicates over frozen cases (`hs-v1`) | `HypeSignals` |
-| Precedent resemblance | 3168-d hybrid vectors, dual-query, merged strong/pattern/narrative | `HypeCaseVector`, `HypeResemblanceService` |
-| Decision context | Coverage/conflict/instability proxy composite (`dc-v1`) | `DecisionContextCalculator` |
-| Fair comparison | Common trading days, indexed to 100, never interpolated | Compare page + sector sweep |
+Not features — the research outputs the system produces, each with its
+provenance attached:
 
-## System overview
+- A historical information snapshot at date T, per section, with named
+  gaps instead of silent empties
+- Significant historical moves with deterministic scores, flags, and
+  per-move evidence bounded by that move's own date
+- Information-arrival cascades: which layer carried what first, with lags
+- Narrative threads with member lists, categories, stored basis, and
+  canonical URLs — expandable to the actual articles
+- Regulatory evidence with filing dates, proximity tiers, and methodology
+  version stamps
+- Signal triggers with named evidence (thread titles, sizes, regime spans)
+- Historically resembling cases with labeled match kind and supporter lists
+- Descriptive aftermath: recorded closes, median/high/low aggregates
+- Cross-company thread pairs with cohesion, shared terms, and full
+  membership on both sides
+- Timestamps, version stamps, and methodology references on everything shown
+
+## Methodology at a glance
+
+**Relevance as gatekeeping, not ranking.** Cached articles pass a tri-state
+verdict (relevant / irrelevant / uncertain, AI-first with deterministic
+fallback, user verdicts final); only admitted material becomes evidence,
+with a full census surfaced. A score of 1.0 means "about this company in
+this category" — never "same narrative," which is why lone single-article
+threads stay visible but cast no trigger vote.
+
+**Narratives as inspectable clusters.** Admitted articles embed once
+(cached per article per model), merge by average linkage, and carry TF-IDF
+labels plus majority-vote categories with stored basis. Labels name shared
+vocabulary; member lists carry the meaning.
+
+**Patterns as deterministic predicates.** Six triggers over frozen hard
+fields (thread categories, price flags, regime paths, sentiment direction),
+completeness-gated so missing inputs never read as signal. Detections are
+re-derivable by hand from the registry.
+
+**Resemblance as retrieval.** Hybrid case vectors (structural pattern +
+content meaning) queried twice — pattern regardless of topic, pattern plus
+content — merged with exclusions for same rows, window overlap, future
+peaks, and duplicate content. Similarity ranks candidates for researcher
+judgment; it proves nothing by itself.
+
+Details: [signals](docs/signals.md) · [analytics](docs/analytics.md) ·
+[pipelines](docs/pipelines.md).
+
+## Research and analysis pipeline
 
 ```mermaid
 flowchart LR
-    P[Providers:\nAlpha Vantage, SEC EDGAR\nGDELT, MarketAux\nArctic Shift, Finnhub] --> C[Cache tables:\nprices, filings, news\nsentiment, embeddings]
-    C --> E[Engine:\nmoves → evidence →\nnarratives → hype cases]
-    E --> Q[Qdrant:\nthreads, cases, structural]
-    E --> API[Controllers → DTOs]
-    API --> UI[Snapshot · Moves · Hype\nCompare · Sector]
+    R[Reconstruct:\nknowable by T] --> D[Detect:\nscored moves]
+    D --> E[Attach:\ncutoff-bound evidence]
+    E --> N[Narrate:\nthreads + arrival]
+    N --> F[Freeze:\nversioned cases]
+    F --> M[Match:\nresemblance + supporters]
+    M --> A[Describe:\nquarantined aftermath]
 ```
 
-Clean Architecture with enforced boundaries: Domain (pure rules) →
-Application (orchestration) → Infrastructure (providers, stores, vectors) →
-Web (DTOs). Long runs persist as jobs first (disconnect-safe, timeout,
-pruned) and stream stages over SSE. Full request flows, per-pipeline rules,
-and failure behavior: [pipelines](docs/pipelines.md).
+Each stage reads the previous stage's stored rows — never re-fetching,
+never re-deciding. Full stage-by-stage treatment with rules, formulas, and
+failure behavior: [pipelines](docs/pipelines.md).
 
-## Request flow (single investigation)
+## Technical architecture
 
-```mermaid
-sequenceDiagram
-    participant U as Researcher
-    participant API as Backend
-    participant DB as Cache
-    participant P as Providers
-    U->>API: symbol + date + source
-    API->>DB: resolve company, read cache
-    alt cache miss
-        API->>P: bounded live fetch (quota-paced)
-        P-->>API: rows (or typed failure)
-        API->>DB: store
-    end
-    API->>API: detect moves → attach evidence → cluster → freeze → match
-    API-->>U: stages over SSE, then payload
-```
+Domain (pure rules: temporal math, windows, triggers, clustering) →
+Application (orchestration across interfaces) → Infrastructure (providers,
+stores, vectors, jobs) → Web (DTOs). Boundaries are enforced by tests;
+nondeterministic or metered externals — model wording, provider responses,
+quota states — sit behind interfaces so the deterministic core stays
+testable offline. Long runs persist as disconnect-safe jobs and stream
+stages over SSE. Details: [architecture](docs/architecture.md) ·
+[data](docs/data.md) · [providers](docs/providers.md).
 
-## Project structure
+## Engineering properties
 
-```
-backend/StockTimeMachine/        # Domain, Application, Infrastructure
-backend/StockTimeMachine.Web/    # Controllers, DTOs, Program
-backend/StockTimeMachine.Tests/  # Offline suite (InMemory + stubs)
-frontend/src/                    # React pages, components, API client
-scripts/                         # harvest, backfill, verify, NLP setup
-scripts/nlp/                     # FinBERT sidecar (CPU, pinned revision)
-docs/                            # methodology, pipelines, signals, analytics,
-                                 # architecture, data, providers,
-                                 # reproducibility, testing, limitations
-```
+These exist to support the methodology, not as ends in themselves: cache
+reads before metered fetches with one live retry path per investigation;
+adaptive per-provider pacing with typed backoff; vector-store fallback
+chain; version-stamped frozen rows; idempotent backfills with table backups;
+company resolution that never burns quota on unknown symbols. Each is
+documented where it serves the research design, not as a headline.
 
-## Installation
+## Research applications
+
+Retrospective diligence with proof; cited reconstructions of what was
+knowable when; compliance review of information boundaries; training that
+distinguishes evidence from outcome; pattern libraries of pre-event
+conditions; re-running frozen windows as corpora grow (version stamps exist
+for exactly this). Empirical claims beyond the observed remain future work —
+see [limitations](docs/limitations.md).
+
+## Limitations (abridged)
+
+Corpus holes are real and surfaced, not filled; relevance scores fit, not
+narrative; uncertainty is a descriptive proxy, not modeled risk; regimes are
+window-relative; AI outputs are labeled and versioned; investigations take
+minutes under provider pacing. Full account: [limitations](docs/limitations.md).
+
+## Documentation map
+
+[Overview](docs/overview.md) · [Methodology](docs/methodology.md) ·
+[Pipelines](docs/pipelines.md) · [Signals](docs/signals.md) ·
+[Analytics](docs/analytics.md) · [Architecture](docs/architecture.md) ·
+[Data](docs/data.md) · [Providers](docs/providers.md) ·
+[Reproducibility](docs/reproducibility.md) · [Testing](docs/testing.md) ·
+[Limitations](docs/limitations.md) · [Development](docs/development.md)
+
+## Run
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 dotnet run --project backend/StockTimeMachine.Web/StockTimeMachine.Web.csproj  # :5251
 npm --prefix frontend run dev -- --port 5173 --strictPort
-python scripts/nlp/server.py --port 5252   # optional sentiment sidecar
 dotnet test backend/StockTimeMachine.Tests/StockTimeMachine.Tests.csproj
 ```
 
-Keys via user-secrets (never committed); SQL Server local. Runs degraded
-without keys or providers — honestly empty, never broken. Never overlap
-`dotnet run` with `dotnet test` (the server locks build outputs).
+Keys via user-secrets (never committed); SQL Server local; degrades honestly
+without providers. Never overlap `dotnet run` with `dotnet test`. Full
+guide: [development](docs/development.md).
 
-## Limitations (abridged)
-
-Corpus holes are real (entity-anchored coverage misses some names; corpus
-starts March 2026); relevance scores fit, not narrative; uncertainty is a
-proxy; regimes are window-relative; AI outputs are labeled; investigations
-take 10–20 minutes under provider pacing. Full account:
-[limitations](docs/limitations.md).
-
-## Research directions this enables
-
-Re-running frozen windows as the corpus grows (version stamps exist for
-exactly this); aftermath panels graduating from anecdotes to distributions
-at larger case counts; diffusion analysis on the arrival cascades;
-cross-name information-structure comparison. The instrument is built;
-empirical work is future work.
+**Status: Proof of Concept.**
