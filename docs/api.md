@@ -14,6 +14,11 @@ Readiness: process is up AND the cache database answers (200 reachable,
 503 otherwise). Compose healthcheck and K8s readinessProbe target this,
 not `/health`.
 
+## `GET /api/timemachine/health`
+
+Controller health (`{ status: "ok", time }`). Distinct from root `/health`;
+same liveness meaning, namespaced with the API.
+
 ## `GET /api/timemachine/company-search?q=`
 
 Single canonical company search: directory first, then persisted companies, deduped
@@ -66,6 +71,32 @@ Live investigation stream: `stage` events (`detecting` → per-move `evidence` �
 
 Window narrative threads over cached news only (zero provider quota). Threads cluster ONLY relevance-admitted articles: the shared gate (AI verdicts, deterministic RULE fallback when AI is off, explicit user approvals) runs before embeddings, so embeddings answer "which admitted articles relate", never "is this relevant". Gemini embeddings decide membership (fallback: TF-IDF), shared terms name each thread; multi-article threads (largest 8) carry opt-in-model AI briefs (`summary`, `keyPoints`, `model`). Response states `clusteringMethod` (`gemini-embeddings` | `tf-idf-fallback`), `articlesConsidered`, and the gate census (`relevantCount`, `irrelevantCount`, `uncertainCount`); borderline articles wait on `narratives/candidates` for explicit approve/reject. Briefs are non-deterministic and hindsight-exposed — labeled as generated everywhere shown.
 
+## POST /api/timemachine/moves/jobs + GET /api/timemachine/moves/stream/{jobId} (SSE)
+
+Persisted background runs for long investigations. POST starts the pipeline
+detached (`{ symbol, date, newsSource? }` → `{ jobId }`; 400s on bad input,
+future dates rejected). The stream replays full stage history first
+(reconnect-safe), then live-tails every 2s with heartbeat comments every
+20s; terminal jobs emit the full `moves` + `narratives` payloads or an
+`error` event (timeout after one hour). Unknown ids get an error event so
+the client starts a fresh job. Disconnecting changes nothing — the job runs on.
+
+## GET /api/timemachine/narratives/candidates + POST approve/reject
+
+Uncertain borderline articles the gate refused to decide alone, with verdict
+metadata (`decision`, `decisionSource`, `category`, `confidence`, `reason`).
+`POST narratives/candidates/{articleId}/approve?symbol=` flips the verdict
+to `USER_APPROVED` (enters the normal pipeline); `.../reject` marks it
+`IRRELEVANT`. Explicit, never silent; user verdicts are final and never
+re-judged.
+
+## GET /api/timemachine/narratives/articles?symbol=&date=&newsSource=&ids=
+
+Thread member inspection: exact article ids (1–500, comma/semicolon/space
+separated) resolved against the cached rows clustering consumed — no
+re-clustering, no similarity search. Missing URLs render as `""`
+(title-only, no link); unknown ids surface the shortfall honestly.
+
 ## GET /api/timemachine/compare/brief?symbols=&date=&newsSource=&terms=
 
 Opt-in shared-story brief across exactly 2 picks' cached coverage: articles matching ≥2 shared terms (max 8) briefed as one story with per-article citations. Never a joint verdict — cross-company causation and pooled conclusions are banned in the prompt. Null brief when nothing matches or AI is off.
@@ -74,11 +105,19 @@ Opt-in shared-story brief across exactly 2 picks' cached coverage: articles matc
 
 Cross-pick thread pairs ranked by embedding cosine (per-symbol clusters joined by max-pairwise similarity, threshold 0.70, top 10). Each pair carries both titles and its score so users judge every join; empty when AI is off. Scores are similarity, never relatedness proofs.
 
+## POST /api/timemachine/copilot/explain
+
+Grounded methodology Q&A (`{ question, facts? }`, question ≤ 500 chars):
+answers ONLY from retrieved methodology sections plus caller-supplied
+facts, with cited sections. Out-of-scope questions get the exact refusal
+sentence, never an invented answer. Null-safe fallback response when the
+explainer is unavailable.
+
 ## POST /api/timemachine/copilot/suggest
 
 Phrases caller-supplied deterministic gap pointers as next steps (max 5). The model phrases only — routes and links stay frontend-owned and must be preserved verbatim. Shares the copilot containment contract and the 30k-tpm budget.
 
-## POST /api/timemachine/copilot/{filings-summary|contrast|explain-uncertainty|gist|review}
+## POST /api/timemachine/copilot/{filings-summary|contrast|explain-uncertainty|gist|explain|suggest|review}
 
 Evidence copilot: explicit AI actions over already-retrieved evidence, never auto-run. Body: `{ symbol, date, newsSource?, ids?, note? }`. `filings-summary` briefs the move's filings; `contrast` needs ≥2 article `ids` and reports agreement first; `explain-uncertainty` translates the measured uncertainty components into plain words (no new numbers); `gist` renders an English gist of non-English threads; `review` checks the user's conclusion note claim-by-claim and returns `{ ref, verdict: supported|unsupported|unclear, detail }[]` — it reviews, never authors. Null briefs / empty issues on disabled AI or empty evidence.
 
@@ -86,9 +125,36 @@ Evidence copilot: explicit AI actions over already-retrieved evidence, never aut
 
 Hype-cycle signal detections per key move: deterministic triggers (flags, thread categories, regime path, sentiment) with triggering-evidence refs, supporting registry cases (same trigger fired), cache-only embedding resemblance (0.70 threshold, scored), and realized post-peak closes. Registry joins are cross-source by design; every supporter/resemblance/followed ref carries its own `newsSource` provenance badge, and deep-links reopen the case under its own source — never the viewer's. Movement-level regulatory evidence uses the 30-day candidate window (methodology `reg-v1`, tiers very_close/recent/older); window length and version ride on every case. Co-occurrence only — predicts nothing.
 
+## GET /api/timemachine/hype/signals/stream (SSE)
+
+Same data as `signals`, narrated while it computes: real stage events
+(detecting → threads → projecting → matching) then the full signals
+payload. Validation errors are normal 400s; mid-stream failures arrive as
+an `error` event.
+
+## GET /api/timemachine/hype/sector?symbols=&date=&newsSource= (+ /sector/stream SSE)
+
+Sector sweep over 1–8 comma-separated symbols under one shared as-of
+cutoff: each symbol runs the full signals pipeline independently — no
+pooled verdicts, no cross-symbol scoring. Per-symbol failures degrade to
+error rows carrying the reason (unknown ticker vs thin/calm history);
+one bad symbol never kills the sweep. The stream variant adds
+symbol-prefixed stage events plus per-row events.
+
 ## POST /api/timemachine/hype/brief
 
 Opt-in analyst summary for one detected signal (`{ symbol, date, newsSource?, peakDate, signalId }`). Grounded in the triggering threads under the thread-brief containment contract; the regulatory section lists only in-window filings and every filing claim cites its primary document (SEC accession when stored, else the directory URL, else stated untraced). Null when AI is off or the model declines.
+
+## POST /api/timemachine/hype/reindex + POST /api/timemachine/hype/case-stats + GET /api/timemachine/hype/vector-health
+
+Operator endpoints, same `Hype:HarvestEnabled` gate as harvest.
+`reindex` upserts every registry case into the vector store by stable id
+(existing rows never modified) → `{ casesScanned, vectorsIndexed }`.
+`case-stats` returns the pattern-score distribution (registry size,
+matched cases, min/max/median/quartiles, 10 buckets over [0,1]) used to
+set the pattern threshold from measured data. `vector-health` reports
+which resemblance backend is live (`qdrant` vs `memory`) and its point
+count; never fails the feature either way.
 
 ## POST /api/timemachine/hype/harvest
 
