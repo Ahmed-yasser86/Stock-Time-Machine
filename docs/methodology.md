@@ -31,8 +31,9 @@ date are excluded even though their midnight timestamp passes the instant
 cutoff. True-timestamp rows (Alpha Vantage, MarketAux) keep the instant
 rule — a real 22:00 Eastern article is knowable the same evening.
 
-Worked incident: a June 1 move displayed June 2 stories; after the fix,
-zero post-date rows remained, verified live.
+Concrete consequence: without this bound, a story dated D+1 would display
+inside a D-dated investigation — midnight timestamps look "before" the
+cutoff while the story itself is not.
 
 ## Per-layer timestamps
 

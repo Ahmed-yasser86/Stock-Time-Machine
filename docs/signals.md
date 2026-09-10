@@ -28,9 +28,10 @@ drill-down with their category basis.
   plus the tense-day span.
 - **Interpretation:** regulatory conditions co-occurred with the peak window.
 - **Limitation:** categories are AI- or keyword-assigned and can misfire —
-  the documented case is a 0.85-confidence REGULATORY verdict on a health
-  story about an AI-advisory appointee. Corroboration (multiple articles)
-  is what keeps such cases out of triggers; the thread remains inspectable.
+  a high-confidence REGULATORY verdict can land on a health story about an
+  AI appointee (appointment read as regulatory context). Corroboration
+  (multiple articles) is what keeps such cases out of triggers; the thread
+  remains inspectable.
 
 ## volume-first-divergence
 

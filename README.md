@@ -23,13 +23,13 @@ never claims causation.
 
 ## Most interesting outputs
 
-- NVDA 2026-06-05: regulatory-overhang fired on corroborated chip-blocking
-  and smuggling threads before a sharp move, while lone single-article
-  threads were excluded from the trigger ([methodology](docs/methodology.md)).
-- A chained mega-thread resolved into coherent single-narrative threads by
-  average linkage, verified live ([analytics](docs/analytics.md)).
-- Cosine-1.000 duplicate diagnosed to identical title-only inputs and
-  excluded by rule ([data](docs/data.md)).
+- Regulatory-overhang fires on corroborated multi-article threads while
+  lone single-article threads stay visible but cast no vote
+  ([methodology](docs/methodology.md)).
+- Average linkage resolves chained mega-threads into single-narrative
+  threads; singletons read as honest non-matches ([analytics](docs/analytics.md)).
+- Identical title-only inputs embed identically, so same-story duplicates
+  are counted and never ranked ([data](docs/data.md)).
 
 ## Architecture in brief
 
