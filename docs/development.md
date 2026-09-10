@@ -30,7 +30,7 @@ outputs — stop it first). Frontend builds needing memory:
 ## Gates
 
 ```powershell
-dotnet test backend/StockTimeMachine.Tests/StockTimeMachine.Tests.csproj  # 449 green
+dotnet test backend/StockTimeMachine.Tests/StockTimeMachine.Tests.csproj  # suite green
 npx --prefix frontend tsc --noEmit
 npm --prefix frontend run build
 .\scripts\verify.ps1   # end-to-end gate where available

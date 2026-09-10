@@ -11,9 +11,9 @@ Four distinct claims, kept separate:
    (projection), `reg-v1` (regulatory window), `rx-2` (relevance prompt);
    embeddings record model + revision (FinBERT rev `4556d130`); briefs
    record their model. A result is reproducible *for a stated version set*.
-3. **Reproducible analytical logic.** 449 tests pin trigger math, boundary
-   rules, counting rules, and merge behavior offline (InMemory stores,
-   stubbed providers) — including byte-identical clustering reruns.
+3. **Reproducible analytical logic.** The backend suite pins trigger math,
+boundary rules, counting rules, and merge behavior offline (InMemory
+stores, stubbed providers) — including byte-identical clustering reruns.
 4. **Nondeterministic external dependencies.** Gemini wording and categories,
    provider responses, quota-dependent degradation paths, and cache growth
    all change outputs legitimately. A recomputation months later with new

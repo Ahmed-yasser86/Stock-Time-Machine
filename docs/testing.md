@@ -1,6 +1,6 @@
 # Testing strategy: invariants, not counts
 
-The suite (449 backend tests, green) is organized around research and system
+The backend suite (green) is organized around research and system
 invariants. Representative coverage by area:
 
 - **Temporal integrity** — day-boundary guards (June-2 leak regression),

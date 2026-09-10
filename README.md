@@ -3,8 +3,8 @@
 Stock Time Machine reconstructs the information environment available up to
 a historical cutoff — prices, filings, news, discussion — with proof of what
 was knowable and what was not. It then checks whether each significant move's
-pre-event information shape has occurred before, across 130 frozen cases,
-and reports what followed those precedents descriptively. It detects
+pre-event information shape has occurred before, across the frozen case
+registry, and reports what followed those precedents descriptively. It detects
 patterns and surfaces resemblances. It never predicts, never recommends,
 never claims causation.
 
@@ -17,16 +17,17 @@ never claims causation.
 - Hybrid resemblance (3168-d vectors, dual-query) with same-id, future-peak,
   and duplicate-content exclusions.
 - Filing pipeline (SEC EDGAR → structured summaries → briefs), tri-state
-  relevance gate, 9,714-company directory.
+  relevance gate, SEC-mirror company directory.
 - Guardrails throughout: honest empties, labeled AI, version-stamped
   methodology (`hcp-v1`, `reg-v1`, `rx-2`).
 
 ## Most interesting outputs
 
-- NVDA 2026-06-05: regulatory-overhang on a 20-article chip-blocking thread
-  before a −6.20% move ([methodology](docs/methodology.md)).
-- 166-article mega-thread resolved into 43 coherent threads by average
-  linkage ([analytics](docs/analytics.md)).
+- NVDA 2026-06-05: regulatory-overhang fired on corroborated chip-blocking
+  and smuggling threads before a sharp move, while lone single-article
+  threads were excluded from the trigger ([methodology](docs/methodology.md)).
+- A chained mega-thread resolved into coherent single-narrative threads by
+  average linkage, verified live ([analytics](docs/analytics.md)).
 - Cosine-1.000 duplicate diagnosed to identical title-only inputs and
   excluded by rule ([data](docs/data.md)).
 
@@ -34,8 +35,8 @@ never claims causation.
 
 Domain (pure rules) → Application (orchestration) → Infrastructure
 (providers, stores, vectors) → Web (DTOs). Boundaries enforced by tests;
-nondeterministic externals sit behind interfaces; 449 tests run fully
-offline. Details: [architecture](docs/architecture.md).
+nondeterministic externals sit behind interfaces; the full backend suite
+runs fully offline. Details: [architecture](docs/architecture.md).
 
 ## Inspect and run
 
@@ -43,7 +44,7 @@ offline. Details: [architecture](docs/architecture.md).
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 dotnet run --project backend/StockTimeMachine.Web/StockTimeMachine.Web.csproj  # :5251
 npm --prefix frontend run dev -- --port 5173 --strictPort
-dotnet test backend/StockTimeMachine.Tests/StockTimeMachine.Tests.csproj      # 449 green
+dotnet test backend/StockTimeMachine.Tests/StockTimeMachine.Tests.csproj      # suite green
 ```
 
 Needs API keys (user-secrets, never committed) and SQL Server; degrades
@@ -57,8 +58,7 @@ honestly without them. Full guide: [development](docs/development.md).
 [Architecture](docs/architecture.md) · [Data](docs/data.md) ·
 [Providers](docs/providers.md) · [Reproducibility](docs/reproducibility.md) ·
 [Testing](docs/testing.md) · [Limitations](docs/limitations.md) ·
-[Development](docs/development.md) · [Numbers](docs/data-snapshot.md) ·
-[Clustering deep-dive](docs/THREAD_CLUSTERING.md)
+[Development](docs/development.md)
 
 **Status: Proof of Concept.** Descriptions are historical only. Known gaps:
 title-only GDELT rows with real coverage holes; window-relative regimes;

@@ -3,8 +3,8 @@
 How the methodology is actually implemented. Each section follows the same
 chain: **research question → concept → operational definition → pipeline →
 evidence → output → limitations**, with exact constants from the code and a
-diagram of how information is transformed. Numbers source:
-[data-snapshot.md](data-snapshot.md).
+diagram of how information is transformed. Constants below match the
+implementation verbatim.
 
 ## 1. Point-in-time reconstruction
 
@@ -163,9 +163,10 @@ flowchart LR
     C -->|TF-IDF fallback at 0.25| D
 ```
 
-Single linkage was retired after measurement (166-article blob, median
-pairwise 0.70, 81% below bar); threshold tuning on it proved futile; the
-post-pass reproduced average linkage bit-for-bit. Singleton threads are
+Single linkage was retired after measurement (a mega-thread whose median
+pairwise similarity sat far below the merge bar, with most pairs below it);
+threshold tuning on it proved futile; the post-pass reproduced average
+linkage bit-for-bit. Singleton threads are
 honest non-matches. Every thread exposes its member ids for drill-down.
 **Limitation:** embeddings see titles only for GDELT rows; briefs narrate
 only briefed threads; categories can misfire (singletons fenced out of
@@ -211,7 +212,7 @@ flowchart LR
 ```
 
 **Limitation:** same-week macro shocks inflate structural similarity
-(trigger-echo); 130 megacap-skewed cases are anecdotes, not base rates.
+(trigger-echo); a small megacap-skewed registry yields anecdotes, not base rates.
 
 ## 11. Cross-company comparison + sector
 

@@ -31,8 +31,8 @@ date are excluded even though their midnight timestamp passes the instant
 cutoff. True-timestamp rows (Alpha Vantage, MarketAux) keep the instant
 rule — a real 22:00 Eastern article is knowable the same evening.
 
-Worked incident: a June 1 move displayed June 2 stories (85 → 57 articles
-after the fix, zero post-date rows on all five moves, verified live).
+Worked incident: a June 1 move displayed June 2 stories; after the fix,
+zero post-date rows remained, verified live.
 
 ## Per-layer timestamps
 

@@ -19,8 +19,8 @@ are documented, not hidden; see [limitations](limitations.md).)
   knowable up to 23:59 US/Eastern that day — nothing later can leak in.
 - It detects the significant price moves in the prior 100 trading days and
   attaches the evidence available before each one.
-- It compares each move's pre-peak information shape against 130 frozen
-  historical cases and shows what followed those precedents — as
+- It compares each move's pre-peak information shape against the frozen
+  case registry and shows what followed those precedents — as
   description, never as a forecast.
 
 ## What it does not do
@@ -32,8 +32,8 @@ are documented, not hidden; see [limitations](limitations.md).)
 
 ## Current status
 
-Proof of concept running on real data with real results: 130 frozen cases
-across 8 symbols, 449 passing backend tests, live provider integrations
+Proof of concept running on real data with real results: a frozen case
+registry across multiple symbols, a green backend suite, live provider integrations
 (Alpha Vantage, SEC EDGAR, GDELT, MarketAux, Finnhub) with quota discipline
 and honest degradation. Full investigations take 10–20 minutes; the demo
 queries in the [README](../README.md) return in seconds against warmed caches.

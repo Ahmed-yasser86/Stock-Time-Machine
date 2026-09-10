@@ -4,7 +4,7 @@ Stated generously: a skeptic should find nothing hidden here.
 
 - **No causation, no prediction.** Nothing in the system establishes that a
   narrative caused a move or that a pattern forecasts anything. Aftermath
-  panels are small-sample descriptions (130 cases, 8 megacaps).
+  panels are small-sample descriptions from a megacap-skewed registry.
 - **Corpus holes are real.** GDELT is title-only with verified gaps: AAAU
   returns `data: []` upstream with the correct entity; NVDA has zero
   anchored stories 05-10–05-15 while 05-20+ is populated; the corpus starts

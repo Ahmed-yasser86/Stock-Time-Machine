@@ -2,8 +2,9 @@
 
 ## Domains
 
-- **Companies** — directory (9,714 SEC filers + 20-row curated overlay for
-  sectors) for names/CIKs; `Companies` table for resolved profiles. A
+- **Companies** — directory (SEC-mirror filer list with a small curated
+  overlay for sectors) for names/CIKs; `Companies` table for resolved
+  profiles. A
   failed save once voided whole investigations; provider strings are now
   normalized and clamped at the single write path.
 - **Market prices** — Alpha Vantage daily bars, DB-first, CIK-gated live
@@ -19,7 +20,7 @@
 - **Narratives** — relevance verdicts (AI 0.65 floor → RULE fallback →
   USER final) → embeddings → average-linkage threads (0.75) → optional
   briefs. Every thread exposes its member ids.
-- **Hype cases** — 130 frozen dossiers with version stamps (`hcp-v1`,
+- **Hype cases** — frozen dossiers with version stamps (`hcp-v1`,
   `reg-v1`, `rx-2`).
 - **Derived measurements** — regimes, divergence, uncertainty, resemblance
   vectors. Computed, never stored as truth.

@@ -95,5 +95,5 @@ verbatim.
 - **Output:** per-case reaction closes + aggregate panel.
 - **Interpretation:** description of what happened after similar shapes —
   base rates to think with, not predictions.
-- **Limitation:** small, megacap-skewed sample (130 cases, 8 symbols);
+- **Limitation:** small, megacap-skewed sample;
   distributions, not estimates.

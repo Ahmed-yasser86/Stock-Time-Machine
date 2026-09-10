@@ -1,7 +1,7 @@
 # Architecture
 
 Four layers with enforced dependency direction (boundary violations fail the
-build) and 449 tests running fully offline.
+build) and a full backend suite running fully offline.
 
 ## Layers and responsibilities
 
@@ -26,7 +26,8 @@ models get swapped. The boundary puts every nondeterministic or metered
 thing — Gemini wording, provider responses, quota-dependent degradation —
 behind interfaces, so the suite pins the science without the network. The
 `ICompanyDirectory` / `ICompanyLookup` / provider-factory seams are what let
-a 20-row hand list become a 9,714-row SEC mirror with zero consumer changes.
+a hand-maintained list become an SEC-mirror directory with zero consumer
+changes.
 
 ## Hybrid vector layout (3168-d)
 
