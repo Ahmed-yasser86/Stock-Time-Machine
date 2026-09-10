@@ -281,6 +281,7 @@ guide: [development](docs/development.md).
 | Document | What it covers |
 |---|---|
 | [Overview](docs/overview.md) | What the system reconstructs and why hindsight separation matters |
+| [Product vision](docs/product-vision.md) | Thesis, genuine extensions, and permanent constraints |
 | [Methodology](docs/methodology.md) | Knowable-vs-aftermath framework, cutoffs, relevance, resemblance rules |
 | [Pipelines](docs/pipelines.md) | Stage-by-stage research pipeline: rules, formulas, failure behavior |
 | [Signals](docs/signals.md) | Deterministic trigger catalog (`hs-v1`) and firing conditions |
