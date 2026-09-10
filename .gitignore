@@ -146,4 +146,10 @@ docs/features/*.md
 
 # ----- Documentation (local only, never commit) -----
 *.md
-docs/
+docs/*
+# ----- Public documentation (committed) -----
+!README.md
+!docs/research.md
+!docs/technical.md
+!docs/overview.md
+!docs/data-snapshot.md
