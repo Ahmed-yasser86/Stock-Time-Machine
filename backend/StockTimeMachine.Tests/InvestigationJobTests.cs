@@ -9,10 +9,6 @@ namespace StockTimeMachine.Tests;
 
 public class InvestigationJobTests
 {
-    private static StockTimeMachineDbContext NewDb() => new(
-        new DbContextOptionsBuilder<StockTimeMachineDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-
     private sealed class MapScopeFactory : IServiceScopeFactory
     {
         private readonly Func<IServiceProvider> _provider;
@@ -89,10 +85,19 @@ public class InvestigationJobTests
 
     private sealed class Harness
     {
-        public StockTimeMachineDbContext Db { get; } = NewDb();
+        // One shared InMemory store per harness, but a FRESH context per
+        // store — mirroring production, where each DI scope gets its own
+        // DbContext. The previous shape shared a single context between the
+        // polling loop below and the background runner, tripping EF's
+        // concurrency detector whenever the two overlapped (CI flake:
+        // "A second operation was started on this context instance...").
+        private readonly string _dbName = Guid.NewGuid().ToString();
+        private StockTimeMachineDbContext NewScopedDb() => new(
+            new DbContextOptionsBuilder<StockTimeMachineDbContext>()
+                .UseInMemoryDatabase(_dbName).Options);
         public InvestigationJobRunner Runner { get; }
         public InvestigationJobStore Store =>
-            new(Db, NullLogger<InvestigationJobStore>.Instance);
+            new(NewScopedDb(), NullLogger<InvestigationJobStore>.Instance);
 
         public Harness(IMoveDetectionService moves, INarrativeService narratives, double timeoutMinutes = 60)
         {
@@ -100,10 +105,9 @@ public class InvestigationJobTests
             {
                 ["Jobs:TimeoutMinutes"] = timeoutMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
             }).Build();
-            var db = Db;
             var factory = new MapScopeFactory(() => new MapProvider(new Dictionary<Type, object>
             {
-                [typeof(IInvestigationJobStore)] = new InvestigationJobStore(db, NullLogger<InvestigationJobStore>.Instance),
+                [typeof(IInvestigationJobStore)] = new InvestigationJobStore(NewScopedDb(), NullLogger<InvestigationJobStore>.Instance),
                 [typeof(IMoveDetectionService)] = moves,
                 [typeof(INarrativeService)] = narratives,
             }));
