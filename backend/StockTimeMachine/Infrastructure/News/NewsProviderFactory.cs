@@ -33,7 +33,9 @@ public class NewsProviderFactory : INewsProviderFactory
             return _alphaVantage;
         if (normalized == NewsSources.MarketAux)
             return _marketAux;
-        return Gdelt();
+        if (normalized == NewsSources.GdeltCloud)
+            return RequireCloud();
+        return _gdelt;
     }
 
     public INewsProvider Default()
@@ -42,13 +44,19 @@ public class NewsProviderFactory : INewsProviderFactory
             return _alphaVantage;
         if (_defaultSource == NewsSources.MarketAux)
             return _marketAux;
-        return Gdelt();
+        if (_defaultSource == NewsSources.GdeltCloud)
+            return RequireCloud();
+        return _gdelt;
     }
 
-    // "gdelt" is one source, two transports: authenticated Cloud (entity-anchored
-    // stories) when a server-side key is configured, otherwise the keyless
-    // Project DOC API. Never mixed within an investigation.
-    private INewsProvider Gdelt() => _gdeltCloud.IsConfigured ? _gdeltCloud : _gdelt;
+    // GDELT Cloud requires a server-side key (Gdelt:ApiKey, Bearer auth).
+    // Without it the request fails loudly here — the keyless Project API is
+    // a separate explicit source ("gdelt"), never a silent substitute.
+    private INewsProvider RequireCloud() =>
+        _gdeltCloud.IsConfigured
+            ? _gdeltCloud
+            : throw new ExternalProviderException(
+                "The gdelt-cloud news source requires a configured Gdelt:ApiKey. Select gdelt instead or configure the key.");
 
     public string DefaultSource => _defaultSource;
 }

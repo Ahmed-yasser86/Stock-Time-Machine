@@ -2,10 +2,13 @@
 namespace StockTimeMachine;
 
 // Canonical news-source keys. The user explicitly selects one per investigation;
-// providers are never silently substituted for each other.
+// providers are never silently substituted for each other: "gdelt" is always
+// the keyless Project DOC API, "gdelt-cloud" is always the authenticated
+// Cloud API (which requires Gdelt:ApiKey and fails loudly without it).
 public static class NewsSources
 {
     public const string Gdelt = "gdelt";
+    public const string GdeltCloud = "gdelt-cloud";
     public const string AlphaVantage = "alphavantage";
     public const string MarketAux = "marketaux";
 
@@ -15,13 +18,14 @@ public static class NewsSources
             return AlphaVantage;
         if (string.Equals(source, MarketAux, StringComparison.OrdinalIgnoreCase))
             return MarketAux;
+        if (string.Equals(source, GdeltCloud, StringComparison.OrdinalIgnoreCase))
+            return GdeltCloud;
         return Gdelt;
     }
 
-    // Transport-neutral: "gdelt" is served by GDELT Cloud (entity-anchored
-    // stories) when a server-side key is configured, else the Project DOC API.
     public static string DisplayName(string? source) =>
         Normalize(source) == AlphaVantage ? "Alpha Vantage"
         : Normalize(source) == MarketAux ? "MarketAux"
+        : Normalize(source) == GdeltCloud ? "GDELT Cloud"
         : "GDELT";
 }

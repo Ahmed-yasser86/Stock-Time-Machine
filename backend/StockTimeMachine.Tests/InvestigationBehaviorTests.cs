@@ -338,9 +338,13 @@ public class InvestigationBehaviorTests
         Assert.Same(avNews, factory.Get("alphavantage"));
         Assert.Same(marketAux, factory.Get("marketaux"));
         Assert.Same(marketAux, factory.Get("MarketAux"));
-        // No Cloud key in test config: "gdelt" falls back to the Project provider.
+        // No Cloud key in test config: "gdelt" is the keyless Project provider,
+        // explicitly — never an auto-upgraded Cloud transport.
         Assert.Same(gdelt, factory.Get("gdelt"));
         Assert.Same(gdelt, factory.Get("bogus"));
+        // "gdelt-cloud" without a key fails loudly instead of silently
+        // serving Project data.
+        Assert.Throws<ExternalProviderException>(() => factory.Get("gdelt-cloud"));
         Assert.Equal(NewsSources.AlphaVantage, factory.DefaultSource);
 
         var cloudConfig = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -351,9 +355,23 @@ public class InvestigationBehaviorTests
         var cloudFactory = new NewsProviderFactory(gdelt,
             new GdeltCloudNewsProvider(new HttpClient(), NullLogger<GdeltCloudNewsProvider>.Instance, cloudConfig),
             avNews, marketAux, cloudConfig);
-        // Key present: "gdelt" resolves to authenticated Cloud transport.
-        Assert.IsType<GdeltCloudNewsProvider>(cloudFactory.Get("gdelt"));
-        Assert.IsType<GdeltCloudNewsProvider>(cloudFactory.Default());
+        // Key present: sources stay explicit — "gdelt" is still Project,
+        // "gdelt-cloud" is Cloud.
+        Assert.Same(gdelt, cloudFactory.Get("gdelt"));
+        Assert.IsType<GdeltCloudNewsProvider>(cloudFactory.Get("gdelt-cloud"));
+        Assert.Same(gdelt, cloudFactory.Default());
+
+        // Default source gdelt-cloud: Cloud when keyed, loud failure when not.
+        var keyedDefault = new NewsProviderFactory(gdelt,
+            new GdeltCloudNewsProvider(new HttpClient(), NullLogger<GdeltCloudNewsProvider>.Instance, cloudConfig),
+            avNews, marketAux, new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Gdelt:ApiKey"] = "test-key",
+                ["News:DefaultSource"] = "gdelt-cloud"
+            }).Build());
+        Assert.IsType<GdeltCloudNewsProvider>(keyedDefault.Default());
+        var unkeyedDefault = new NewsProviderFactory(gdelt, gdeltCloud, avNews, marketAux, Config("gdelt-cloud"));
+        Assert.Throws<ExternalProviderException>(() => unkeyedDefault.Default());
     }
 
     private sealed class TimeoutHandler : HttpMessageHandler

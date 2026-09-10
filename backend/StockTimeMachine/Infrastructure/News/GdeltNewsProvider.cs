@@ -13,9 +13,12 @@ public class GdeltNewsProvider : INewsProvider, IRangeNewsSearcher
     private readonly ILogger<GdeltNewsProvider> _logger;
     private readonly IConfiguration _config;
     private readonly string _baseUrl;
-    // Optional GDELT Cloud credential. Server-side only: read from configuration
-    // (environment variable Gdelt__ApiKey), never logged, never sent to browsers.
-    // When absent, the keyless GDELT Project API is used.
+    // Optional key appended as ?key= for a higher Project DOC quota.
+    // Server-side only: read from configuration (environment variable
+    // Gdelt__ApiKey), never logged, never sent to browsers. Absent means
+    // anonymous quota. This provider is always the Project transport;
+    // GDELT Cloud is a separate provider (GdeltCloudNewsProvider) behind
+    // the explicit "gdelt-cloud" source — never an automatic upgrade.
     private readonly string _cloudApiKey;
     private readonly AdaptiveRateLimiter _limiter;
 

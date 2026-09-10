@@ -75,7 +75,7 @@ export interface CompanySummary {
   sector: string;
 }
 
-export type NewsSource = 'gdelt' | 'alphavantage' | 'marketaux';
+export type NewsSource = 'gdelt' | 'gdelt-cloud' | 'alphavantage' | 'marketaux';
 
 export interface SnapshotResponse {
   company: CompanySummary;
@@ -475,5 +475,6 @@ export const SIMULATION_DISCLAIMER =
 export function newsSourceLabel(source: NewsSource | string): string {
   if (source === 'alphavantage') return 'Alpha Vantage';
   if (source === 'marketaux') return 'MarketAux';
+  if (source === 'gdelt-cloud') return 'GDELT Cloud';
   return 'GDELT';
 }
