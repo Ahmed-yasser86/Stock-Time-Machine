@@ -181,12 +181,33 @@ builder.Services.AddHttpClient<IQuoteProvider, FinnhubQuoteProvider>();
 
 var app = builder.Build();
 
+// Plug-and-play database bootstrap (skipped in Testing): create the schema
+// when missing, retrying while SQL Server finishes its own startup. Compose
+// and K8s already order startup (health gates), so this is the last-resort
+// net for `docker compose up` on a cold machine. After ~2 minutes of
+// failure the exception propagates (fail fast — the orchestrator restarts).
 if (!builder.Environment.IsEnvironment("Testing"))
 {
     using (var scope = app.Services.CreateScope())
     {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         var timeMachineDb = scope.ServiceProvider.GetRequiredService<StockTimeMachineDbContext>();
-        await timeMachineDb.Database.EnsureCreatedAsync();
+        const int attempts = 24;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await timeMachineDb.Database.EnsureCreatedAsync();
+                if (attempt > 1)
+                    logger.LogInformation("Database became available after {Attempts} attempts", attempt);
+                break;
+            }
+            catch (Exception ex) when (attempt < attempts)
+            {
+                logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{Attempts}); retrying in 5s", attempt, attempts);
+                await Task.Delay(TimeSpan.FromSeconds(5));
+            }
+        }
     }
 }
 
@@ -199,6 +220,22 @@ app.UseCors("Frontend");
 
 app.MapGet("/", () => Results.Json(new { name = "Stock Time Machine API", version = "1.0", docs = "/api/timemachine/methodology" }));
 app.MapGet("/health", () => Results.Ok("Healthy"));
+// Readiness probe (compose healthcheck, K8s readinessProbe): the process is
+// up AND the cache database answers. Degraded DB => 503, never a silent
+// half-ready pod behind the load balancer.
+app.MapGet("/health/db", async (StockTimeMachineDbContext db) =>
+{
+    try
+    {
+        return await db.Database.CanConnectAsync()
+            ? Results.Ok(new { status = "Healthy", database = "reachable" })
+            : Results.Json(new { status = "Unhealthy", database = "unreachable" }, statusCode: 503);
+    }
+    catch
+    {
+        return Results.Json(new { status = "Unhealthy", database = "unreachable" }, statusCode: 503);
+    }
+});
 
 app.MapControllers();
 

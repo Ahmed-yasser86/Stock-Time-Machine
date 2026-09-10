@@ -125,12 +125,13 @@ spec:
             cpu: "1000m"
         readinessProbe:
           httpGet:
-            path: /health
+            path: /health/db
             port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 5
+          # Budget covers the ~2min database bootstrap retry loop in Program.cs.
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 12
         livenessProbe:
           httpGet:
             path: /health

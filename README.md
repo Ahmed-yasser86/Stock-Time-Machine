@@ -208,7 +208,69 @@ minutes under provider pacing. Full account: [limitations](docs/limitations.md).
 [Reproducibility](docs/reproducibility.md) · [Testing](docs/testing.md) ·
 [Limitations](docs/limitations.md) · [Development](docs/development.md)
 
-## Run
+## Run (plug and play)
+
+The fastest path is Docker — one command brings up SQL Server, Qdrant,
+the FinBERT sidecar, the API, and the frontend. The API creates the
+database schema itself on first start (with retries while SQL Server
+warms up) and reports readiness at `/health/db`, so there is nothing to
+provision by hand.
+
+Prerequisites: Docker Desktop running.
+
+```powershell
+Copy-Item .env.example .env   # fill in MSSQL_SA_PASSWORD + Qdrant Cloud (see "API keys" below)
+docker compose up --build
+```
+
+Then open:
+
+| What      | Where                                                                                |
+| --------- | ------------------------------------------------------------------------------------ |
+| Frontend  | [http://localhost:5173](http://localhost:5173)                                       |
+| API       | [http://localhost:8080](http://localhost:8080) (`/` lists the API, `/health` is live) |
+| DB health | [http://localhost:8080/health/db](http://localhost:8080/health/db) (200 = ready)     |
+
+First-start notes: FinBERT downloads ~440MB of weights once (cached in a
+volume); SQL Server takes ~30s to accept connections (the API waits).
+Stop with `docker compose down` (add `-v` to also drop the database and
+caches).
+
+## API keys
+
+The app boots without any provider key, but each key unlocks a capability —
+without it that capability degrades honestly (empty states, never errors).
+Get keys from the sources below and put them in `.env` (Docker),
+user-secrets (local dev), or the `stocksapp-secret` Secret (Kubernetes).
+Keys stay server-side: never logged, never returned to browsers.
+
+| Key (env)            | Get it at                        | Unlocks                                              |
+| -------------------- | -------------------------------- | ---------------------------------------------------- |
+| `QDRANT_HOST` + `QDRANT_API_KEY` | [Qdrant Cloud](https://cloud.qdrant.io) (free-tier cluster; host has no scheme) | Hype resemblance (vector index); without it, in-memory fallback |
+| `GEMINI_API_KEY`     | [Google AI Studio](https://aistudio.google.com) | AI briefs, embeddings, AI relevance verdicts (else deterministic rule fallback) |
+| `JINA_API_KEY`       | [Jina AI](https://jina.ai/reader) | Full article bodies for briefs (else titles only)   |
+| `FINNHUB_TOKEN`      | [Finnhub](https://finnhub.io) (free tier) | Live delayed quotes + company-profile fallback      |
+| `ALPHAVANTAGE_API_KEY` | [Alpha Vantage](https://www.alphavantage.co) (free tier) | Price history + Alpha Vantage news source |
+| `GDELT_API_KEY`      | Optional (GDELT Project API is keyless) | GDELT Cloud tier; without it, keyless Project API |
+| `MARKETAUX_API_KEY`  | [MarketAux](https://www.marketaux.com) | MarketAux news source                               |
+
+No key is needed for SEC EDGAR — only a contact `SEC_USER_AGENT`, which
+defaults sensibly. `MSSQL_SA_PASSWORD` is the one truly required value
+(SQL Server refuses to start without it).
+
+Test-only stack (SQL Server + API, NLP off) for backend integration runs:
+
+```powershell
+docker compose -f deploy/docker-compose.test.yml up --build
+```
+
+Kubernetes: edit the Qdrant host, image names, and secrets under
+`deploy/k8s/` (see the header of `deploy/k8s/apply.ps1`), then run
+`.\deploy\k8s\apply.ps1` from that directory. The API pod runs a FinBERT
+sidecar (no `Nlp:Endpoint` override needed) and is only marked ready when
+`/health/db` passes.
+
+## Run (local dev, no Docker)
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = "Development"

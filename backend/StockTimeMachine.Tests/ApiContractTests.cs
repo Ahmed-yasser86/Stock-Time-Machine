@@ -27,6 +27,26 @@ public class ApiContractTests : IClassFixture<ApiContractTests.Factory>
     }
 
     [Fact]
+    public async Task RootHealth_ReturnsOk()
+    {
+        var client = _factory.CreateClient();
+        var resp = await client.GetAsync("/health");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task DbHealth_WithReachableDatabase_ReturnsOk()
+    {
+        // InMemory database stands in for SQL Server: the endpoint reports
+        // reachability, not engine type.
+        var client = _factory.CreateClient();
+        var resp = await client.GetAsync("/health/db");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync();
+        Assert.Contains("Healthy", body);
+    }
+
+    [Fact]
     public async Task CompanySearch_KnownQuery_ReturnsMatches()
     {
         var client = _factory.CreateClient();
