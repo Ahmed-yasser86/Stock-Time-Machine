@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using StockTimeMachine;
-using StockTimeMachine.Web.Integrations;
+using StockTimeMachine.Integrations;
 using StockTimeMachine.Web.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -98,6 +98,10 @@ builder.Services.AddSingleton<INewsProviderFactory, NewsProviderFactory>();
 
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();
+builder.Services.AddScoped<IPriceRepository, HistoricalDataRepository>();
+builder.Services.AddScoped<IFilingRepository, HistoricalDataRepository>();
+builder.Services.AddScoped<INewsRepository, HistoricalDataRepository>();
+builder.Services.AddScoped<IAiCacheRepository, HistoricalDataRepository>();
 builder.Services.AddSingleton<ICompanyDirectory, JsonCompanyDirectory>();
 builder.Services.AddScoped<ITimeMachineService, TimeMachineService>();
 builder.Services.AddScoped<ISimulationService, SimulationService>();

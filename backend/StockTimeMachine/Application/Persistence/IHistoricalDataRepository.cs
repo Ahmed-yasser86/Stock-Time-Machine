@@ -1,40 +1,9 @@
 
 namespace StockTimeMachine;
 
-public interface IHistoricalDataRepository
+// Composite persistence port kept for backward compatibility during the ISP
+// migration. New consumers should depend on the focused interfaces directly:
+// IPriceRepository, IFilingRepository, INewsRepository, IAiCacheRepository.
+public interface IHistoricalDataRepository : IPriceRepository, IFilingRepository, INewsRepository, IAiCacheRepository
 {
-    Task StoreFilings(string companySymbol, IEnumerable<SecFiling> filings, CancellationToken ct = default);
-    Task StorePrices(string companySymbol, IEnumerable<PricePoint> prices, CancellationToken ct = default);
-    // News cache (best-effort sources: GDELT, Alpha Vantage NEWS_SENTIMENT).
-    // Reads are always cutoff-filtered; the cache never leaks future items.
-    Task StoreNews(string companySymbol, IEnumerable<NewsArticle> articles, CancellationToken ct = default);
-    Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default);
-    // Source-filtered read: the filter applies INSIDE the query before Take,
-    // so a burst of rows from one source can never push another source's rows
-    // out of the window. Null/empty source keeps the legacy unfiltered read.
-    Task<IReadOnlyList<NewsArticle>> GetNewsAsOf(string companySymbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default);
-    // Embedding vector cache (read-through): repeat investigations reuse
-    // vectors instead of re-spending provider quota. Keyed by article + model.
-    Task<ArticleEmbedding?> GetEmbedding(string articleId, string model, CancellationToken ct = default);
-    Task StoreEmbedding(ArticleEmbedding embedding, CancellationToken ct = default);
-    Task<ArticleRelevance?> GetRelevance(string articleId, string symbol, CancellationToken ct = default);
-    Task StoreRelevances(IEnumerable<ArticleRelevance> rows, CancellationToken ct = default);
-    // Review queue: ALL cutoff-eligible uncertain verdicts, highest
-    // confidence first. Deliberately uncapped (reason: an approval queue
-    // must not silently hide workload behind a take).
-    Task<IReadOnlyList<ArticleRelevance>> GetUncertain(string symbol, DateOnly asOfDate, CancellationToken ct = default);
-    Task<bool> SetRelevanceDecision(string articleId, string symbol, string decision, string source, CancellationToken ct = default);
-    Task<ArticleSentiment?> GetSentiment(string articleId, string model, CancellationToken ct = default);
-    Task StoreSentiment(ArticleSentiment row, CancellationToken ct = default);
-    // Persisted per-filing summaries (reason: hype filing structured
-    // extraction; briefs and vector dims read these instead of re-fetching).
-    Task<FilingSummaryRecord?> GetFilingSummary(string accessionNumber, CancellationToken ct = default);
-    Task StoreFilingSummary(FilingSummaryRecord row, CancellationToken ct = default);
-    Task<IReadOnlyList<SecFiling>> GetFilingsAsOf(string companySymbol, DateOnly asOfDate, CancellationToken ct = default);
-    Task<IReadOnlyList<PricePoint>> GetPricesAsOf(string companySymbol, DateOnly asOfDate, int days = 30, CancellationToken ct = default);
-    Task<IReadOnlyList<PricePoint>> GetPriceRange(string companySymbol, DateOnly from, DateOnly to, CancellationToken ct = default);
-    Task<IReadOnlyList<PricePoint>> GetPricesAfter(string companySymbol, DateOnly fromDate, int days = 30, CancellationToken ct = default);
-    // Post-cutoff regulatory evidence for the "What Happened Afterwards" reveal.
-    // Strictly after the cutoff of fromDate, up to days later.
-    Task<IReadOnlyList<SecFiling>> GetFilingsAfter(string companySymbol, DateOnly fromDate, int days = 30, CancellationToken ct = default);
 }

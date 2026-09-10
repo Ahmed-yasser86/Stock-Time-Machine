@@ -1,7 +1,6 @@
 namespace StockTimeMachine;
 
-// Shared rolling-window statistics. Extracted from MoveDetectionService without
-// behavior change: identical formulas, now reusable (regime classification).
+// Shared rolling-window statistics, reusable (regime classification).
 // All double precision, ranking/statistics only — never money.
 public static class RollingStats
 {

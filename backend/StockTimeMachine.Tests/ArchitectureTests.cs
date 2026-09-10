@@ -1,6 +1,7 @@
 using System.Reflection;
 using Xunit;
 using StockTimeMachine;
+using StockTimeMachine.Integrations;
 
 namespace StockTimeMachine.Tests;
 
@@ -49,5 +50,37 @@ public class ArchitectureTests
         var violations = referenced.Where(n => n.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal)).ToArray();
         Assert.True(violations.Length == 0,
             $"StockTimeMachine references ASP.NET Core: {string.Join(", ", violations)}");
+    }
+
+    [Fact]
+    public void Repository_PortsStaySegregated()
+    {
+        // ISP split: one implementation, four focused ports + the composite.
+        Assert.True(typeof(IPriceRepository).IsAssignableFrom(typeof(HistoricalDataRepository)));
+        Assert.True(typeof(IFilingRepository).IsAssignableFrom(typeof(HistoricalDataRepository)));
+        Assert.True(typeof(INewsRepository).IsAssignableFrom(typeof(HistoricalDataRepository)));
+        Assert.True(typeof(IAiCacheRepository).IsAssignableFrom(typeof(HistoricalDataRepository)));
+        Assert.True(typeof(IHistoricalDataRepository).IsAssignableTo(typeof(IPriceRepository)));
+        Assert.True(typeof(IHistoricalDataRepository).IsAssignableTo(typeof(IFilingRepository)));
+        Assert.True(typeof(IHistoricalDataRepository).IsAssignableTo(typeof(INewsRepository)));
+        Assert.True(typeof(IHistoricalDataRepository).IsAssignableTo(typeof(IAiCacheRepository)));
+    }
+
+    [Fact]
+    public void MoveHelpers_StayPureStatics()
+    {
+        // MoveScorer / WindowStatistics must stay side-effect-free statics;
+        // MoveDetectionService stays the orchestrator (instance, DI-built).
+        Assert.True(typeof(MoveScorer).IsAbstract && typeof(MoveScorer).IsSealed);
+        Assert.True(typeof(WindowStatistics).IsAbstract && typeof(WindowStatistics).IsSealed);
+        Assert.False(typeof(MoveDetectionService).IsAbstract && typeof(MoveDetectionService).IsSealed);
+    }
+
+    [Fact]
+    public void FinnhubAdapters_StayOutsideWeb()
+    {
+        // Infrastructure adapters must not live in the presentation layer.
+        Assert.Equal("StockTimeMachine.Integrations", typeof(FinnhubQuoteProvider).Namespace);
+        Assert.Equal("StockTimeMachine.Integrations", typeof(FinnhubCompanyLookup).Namespace);
     }
 }

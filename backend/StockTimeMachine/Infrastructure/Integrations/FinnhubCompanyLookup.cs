@@ -1,7 +1,9 @@
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using StockTimeMachine;
 
-namespace StockTimeMachine.Web.Integrations;
+namespace StockTimeMachine.Integrations;
 
 /// <summary>
 /// Tertiary STM company-profile lookup backed by Finnhub <c>stock/profile2</c>.

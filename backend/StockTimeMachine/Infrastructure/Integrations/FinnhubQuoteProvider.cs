@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using StockTimeMachine;
 
-namespace StockTimeMachine.Web.Integrations;
+namespace StockTimeMachine.Integrations;
 
 // Live (delayed) quotes from Finnhub for the "What Happened Afterwards" reveal.
 // Server-side only: the Finnhub token never leaves the backend — the browser

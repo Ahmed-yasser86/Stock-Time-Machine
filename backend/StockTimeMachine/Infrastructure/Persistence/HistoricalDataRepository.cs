@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace StockTimeMachine;
 
-public class HistoricalDataRepository : IHistoricalDataRepository
+public class HistoricalDataRepository : IHistoricalDataRepository, IPriceRepository, IFilingRepository, INewsRepository, IAiCacheRepository
 {
     private readonly StockTimeMachineDbContext _db;
     private readonly ILogger<HistoricalDataRepository> _logger;
