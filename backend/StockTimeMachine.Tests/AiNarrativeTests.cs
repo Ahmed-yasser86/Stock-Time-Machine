@@ -505,31 +505,194 @@ public class AiNarrativeTests
         Assert.Empty(await sut.ReviewNote("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt, "Note."));
     }
 
+    // Scripted embeddings: dequeues one vector per requested text, in order.
+    // Full geometric control per test (the shared FixedGeminiStub alternates
+    // two fixed vectors, which cannot express distinct thread shapes).
+    private sealed class ScriptedGeminiStub : IGeminiClient
+    {
+        private readonly Queue<float[]> _vectors;
+        public ScriptedGeminiStub(IEnumerable<float[]> vectors) => _vectors = new Queue<float[]>(vectors);
+        public bool IsEnabled => true;
+        public string SummaryModel => "stub-flash";
+        public string EmbeddingModel => "stub-embed";
+        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<float[]>>(texts.Select(_ => _vectors.Dequeue()).ToList());
+        public Task<ClusterBrief?> SummarizeClusterAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult<ClusterBrief?>(null);
+        public Task<IReadOnlyList<NoteIssue>> ReviewNoteAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<NoteIssue>>(Array.Empty<NoteIssue>());
+        public Task<IReadOnlyList<RelevanceVerdict>> ClassifyRelevanceAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<RelevanceVerdict>>(Array.Empty<RelevanceVerdict>());
+        public Task<string?> GenerateJsonAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult<string?>(null);
+    }
+
+    private static NarrativeService CrossSut(
+        StockTimeMachineDbContext db, IGeminiClient gemini) => new(
+        new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+        gemini, new DisabledBodyStub(), TestDirectory.Tesla(),
+        new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
+
+    private static NewsArticle Doc(string id, string symbol, string title, string day, string? url = null) => new()
+    {
+        Id = id,
+        Title = title,
+        Description = "d",
+        Source = "GDELT",
+        PublishedAt = DateTime.Parse(day, null,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal),
+        Url = url ?? $"https://example.com/{id}",
+        CompanySymbol = symbol,
+    };
+
     [Fact]
-    public async Task CrossThreadSimilarity_PairsRankedByCosine()
+    public async Task CrossThreadSimilarity_ThreadToThreadShape()
+    {
+        // Geometry: AAA {a1=(1,0), a2=(0.9,0.4359)} one cluster (cos 0.9);
+        // BBB {b1=(0.95,0.3122), b2=(0.7,0.7141)} one cluster (cos 0.888).
+        // Cross max a2-b1 = 0.991 (discovery score); cross mean = 0.896.
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("AAA", new[]
+        {
+            Doc("a1", "AAA", "Alpha one", "2020-01-10"),
+            Doc("a2", "AAA", "Alpha two", "2020-01-11"),
+        });
+        await repo.StoreNews("BBB", new[]
+        {
+            Doc("b1", "BBB", "Beta one", "2020-01-10"),
+            Doc("b2", "BBB", "Beta two", "2020-01-12"),
+        });
+        var sut = CrossSut(db, new ScriptedGeminiStub(new[]
+        {
+            new float[] { 1f, 0f }, new float[] { 0.9f, 0.4359f },
+            new float[] { 0.95f, 0.3122f }, new float[] { 0.7f, 0.7141f },
+        }));
+
+        var result = await sut.CrossThreadSimilarity(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        var pair = Assert.Single(result.Pairs);
+        Assert.Equal(0, result.DuplicatePairsSkipped);
+        // Discovery score (max distinct-id pair), thread-level mean, and
+        // per-thread cohesion are separate dimensions, not one blended score.
+        Assert.Equal(0.991, pair.Similarity, 3);
+        Assert.Equal(0.896, pair.MeanSimilarity, 3);
+        Assert.Equal(0.9, pair.CohesionA!.Value, 3);
+        Assert.Equal(0.888, pair.CohesionB!.Value, 3);
+        // Vocabulary overlap is reported alongside, never as the ranking.
+        Assert.Equal(new[] { "one", "two" }, pair.SharedTerms);
+        // Full membership preserved with canonical URLs verbatim (member
+        // order follows merge order, not doc order — compare as sets).
+        Assert.Equal(new[] { "a1", "a2" }, pair.AMembers.Select(m => m.Id).OrderBy(id => id).ToArray());
+        Assert.Equal(new[] { "b1", "b2" }, pair.BMembers.Select(m => m.Id).OrderBy(id => id).ToArray());
+        Assert.All(pair.AMembers.Concat(pair.BMembers),
+            m => Assert.Equal($"https://example.com/{m.Id}", m.Url));
+    }
+
+    [Fact]
+    public async Task CrossThreadSimilarity_MatchIgnoresRepresentativeTitles()
+    {
+        // The longest titles (representatives) are a cold pair (cos 0.6);
+        // the match must still surface via the hot pair (0.991) while the
+        // displayed titles stay the representatives. Representative-only
+        // matching would miss this pair entirely.
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("AAA", new[]
+        {
+            Doc("a1", "AAA", "Zebra alpha yakking quantum vectors", "2020-01-10"),
+            Doc("a2", "AAA", "Chip pact", "2020-01-11"),
+        });
+        await repo.StoreNews("BBB", new[]
+        {
+            Doc("b1", "BBB", "Brief note on semiconductors broadly defined here", "2020-01-10"),
+            Doc("b2", "BBB", "Chip deal", "2020-01-12"),
+        });
+        var sut = CrossSut(db, new ScriptedGeminiStub(new[]
+        {
+            new float[] { 1f, 0f }, new float[] { 0.9f, 0.4359f },
+            new float[] { 0.6f, 0.8f }, new float[] { 0.95f, 0.3122f },
+        }));
+
+        var result = await sut.CrossThreadSimilarity(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        var pair = Assert.Single(result.Pairs);
+        Assert.Equal("Zebra alpha yakking quantum vectors", pair.ATitle);
+        Assert.Equal("Brief note on semiconductors broadly defined here", pair.BTitle);
+        Assert.True(pair.MeanSimilarity < pair.Similarity);
+    }
+
+    [Fact]
+    public async Task CrossThreadSimilarity_IdenticalContentSkippedAndCounted()
+    {
+        // The live 1.000 NVDA/AAPL case: identical title+description embed
+        // identically (cosine exactly 1.0) under different ids/URLs. Same
+        // wire story twice is not a cross-company relationship.
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("AAA", new[]
+        {
+            Doc("a1", "AAA", "Apple rolls out new, AI-powered Siri", "2020-01-10", "https://outlet-a.example/siri"),
+        });
+        await repo.StoreNews("BBB", new[]
+        {
+            Doc("b1", "BBB", "Apple rolls out new, AI-powered Siri", "2020-01-10", "https://outlet-b.example/siri"),
+        });
+        var same = new float[] { 1f, 0f };
+        var sut = CrossSut(db, new ScriptedGeminiStub(new[] { same, same }));
+
+        var result = await sut.CrossThreadSimilarity(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        Assert.Empty(result.Pairs);
+        Assert.Equal(1, result.DuplicatePairsSkipped);
+    }
+
+    [Fact]
+    public async Task CrossThreadSimilarity_SameCachedRowSkippedSilently()
+    {
+        // One cached row visible under both symbols joins at 1.0 by
+        // construction and proves nothing (same rule as the hype join).
+        var db = NewDb();
+        var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
+        await repo.StoreNews("AAA", new[] { Doc("shared", "AAA", "Shared wire story", "2020-01-10") });
+        await repo.StoreNews("BBB", new[] { Doc("shared", "BBB", "Shared wire story", "2020-01-10") });
+        var same = new float[] { 1f, 0f };
+        var sut = CrossSut(db, new ScriptedGeminiStub(new[] { same, same }));
+
+        var result = await sut.CrossThreadSimilarity(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+
+        Assert.Empty(result.Pairs);
+        Assert.Equal(0, result.DuplicatePairsSkipped);
+    }
+
+    [Fact]
+    public async Task CrossThreadSimilarity_PostCutoffRowsNeverEnter()
     {
         var db = NewDb();
         var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
         await repo.StoreNews("AAA", new[]
         {
-            new NewsArticle { Id = "a1", Title = "Alpha one", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/a1", CompanySymbol = "AAA" },
-            new NewsArticle { Id = "a2", Title = "Alpha two", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 11), Url = "https://example.com/a2", CompanySymbol = "AAA" },
+            Doc("a1", "AAA", "Alpha one", "2020-01-10"),
+            Doc("a2future", "AAA", "Alpha future", "2020-02-01"),
         });
         await repo.StoreNews("BBB", new[]
         {
-            new NewsArticle { Id = "b1", Title = "Beta one", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 10), Url = "https://example.com/b1", CompanySymbol = "BBB" },
-            new NewsArticle { Id = "b2", Title = "Beta two", Description = "d", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 12), Url = "https://example.com/b2", CompanySymbol = "BBB" },
+            Doc("b1", "BBB", "Beta one", "2020-01-10"),
         });
-        var sut = new NarrativeService(repo, new FixedGeminiStub(),
-            new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
+        var sut = CrossSut(db, new ScriptedGeminiStub(new[]
+        {
+            new float[] { 1f, 0f }, new float[] { 0.9f, 0.4359f }, new float[] { 0.95f, 0.3122f },
+        }));
 
-        var pairs = await sut.CrossThreadSimilarity(
+        var result = await sut.CrossThreadSimilarity(
             new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
 
-        // Alternating stub vectors pair index-to-index at cosine 1.0.
-        Assert.Equal(2, pairs.Count);
-        Assert.All(pairs, p => Assert.Equal(1.0, p.Similarity));
-        Assert.Contains(pairs, p => p.ASymbol == "AAA" && p.BSymbol == "BBB");
+        var pair = Assert.Single(result.Pairs);
+        Assert.DoesNotContain("a2future", pair.AMembers.Select(m => m.Id));
     }
 
     [Fact]
@@ -540,8 +703,10 @@ public class AiNarrativeTests
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
-        Assert.Empty(await sut.CrossThreadSimilarity(
-            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt));
+        var result = await sut.CrossThreadSimilarity(
+            new[] { "AAA", "BBB" }, new DateOnly(2020, 1, 15), NewsSources.Gdelt);
+        Assert.Empty(result.Pairs);
+        Assert.Equal(0, result.DuplicatePairsSkipped);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import {
@@ -15,7 +15,7 @@ import {
 import { api } from '../lib/api';
 import { fmtDate, fmtPct } from '../lib/format';
 import { MAX_COMPARE_PICKS, pickColor } from '../lib/palette';
-import type { KeyMove, MovesResponse, NewsSource, TopicCluster } from '../types';
+import type { CrossThreadArticle, CrossThreadPair, KeyMove, MovesResponse, NewsSource, TopicCluster } from '../types';
 import { AiBriefBlock } from '../components/AiBriefBlock';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -101,7 +101,7 @@ function SharedGroupBrief({
   if (brief.isPending && brief.fetchStatus !== 'idle') {
     return (
       <p className="mt-2 text-xs text-fg-dim" aria-busy="true">
-        Briefing shared story…
+        Briefing vocabulary group…
       </p>
     );
   }
@@ -109,7 +109,7 @@ function SharedGroupBrief({
   if (brief.isSuccess && brief.data.brief) {
     return (
       <div className="mt-2">
-        <AiBriefBlock brief={brief.data.brief} context="shared story, per-pick citations — verify against the lenses" />
+        <AiBriefBlock brief={brief.data.brief} context="vocabulary group, per-pick citations — verify against the lenses" />
       </div>
     );
   }
@@ -117,7 +117,7 @@ function SharedGroupBrief({
   return (
     <div className="mt-2">
       <Button size="sm" variant="outline" onClick={() => brief.refetch()} disabled={brief.isFetching}>
-        {brief.isFetching ? 'Briefing…' : 'AI brief this shared story'}
+        {brief.isFetching ? 'Briefing…' : 'AI brief this vocabulary group'}
       </Button>
       {(brief.isError || (brief.isSuccess && !brief.data.brief)) && (
         <p className="mt-1 text-xs text-fg-dim">
@@ -125,6 +125,88 @@ function SharedGroupBrief({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * One potentially-related thread pair: discovery score plus the separate
+ * dimensions behind it (cohesion per thread, thread-level mean, shared
+ * terms) and expandable full membership with canonical links. Titles are
+ * labels; the member lists are the evidence.
+ */
+function PairMembers({ label, members }: { label: string; members: CrossThreadArticle[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="text-xs text-primary underline-offset-4 hover:underline"
+      >
+        {open ? 'Hide' : 'Show'} articles in this thread ({members.length})
+      </button>
+      {open && (
+        <div className="mt-1">
+          <p className="text-xs font-medium text-fg-dim">
+            Articles in this thread ({members.length}) — {label}
+          </p>
+          <ul className="mt-1 space-y-1">
+            {members.map((m) => (
+              <li key={m.id} className="text-sm">
+                {m.url ? (
+                  <a
+                    href={m.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-dotted underline-offset-2 hover:text-fg"
+                  >
+                    {m.title || '(untitled article)'}
+                  </a>
+                ) : (
+                  <span>{m.title || '(untitled article)'}</span>
+                )}
+                <span className="block font-mono text-[11px] text-fg-dim">{m.id}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PairCard({ pair: p, date, newsSource }: { pair: CrossThreadPair; date: string; newsSource: NewsSource }) {
+  const fmtCoh = (c: number | null) => (c === null || c === undefined ? 'n/a (singleton)' : c.toFixed(3));
+  return (
+    <li className="rounded-lg border border-border p-3 text-sm">
+      <p className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary" className="font-mono tabular">
+          {p.similarity.toFixed(3)}
+        </Badge>
+        <span className="text-xs text-fg-dim">max-pair cosine (discovery score) — verify, don&apos;t trust</span>
+      </p>
+      <p className="mt-1 text-xs text-fg-dim">
+        thread cohesion {fmtCoh(p.cohesionA)} · {fmtCoh(p.cohesionB)} · cross-thread mean {p.meanSimilarity.toFixed(3)}
+        {p.sharedTerms.length > 0 ? ` · shared terms: ${p.sharedTerms.join(', ')}` : ' · no shared label terms'}
+      </p>
+      <div className="mt-1 flex flex-col gap-1">
+        <Link
+          to={`/moves?symbol=${p.aSymbol}&date=${date}&newsSource=${newsSource}`}
+          className="underline-offset-4 hover:underline"
+        >
+          <span className="font-mono">{p.aSymbol}:</span> {p.aTitle}
+        </Link>
+        <PairMembers label={`${p.aSymbol} thread`} members={p.aMembers} />
+        <Link
+          to={`/moves?symbol=${p.bSymbol}&date=${date}&newsSource=${newsSource}`}
+          className="underline-offset-4 hover:underline"
+        >
+          <span className="font-mono">{p.bSymbol}:</span> {p.bTitle}
+        </Link>
+        <PairMembers label={`${p.bSymbol} thread`} members={p.bMembers} />
+      </div>
+    </li>
   );
 }
 
@@ -520,12 +602,13 @@ export default function Compare() {
               <Card>
                 <CardHeader>
                   <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="text-base">Semantically similar threads</CardTitle>
-                    <MethodLink anchor="narrative-topics" />
+                    <CardTitle className="text-base">Potentially related threads</CardTitle>
+                    <MethodLink anchor="cross-company-comparison" />
                   </div>
                   <p className="text-xs text-fg-dim">
-                    Cross-pick thread pairs ranked by embedding cosine (≥0.70). Scores are
-                    similarity, never relatedness proofs — open both lenses to judge each pair.
+                    Cross-company thread pairs ranked by embedding similarity. Similarity is a
+                    discovery signal, not proof of a shared narrative. Open both threads and
+                    inspect the underlying articles.
                   </p>
                 </CardHeader>
                 <CardContent>
@@ -536,41 +619,29 @@ export default function Compare() {
                   ) : threadsQuery.isError ? (
                     <ErrorState
                       error={threadsQuery.error}
-                      fallback="Thread similarity could not be computed."
+                      fallback="Thread comparison could not be computed."
                       onRetry={() => threadsQuery.refetch()}
                     />
                   ) : threadsQuery.data.pairs.length === 0 ? (
                     <p className="text-sm text-fg-muted">
-                      No similar threads: these picks were covered as different stories. The
+                      No related threads: these picks were covered as different stories. The
                       vocabulary groups below still stand.
                     </p>
                   ) : (
-                    <ul className="space-y-2">
-                      {threadsQuery.data.pairs.map((p, i) => (
-                        <li key={i} className="rounded-lg border border-border p-3 text-sm">
-                          <p className="flex flex-wrap items-center gap-2">
-                            <Badge variant="secondary" className="font-mono tabular">
-                              {p.similarity.toFixed(3)}
-                            </Badge>
-                            <span className="text-xs text-fg-dim">embedding cosine — verify, don&apos;t trust</span>
-                          </p>
-                          <div className="mt-1 flex flex-col gap-1">
-                            <Link
-                              to={`/moves?symbol=${p.aSymbol}&date=${date}&newsSource=${newsSource}`}
-                              className="underline-offset-4 hover:underline"
-                            >
-                              <span className="font-mono">{p.aSymbol}:</span> {p.aTitle}
-                            </Link>
-                            <Link
-                              to={`/moves?symbol=${p.bSymbol}&date=${date}&newsSource=${newsSource}`}
-                              className="underline-offset-4 hover:underline"
-                            >
-                              <span className="font-mono">{p.bSymbol}:</span> {p.bTitle}
-                            </Link>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <ul className="space-y-2">
+                        {threadsQuery.data.pairs.map((p, i) => (
+                          <PairCard key={i} pair={p} date={date} newsSource={newsSource} />
+                        ))}
+                      </ul>
+                      {threadsQuery.data.duplicatePairsSkipped > 0 && (
+                        <p className="mt-2 text-xs text-fg-dim">
+                          {threadsQuery.data.duplicatePairsSkipped} identical-content pair(s)
+                          excluded — the same story in both caches is one story twice, not a
+                          cross-company relationship.
+                        </p>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -578,12 +649,14 @@ export default function Compare() {
               <Card>
                 <CardHeader>
                   <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="text-base">Shared narrative threads</CardTitle>
-                    <MethodLink anchor="narrative-topics" />
+                    <CardTitle className="text-base">Shared topic vocabulary</CardTitle>
+                    <MethodLink anchor="cross-company-comparison" />
                   </div>
                   <p className="text-xs text-fg-dim">
-                    Threads from different picks sharing ≥2 label terms. Vocabulary overlap, not
-                    semantic proof — open each thread in its own lens to verify.
+                    Thread groups sharing label terms (vocabulary overlap). A separate,
+                    weaker discovery layer than embedding similarity above — shared words
+                    are not evidence of a shared narrative. Open each thread in its own
+                    lens to verify.
                   </p>
                 </CardHeader>
                 <CardContent>

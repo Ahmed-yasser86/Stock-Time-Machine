@@ -125,18 +125,27 @@ public sealed record CompareBriefResponse(
     IReadOnlyList<string> Terms,
     ClusterBriefDto? Brief);
 
+public sealed record CrossThreadArticleDto(string Id, string Title, string Url);
+
 public sealed record CrossThreadPairDto(
     string ASymbol,
     string ATitle,
     string BSymbol,
     string BTitle,
-    double Similarity);
+    double Similarity,
+    double MeanSimilarity,
+    double? CohesionA,
+    double? CohesionB,
+    IReadOnlyList<string> SharedTerms,
+    IReadOnlyList<CrossThreadArticleDto> AMembers,
+    IReadOnlyList<CrossThreadArticleDto> BMembers);
 
 public sealed record CompareThreadsResponse(
     IReadOnlyList<string> Symbols,
     DateOnly AsOfDate,
     string NewsSource,
-    IReadOnlyList<CrossThreadPairDto> Pairs);
+    IReadOnlyList<CrossThreadPairDto> Pairs,
+    int DuplicatePairsSkipped);
 
 public sealed record CopilotBriefResponse(
     string Symbol,

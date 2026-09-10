@@ -582,14 +582,19 @@ public class NarrativeService : INarrativeService
         }
     }
 
-    public async Task<IReadOnlyList<CrossThreadPair>> CrossThreadSimilarity(
+    public async Task<CrossThreadResult> CrossThreadSimilarity(
         IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
         CancellationToken ct = default)
     {
         const int MaxDocsPerSymbol = 30;
         const double PairThreshold = 0.70;
+        // Distinct-id pairs at/above this bar are the same content twice
+        // (identical title+description embed identically → cosine 1.0), not
+        // a cross-company relationship. Same-id pairs are skipped silently
+        // (same cached row, like the hype join); duplicates are counted.
+        const double DuplicateThreshold = 0.999;
         const int MaxPairs = 10;
-        var empty = Array.Empty<CrossThreadPair>();
+        var empty = new CrossThreadResult();
         var picks = symbols.Select(s => s.Trim().ToUpperInvariant())
             .Where(s => s.Length > 0).Distinct().Take(2).ToList();
         if (picks.Count != 2 || !_gemini.IsEnabled)
@@ -598,11 +603,16 @@ public class NarrativeService : INarrativeService
         {
             HistoricalDate.Create(asOfDate);
             var selected = NewsSources.Normalize(newsSource);
+            var cutoff = TemporalBoundary.GetCutoffUtc(asOfDate);
             var perSymbol = new List<(string Symbol, List<NewsArticle> Docs, IReadOnlyList<float[]> Vectors)>();
             foreach (var symbol in picks)
             {
                 var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, selected, ct);
-                var docs = cached.Where(n => IsFromSource(n, selected)).Take(MaxDocsPerSymbol).ToList();
+                // Defensive cutoff (the repository enforces it too): a mocked
+                // or future row must never enter a historical comparison.
+                var docs = cached
+                    .Where(n => IsFromSource(n, selected) && n.PublishedAt <= cutoff)
+                    .Take(MaxDocsPerSymbol).ToList();
                 if (docs.Count == 0)
                     return empty;
                 var vectors = await EmbedCached(docs, null, ct);
@@ -612,14 +622,36 @@ public class NarrativeService : INarrativeService
             var (bSym, bDocs, bVec) = perSymbol[1];
             var aClusters = EmbeddingClustering.Cluster(aVec);
             var bClusters = EmbeddingClustering.Cluster(bVec);
+            var aTerms = aClusters.ToDictionary(c => aClusters.IndexOf(c), c => TopTerms(aDocs, c));
+            var bTerms = bClusters.ToDictionary(c => bClusters.IndexOf(c), c => TopTerms(bDocs, c));
             var pairs = new List<CrossThreadPair>();
+            var duplicates = 0;
             foreach (var ac in aClusters)
                 foreach (var bc in bClusters)
                 {
-                    double best = 0;
+                    double best = 0, sum = 0;
+                    int count = 0;
                     foreach (var i in ac)
                         foreach (var j in bc)
-                            best = Math.Max(best, EmbeddingClustering.Cosine(aVec[i], bVec[j]));
+                        {
+                            // Same cached row in both picks proves nothing.
+                            if (string.Equals(aDocs[i].Id, bDocs[j].Id, StringComparison.Ordinal))
+                                continue;
+                            var sim = EmbeddingClustering.Cosine(aVec[i], bVec[j]);
+                            best = Math.Max(best, sim);
+                            sum += sim;
+                            count++;
+                        }
+                    if (count == 0)
+                        continue;
+                    if (best >= DuplicateThreshold)
+                    {
+                        duplicates++;
+                        _logger.LogInformation(
+                            "Cross-thread duplicate skipped for {A}/{B}: distinct ids, cosine {Sim:F4} (same content twice)",
+                            aSym, bSym, best);
+                        continue;
+                    }
                     if (best >= PairThreshold)
                         pairs.Add(new CrossThreadPair
                         {
@@ -628,15 +660,58 @@ public class NarrativeService : INarrativeService
                             BSymbol = bSym,
                             BTitle = bDocs[bc.MaxBy(k => bDocs[k].Title.Length)].Title,
                             Similarity = Math.Round(best, 3),
+                            MeanSimilarity = Math.Round(sum / count, 3),
+                            CohesionA = MeanInternal(aVec, ac),
+                            CohesionB = MeanInternal(bVec, bc),
+                            SharedTerms = aTerms[aClusters.IndexOf(ac)]
+                                .Intersect(bTerms[bClusters.IndexOf(bc)], StringComparer.Ordinal)
+                                .Take(6).ToList(),
+                            AMembers = ac.Select(k => new CrossThreadArticle
+                                { Id = aDocs[k].Id, Title = aDocs[k].Title ?? "", Url = aDocs[k].Url ?? "" }).ToList(),
+                            BMembers = bc.Select(k => new CrossThreadArticle
+                                { Id = bDocs[k].Id, Title = bDocs[k].Title ?? "", Url = bDocs[k].Url ?? "" }).ToList(),
                         });
                 }
-            return pairs.OrderByDescending(p => p.Similarity).Take(MaxPairs).ToList();
+            return new CrossThreadResult
+            {
+                Pairs = pairs.OrderByDescending(p => p.Similarity).Take(MaxPairs).ToList(),
+                DuplicatePairsSkipped = duplicates,
+            };
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Cross-thread similarity failed");
             return empty;
         }
+    }
+
+    // Mean internal pairwise cosine; null on singletons (no pairs to average).
+    private static double? MeanInternal(IReadOnlyList<float[]> vectors, List<int> members)
+    {
+        if (members.Count < 2)
+            return null;
+        double sum = 0;
+        int count = 0;
+        for (int a = 0; a < members.Count; a++)
+            for (int b = a + 1; b < members.Count; b++)
+            {
+                sum += EmbeddingClustering.Cosine(vectors[members[a]], vectors[members[b]]);
+                count++;
+            }
+        return Math.Round(sum / count, 3);
+    }
+
+    // Top-6 frequent title tokens per cluster (stopwords/length/digit rules
+    // shared with TF-IDF clustering). Deterministic: frequency desc, then
+    // ordinal — the intersection below is the interpretable "why".
+    private static List<string> TopTerms(List<NewsArticle> docs, List<int> members)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var i in members)
+            foreach (var token in TopicClustering.Tokenize($"{docs[i].Title} {docs[i].Description}"))
+                counts[token] = counts.TryGetValue(token, out var c) ? c + 1 : 1;
+        return counts.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .Take(6).Select(kv => kv.Key).ToList();
     }
 
     private async Task<ClusterBrief?> BriefAsync(

@@ -65,19 +65,52 @@ public interface INarrativeService
         IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
         IReadOnlyList<string> terms, CancellationToken ct = default);
 
-    // Cross-pick thread similarity: per-symbol embedding clusters joined by
-    // max-pairwise cosine across picks. Deterministic given the vectors;
-    // vectors themselves are model-generated. Empty when AI is off.
-    Task<IReadOnlyList<CrossThreadPair>> CrossThreadSimilarity(
+    // Cross-pick thread similarity: per-symbol embedding clusters joined
+    // thread-to-thread. Deterministic given the vectors; vectors themselves
+    // are model-generated. Empty when AI is off.
+    Task<CrossThreadResult> CrossThreadSimilarity(
         IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource,
         CancellationToken ct = default);
 }
 
+// One surfaced cross-company candidate: two threads that may be related.
+// The unit of comparison is the complete thread on each side — never a
+// single representative article. Dimensions stay separate (no composite
+// "shared narrative score"): cohesion says how tight each thread is,
+// MeanSimilarity says how close the threads are on average, Similarity
+// (max distinct-id pair) is the discovery score used for ranking.
 public class CrossThreadPair
 {
     public string ASymbol { get; set; } = "";
+    // Longest member title: a human label, not the semantic identity.
     public string ATitle { get; set; } = "";
     public string BSymbol { get; set; } = "";
     public string BTitle { get; set; } = "";
+    // Max pairwise cosine over distinct-id cross pairs (ranking key).
     public double Similarity { get; set; }
+    // Mean pairwise cosine over ALL cross pairs (thread-level closeness).
+    public double MeanSimilarity { get; set; }
+    // Mean internal pairwise cosine per thread; null on singletons.
+    public double? CohesionA { get; set; }
+    public double? CohesionB { get; set; }
+    // Label-term intersection (deterministic "why", not proof).
+    public List<string> SharedTerms { get; set; } = new();
+    // Full membership for inspection (traceable ids + canonical URLs).
+    public List<CrossThreadArticle> AMembers { get; set; } = new();
+    public List<CrossThreadArticle> BMembers { get; set; } = new();
+}
+
+public class CrossThreadArticle
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Url { get; set; } = "";
+}
+
+public class CrossThreadResult
+{
+    public List<CrossThreadPair> Pairs { get; set; } = new();
+    // Distinct-id pairs at/above the duplicate bar, excluded from ranking:
+    // same wire story in both caches is one story twice, not a relationship.
+    public int DuplicatePairsSkipped { get; set; }
 }

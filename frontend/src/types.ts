@@ -257,12 +257,24 @@ export interface CompareBriefResponse {
   brief: ClusterBrief | null;
 }
 
+export interface CrossThreadArticle {
+  id: string;
+  title: string;
+  url: string;
+}
+
 export interface CrossThreadPair {
   aSymbol: string;
   aTitle: string;
   bSymbol: string;
   bTitle: string;
   similarity: number;
+  meanSimilarity: number;
+  cohesionA: number | null;
+  cohesionB: number | null;
+  sharedTerms: string[];
+  aMembers: CrossThreadArticle[];
+  bMembers: CrossThreadArticle[];
 }
 
 export interface CompareThreadsResponse {
@@ -270,6 +282,7 @@ export interface CompareThreadsResponse {
   asOfDate: string;
   newsSource: NewsSource;
   pairs: CrossThreadPair[];
+  duplicatePairsSkipped: number;
 }
 
 export interface CopilotBriefResponse {

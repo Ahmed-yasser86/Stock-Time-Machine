@@ -70,13 +70,18 @@ public class CompareController : ControllerBase
             throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
 
         var selectedNewsSource = NewsSources.Normalize(newsSource);
-        var pairs = await _narratives.CrossThreadSimilarity(picks, parsedDate, selectedNewsSource, ct);
+        var result = await _narratives.CrossThreadSimilarity(picks, parsedDate, selectedNewsSource, ct);
 
         return Ok(new CompareThreadsResponse(
             Symbols: picks,
             AsOfDate: parsedDate,
             NewsSource: selectedNewsSource,
-            Pairs: pairs.Select(p => new CrossThreadPairDto(
-                p.ASymbol, p.ATitle, p.BSymbol, p.BTitle, p.Similarity)).ToList()));
+            Pairs: result.Pairs.Select(p => new CrossThreadPairDto(
+                p.ASymbol, p.ATitle, p.BSymbol, p.BTitle, p.Similarity,
+                p.MeanSimilarity, p.CohesionA, p.CohesionB,
+                p.SharedTerms,
+                p.AMembers.Select(m => new CrossThreadArticleDto(m.Id, m.Title, m.Url ?? "")).ToList(),
+                p.BMembers.Select(m => new CrossThreadArticleDto(m.Id, m.Title, m.Url ?? "")).ToList())).ToList(),
+            DuplicatePairsSkipped: result.DuplicatePairsSkipped));
     }
 }

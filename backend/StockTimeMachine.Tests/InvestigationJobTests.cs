@@ -75,8 +75,8 @@ public class InvestigationJobTests
         public Task<ClusterBrief?> BriefSharedThread(IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource, IReadOnlyList<string> terms, CancellationToken ct = default) =>
             Task.FromResult<ClusterBrief?>(null);
 
-        public Task<IReadOnlyList<CrossThreadPair>> CrossThreadSimilarity(IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<CrossThreadPair>>(Array.Empty<CrossThreadPair>());
+        public Task<CrossThreadResult> CrossThreadSimilarity(IReadOnlyList<string> symbols, DateOnly asOfDate, string? newsSource, CancellationToken ct = default) =>
+            Task.FromResult(new CrossThreadResult());
 
         public Task<IReadOnlyList<NewsCandidate>> GetCandidates(string symbol, DateOnly asOfDate, string? newsSource, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<NewsCandidate>>(Array.Empty<NewsCandidate>());
