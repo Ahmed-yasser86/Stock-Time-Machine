@@ -206,8 +206,9 @@ minutes under provider pacing. Full account: [limitations](docs/limitations.md).
 [Analytics](docs/analytics.md) | [Architecture](docs/architecture.md) |
 [Data](docs/data.md) | [Providers](docs/providers.md) |
 [Rate limiting](docs/rate-limiting.md) |
-[Caching](docs/caching.md) |
+[Caching](docs/caching.md) | [API](docs/api.md) |
 [Reproducibility](docs/reproducibility.md) | [Testing](docs/testing.md) |
+[Thread clustering](docs/thread-clustering.md) |
 [Limitations](docs/limitations.md) | [Development](docs/development.md)
 
 ## Run (plug and play)

@@ -135,13 +135,3 @@ changes at runtime.
 store-failure resilience), `AiNarrativeTests` (embedding ceiling,
 cache-hit paths), `HypeTests` (indexer paths), `RateLimiterTests` (11).
 See [testing](testing.md).
-
-## 9. Documentation map
-
-[Overview](overview.md) · [Methodology](methodology.md) ·
-[Pipelines](pipelines.md) · [Signals](signals.md) ·
-[Analytics](analytics.md) · [Architecture](architecture.md) ·
-[Data](data.md) · [Providers](providers.md) ·
-[Reproducibility](reproducibility.md) · [Testing](testing.md) ·
-[Limitations](limitations.md) · [Development](development.md) ·
-[API](api.md)

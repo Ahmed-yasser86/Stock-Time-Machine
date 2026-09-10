@@ -115,14 +115,3 @@ Rate × volume is therefore bounded on both axes.
 `GdeltResilienceTests` (5), `ProviderFixtureTests` (22: timeouts,
 `IsConfigured` gates), plus 429/timeout paths across the provider
 suites. See [testing](testing.md).
-
-## 8. Documentation map
-
-[Overview](overview.md) · [Methodology](methodology.md) ·
-[Pipelines](pipelines.md) · [Signals](signals.md) ·
-[Analytics](analytics.md) · [Architecture](architecture.md) ·
-[Data](data.md) · [Providers](providers.md) ·
-[Caching](caching.md) · [API](api.md) ·
-[Reproducibility](reproducibility.md) · [Testing](testing.md) ·
-[Thread clustering](thread-clustering.md) ·
-[Limitations](limitations.md) · [Development](development.md)
