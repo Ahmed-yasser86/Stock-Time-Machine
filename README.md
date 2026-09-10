@@ -201,13 +201,13 @@ minutes under provider pacing. Full account: [limitations](docs/limitations.md).
 
 ## Documentation map
 
-[Overview](docs/overview.md) · [Methodology](docs/methodology.md) ·
-[Pipelines](docs/pipelines.md) · [Signals](docs/signals.md) ·
-[Analytics](docs/analytics.md) · [Architecture](docs/architecture.md) ·
-[Data](docs/data.md) · [Providers](docs/providers.md) ·
-[Caching](docs/caching.md) ·
-[Reproducibility](docs/reproducibility.md) · [Testing](docs/testing.md) ·
-[Limitations](docs/limitations.md) · [Development](docs/development.md)
+[Overview](docs/overview.md) | [Methodology](docs/methodology.md) |
+[Pipelines](docs/pipelines.md) | [Signals](docs/signals.md) |
+[Analytics](docs/analytics.md) | [Architecture](docs/architecture.md) |
+[Data](docs/data.md) | [Providers](docs/providers.md) |
+[Caching](docs/caching.md) |
+[Reproducibility](docs/reproducibility.md) | [Testing](docs/testing.md) |
+[Limitations](docs/limitations.md) | [Development](docs/development.md)
 
 ## Run (plug and play)
 
