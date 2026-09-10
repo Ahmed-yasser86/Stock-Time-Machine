@@ -8,12 +8,15 @@
 **/.toolstarget
 **/.vs
 **/.vscode
+**/.playwright-mcp
+**/.kilo
 **/*.*proj.user
 **/*.dbmdl
 **/*.jfm
 **/azds.yaml
 **/bin
 **/charts
+**/dist
 **/docker-compose*
 **/Dockerfile*
 **/node_modules
