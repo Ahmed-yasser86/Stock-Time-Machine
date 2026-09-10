@@ -37,8 +37,36 @@ spec:
               name: stocksapp-secret
               key: SA_PASSWORD
       containers:
+      # FinBERT sentiment sidecar (same pod = localhost, so the API default
+      # Nlp:Endpoint http://127.0.0.1:5252 needs no override). First start
+      # downloads ~440MB of weights into the hf-cache volume; later starts
+      # reuse it. Fail-soft: the API skips sentiment when unreachable.
+      - name: finbert
+        image: stocksapp/finbert:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5252
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /cache/hf
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "3Gi"
+            cpu: "2000m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5252
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
       - name: stocksapp
-        image: stocksapp-main-taskmanager.api:latest
+        # Replace with your registry (e.g. ghcr.io/<org>/stocksapp/api:<tag>).
+        image: stocksapp/api:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -51,10 +79,43 @@ spec:
             secretKeyRef:
               name: stocksapp-secret
               key: SA_PASSWORD
-        - name: ConnectionStrings__ContactDb
-          value: "Server=db-service,1433;Database=ContectManagerDB;User Id=sa;Password=$(SA_PASSWORD);TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True;"
-        - name: ConnectionStrings__StocksDbConnection
-          value: "Server=db-service,1433;Database=StocksDb;User Id=sa;Password=$(SA_PASSWORD);TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True;"
+        - name: ConnectionStrings__StockTimeMachineDb
+          value: "Server=db-service,1433;Database=StockTimeMachineDb;User Id=sa;Password=$(SA_PASSWORD);TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True;"
+        - name: Gemini__ApiKey
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: GEMINI_API_KEY
+        - name: Jina__ApiKey
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: JINA_API_KEY
+        - name: TradingOptions__FinnhubToken
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: FINNHUB_TOKEN
+        - name: AlphaVantage__ApiKey
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: ALPHAVANTAGE_API_KEY
+        - name: Gdelt__ApiKey
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: GDELT_API_KEY
+        - name: MarketAux__ApiKey
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: MARKETAUX_API_KEY
+        - name: Qdrant__ApiKey
+          valueFrom:
+            secretKeyRef:
+              name: stocksapp-secret
+              key: QDRANT_API_KEY
         resources:
           requests:
             memory: "512Mi"
@@ -78,3 +139,7 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 3
           failureThreshold: 5
+      volumes:
+      - name: hf-cache
+        persistentVolumeClaim:
+          claimName: finbert-hf-cache

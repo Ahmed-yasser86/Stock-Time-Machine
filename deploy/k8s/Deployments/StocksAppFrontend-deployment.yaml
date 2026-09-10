@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stocksapp-frontend
+  labels:
+    app: stocksapp-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stocksapp-frontend
+  template:
+    metadata:
+      labels:
+        app: stocksapp-frontend
+    spec:
+      containers:
+      - name: frontend
+        # Build with the in-cluster API URL baked in, e.g.:
+        # docker build --build-arg VITE_API_URL=http://stocksapp-service -f frontend/Dockerfile .
+        # (Vite embeds VITE_API_URL at build time, so rebuild to change it.)
+        image: stocksapp/frontend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"

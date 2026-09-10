@@ -1,0 +1,113 @@
+# Stock Time Machine — full local stack.
+#
+#   1. Copy .env.example to .env and fill in provider keys (all optional:
+#      the API degrades honestly without them; the DB works keyless).
+#   2. docker compose up --build
+#
+# Services:
+#   sqlserver  SQL Server 2022 (cache database, port 1433)
+#   qdrant     vector store for hype resemblance (ports 6333/6334)
+#   finbert    FinBERT sentiment sidecar (port 5252, model cached in volume)
+#   api        ASP.NET Core backend (port 8080, waits for sqlserver health)
+#   frontend   Vite build served by nginx (port 5173)
+#
+# First FinBERT inference downloads ~440MB of weights into the hf_cache
+# volume; later starts reuse it. Pre-warm locally with scripts/nlp/setup.ps1.
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: stocktime_sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in .env (see .env.example)}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -No || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: stocktime_qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  finbert:
+    build:
+      context: .
+      dockerfile: scripts/nlp/Dockerfile
+    container_name: stocktime_finbert
+    ports:
+      - "5252:5252"
+    volumes:
+      - hf_cache:/cache/hf
+    environment:
+      HF_HUB_CACHE: /cache/hf
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/StockTimeMachine.Web/Dockerfile
+    container_name: stocktime_api
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      finbert:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__StockTimeMachineDb: Server=sqlserver,1433;Database=StockTimeMachineDb;User Id=sa;Password=${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in .env (see .env.example)};Encrypt=False;TrustServerCertificate=True;
+      Nlp__Endpoint: http://finbert:5252
+      Nlp__Enabled: ${NLP_ENABLED:-true}
+      Qdrant__Host: qdrant
+      Qdrant__Port: 6334
+      Qdrant__ApiKey: ${QDRANT_API_KEY:-}
+      Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      Jina__ApiKey: ${JINA_API_KEY:-}
+      TradingOptions__FinnhubToken: ${FINNHUB_TOKEN:-}
+      AlphaVantage__ApiKey: ${ALPHAVANTAGE_API_KEY:-}
+      Gdelt__ApiKey: ${GDELT_API_KEY:-}
+      MarketAux__ApiKey: ${MARKETAUX_API_KEY:-}
+      News__DefaultSource: ${NEWS_DEFAULT_SOURCE:-gdelt}
+      SecEdgar__UserAgent: "${SEC_USER_AGENT:-StockTimeMachine/1.0 (contact: your@email.com)}"
+      Hype__HarvestEnabled: "false"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+    container_name: stocktime_frontend
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
+volumes:
+  sqlserver_data:
+  qdrant_data:
+  hf_cache:

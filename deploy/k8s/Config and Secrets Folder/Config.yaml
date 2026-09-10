@@ -3,10 +3,22 @@ kind: ConfigMap
 metadata:
   name: stocksapp-config
 data:
-  ASPNETCORE_ENVIRONMENT: "Development"
+  ASPNETCORE_ENVIRONMENT: "Production"
   ASPNETCORE_URLS: "http://+:8080"
-  ConnectionStrings__ContactDb: "Server=db-service,1433;Database=ContectManagerDB;User Id=sa;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True;"
-  ConnectionStrings__StocksDbConnection: "Server=db-service,1433;Database=StocksDb;User Id=sa;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True;"
+  # News source default (gdelt | gdelt-cloud | alphavantage | marketaux).
+  News__DefaultSource: "gdelt"
+  # FinBERT runs as a same-pod sidecar, so the API default
+  # (http://127.0.0.1:5252) applies; set "false" to skip sentiment.
+  Nlp__Enabled: "true"
+  # Qdrant Cloud endpoint (host without scheme, e.g.
+  # xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.us-east.aws.cloud.qdrant.io).
+  # The API key comes from the stocksapp-secret Secret.
+  Qdrant__Host: "REPLACE-WITH-QDRANT-CLOUD-HOST"
+  Qdrant__Port: "6334"
+  # SEC EDGAR requires a contact User-Agent on every request.
+  SecEdgar__UserAgent: "StockTimeMachine/1.0 (contact: your@email.com)"
+  # Operator endpoints stay disabled unless explicitly enabled.
+  Hype__HarvestEnabled: "false"
 ---
 apiVersion: v1
 kind: ConfigMap
