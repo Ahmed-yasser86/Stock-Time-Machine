@@ -157,6 +157,7 @@ docs/*
 !docs/architecture.md
 !docs/data.md
 !docs/providers.md
+!docs/caching.md
 !docs/reproducibility.md
 !docs/testing.md
 !docs/limitations.md

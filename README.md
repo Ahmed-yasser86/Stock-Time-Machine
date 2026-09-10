@@ -205,6 +205,7 @@ minutes under provider pacing. Full account: [limitations](docs/limitations.md).
 [Pipelines](docs/pipelines.md) · [Signals](docs/signals.md) ·
 [Analytics](docs/analytics.md) · [Architecture](docs/architecture.md) ·
 [Data](docs/data.md) · [Providers](docs/providers.md) ·
+[Caching](docs/caching.md) ·
 [Reproducibility](docs/reproducibility.md) · [Testing](docs/testing.md) ·
 [Limitations](docs/limitations.md) · [Development](docs/development.md)
 
