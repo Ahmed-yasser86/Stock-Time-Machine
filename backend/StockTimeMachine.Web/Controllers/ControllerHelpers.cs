@@ -41,10 +41,11 @@ public static class SseWriter
     // sequentially, and the callback blocks briefly to preserve wire order
     // (same semantics as the per-controller adapters this replaces), with
     // one hardening the originals lacked: Progress<T> invokes the callback
-    // on the thread pool, so a write racing a disconnected client would
-    // surface as an unhandled threadpool exception and crash the host.
-    // A dead client is not an application failure — swallow transport and
-    // cancellation errors here; the service still observes `ct` itself.
+    // on the thread pool, so a write racing a disconnected or finished
+    // response (IOException, ObjectDisposedException) would surface as an
+    // unhandled threadpool exception and crash the host. A dead client is
+    // not an application failure, so this fire-and-forget sink swallows
+    // everything; the service still observes `ct` itself.
     public static IProgress<SnapshotProgress> StageProgress(HttpResponse response, CancellationToken ct) =>
         new Progress<SnapshotProgress>(stage =>
         {
@@ -58,8 +59,7 @@ public static class SseWriter
                     count = stage.Count
                 }, ct).GetAwaiter().GetResult();
             }
-            catch (OperationCanceledException) { }
-            catch (IOException) { }
+            catch (Exception) { }
         });
 }
 
