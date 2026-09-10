@@ -146,6 +146,34 @@ testable offline. Long runs persist as disconnect-safe jobs and stream
 stages over SSE. Details: [architecture](docs/architecture.md) ·
 [data](docs/data.md) · [providers](docs/providers.md).
 
+```mermaid
+flowchart LR
+    P[Providers:\nAlpha Vantage, SEC EDGAR\nGDELT, MarketAux\nArctic Shift, Finnhub] --> C[Cache tables:\nprices, filings, news\nsentiment, embeddings]
+    C --> E[Engine:\nmoves → evidence →\nnarratives → hype cases]
+    E --> Q[Qdrant:\nthreads, cases, structural]
+    E --> API[Controllers → DTOs]
+    API --> UI[Snapshot · Moves · Hype\nCompare · Sector]
+```
+
+## Request flow (single investigation)
+
+```mermaid
+sequenceDiagram
+    participant U as Researcher
+    participant API as Backend
+    participant DB as Cache
+    participant P as Providers
+    U->>API: symbol + date + source
+    API->>DB: resolve company, read cache
+    alt cache miss
+        API->>P: bounded live fetch (quota-paced)
+        P-->>API: rows (or typed failure)
+        API->>DB: store
+    end
+    API->>API: detect moves → attach evidence → cluster → freeze → match
+    API-->>U: stages over SSE, then payload
+```
+
 ## Engineering properties
 
 These exist to support the methodology, not as ends in themselves: cache
