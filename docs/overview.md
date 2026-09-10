@@ -9,8 +9,9 @@ before.
 Financial decisions are judged with hindsight nobody possessed. Analysts,
 journalists, and researchers routinely reason from outcomes backward. There
 is no widely available instrument that rebuilds the information environment
-as it stood on a given day — prices, filings, news, and discussion — with
-proof of what was knowable and what was not.
+available up to a defined point-in-time cutoff — prices, filings, news, and
+discussion — with proof of what was knowable and what was not. (Corpus gaps
+are documented, not hidden; see [limitations](limitations.md).)
 
 ## How it works
 
@@ -35,7 +36,7 @@ Proof of concept running on real data with real results: 130 frozen cases
 across 8 symbols, 449 passing backend tests, live provider integrations
 (Alpha Vantage, SEC EDGAR, GDELT, MarketAux, Finnhub) with quota discipline
 and honest degradation. Full investigations take 10–20 minutes; the demo
-queries below return in seconds against warmed caches.
+queries in the [README](../README.md) return in seconds against warmed caches.
 
 ## Potential applications
 
