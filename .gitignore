@@ -150,6 +150,7 @@ docs/*
 # ----- Public documentation (committed) -----
 !README.md
 !docs/overview.md
+!docs/product-vision.md
 !docs/pipelines.md
 !docs/methodology.md
 !docs/signals.md
