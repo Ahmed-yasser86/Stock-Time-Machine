@@ -1,149 +1,159 @@
-# Product Vision & Extensions
+# Project & Product Vision
 
-Thesis: the product reconstructs **historical information environments** —
-what information was available about a company at a specific point in
-time, what narratives existed, how they evolved, and what could
-reasonably have been known then. It is not a stock dashboard and not a
-collection of AI features; prices are one layer among several, and every
-output carries its provenance, cutoff, and uncertainty. The system never
-predicts, never recommends, and never claims causation — those are
-permanent constraints, not missing features (see [methodology](methodology.md)).
+Stock Time Machine is a **research-driven project with a real product
+implementation**. The research asks how historical information
+environments can be reconstructed with temporal integrity: what was
+knowable at a moment, what narratives were visible, how information
+arrived, and what evidence supported what. The product — a working
+system with a UI and API — operationalizes those ideas and tests them
+against real corpora every day. That is why the product is designed
+around cutoffs, provenance, reproducibility, deterministic processing,
+and uncertainty: the research questions demand them, and the product
+proves they can be engineered.
 
-This document separates what exists today from genuine extensions. Anything
-below that is already implemented is stated as baseline, not vision.
+The Stock Time Machine began with a simple question: **what could an
+observer have known about a company at a particular moment in time?**
+That question leads past historical prices. A meaningful answer needs
+the information environment around those prices — news, filings,
+narratives, the arrival of information, competing interpretations, and
+the evidence available before the cutoff. The system already provides
+the foundation for that reconstruction. The trajectory from here is to
+make the environment richer, longitudinal, comparative, multi-channel,
+and researchable — until the product reconstructs not only historical
+snapshots, but the evolution, diffusion, comparison, and interpretation
+of information environments through time.
 
-## Baseline: already implemented (not vision)
+## The foundation already built
 
-- **Point-in-time reconstruction.** Every section (prices, filings, news,
-  discussion) is cutoff-filtered per item; post-cutoff material lives only
-  in quarantined aftermath panels. Temporal integrity is test-pinned
-  ([testing](testing.md)).
-- **Narrative clustering.** Relevance-admitted articles embed once, merge by
-  average linkage, and carry labels, categories, and member lists; threads
-  are inspectable to canonical URLs ([thread-clustering](thread-clustering.md)).
-- **Two-company comparison.** Shared-story briefs and cross-thread pairs
-  with cohesion and membership on both sides.
-- **Evidence grounding.** Briefs cite triggering threads; verdicts carry
-  decision/source/category; methodology answers cite sections and refuse
-  out-of-scope questions.
-- **Arrival data.** Per-move, per-layer first-seen stamps with lags
-  (prices, filings, news, social).
-- **Multi-source cache.** Four news transports, SEC filings, Arctic Shift
-  Reddit archive, live quotes — all behind ports, all fail-soft.
+The working core, in production today: point-in-time evidence across
+prices, filings, news, and discussion, each item cutoff-filtered with
+post-cutoff material quarantined to aftermath panels; narrative threads
+clustered from relevance-admitted articles, inspectable to canonical
+URLs; two-company comparison with shared briefs and cross-thread pairs;
+per-layer arrival stamps recording when each kind of information first
+appeared; four news transports plus SEC, Reddit archive, and live quotes
+behind fail-soft provider seams; and an evidence-grounded copilot whose
+briefs cite triggering threads and whose methodology answers cite
+sections. This foundation is what every section below builds on.
 
-## 1. Historical intelligence: established core
+## 1. From historical snapshots to historical intelligence
 
-Reconstructing the knowable-then vs known-later distinction *is* the
-current product, not a future direction. The genuine extension is depth,
-not concept: richer per-item provenance (retrieval timestamps, corpus
-version at fetch time) and reconstruction over longer horizons where
-provider coverage thins. See [limitations](limitations.md) for current
-corpus bounds.
+The cutoff reconstruction is the foundation of the entire product: not
+"we have historical data" but "we can re-establish what an information
+environment looked like under a historical bound — what had arrived,
+what narratives were visible, what evidence existed." Increasing the
+resolution of that capability is the natural next layer: richer
+per-item provenance, corpus and version history at fetch time, broader
+source coverage, and longer horizons where provider coverage thins
+(see [limitations](limitations.md) for current corpus bounds).
 
-## 2. Narrative intelligence: from threads to lifecycles
+## 2. From threads to narrative lifecycles
 
-Today the system identifies threads within one investigation window. It
-does not track a narrative across windows: emergence, splits and merges,
-competition between rival framings, persistence, and disappearance. The
-extension is **narrative lifecycle analysis** — resolving thread identity
-over successive as-of dates from stored rows only (no re-fetching, same
-frozen-evidence discipline), so a researcher can ask how a story evolved
-rather than what a snapshot contained.
+The thread-clustering system already identifies coherent narratives
+within an investigation window ([thread-clustering](thread-clustering.md)).
+The larger arc follows those narratives through time — emergence,
+growth, persistence, fragmentation, competing framings, merging,
+disappearance, changing evidence — resolving thread identity across
+successive as-of dates from stored rows only, under the same
+frozen-evidence discipline. The conceptual transition is **from
+reconstructing a snapshot of narratives to reconstructing narrative
+lifecycles**, so a researcher can ask how a story evolved rather than
+only what a window contained.
 
-## 3. Comparative intelligence: beyond performance
+## 3. From company comparison to information-environment comparison
 
-Today comparison covers two companies' threads and briefs. The extension
-is comparing **how companies experienced the same information
-environment differently**: relevance composition, narrative structure,
-evidence timing, attention (see §6), and market context side by side —
-still descriptive (no ranking, no pooled verdicts, per the existing
-compare-contract constraints).
+The existing two-company comparison already joins threads and briefs
+across companies. The deeper question it points at is not which stock
+performed better but **how different companies inhabited the same
+information environment differently** — narrative composition, evidence
+arrival, information exposure, attention, competing narratives, market
+context — still descriptive, still without pooled verdicts, extending
+the current compare contract to more companies and more dimensions.
 
-## 4. Evidence and provenance: formal grading
+## 4. From evidence links to structured provenance
 
-Today outputs cite sources and label AI generation. The extension is a
-formal, machine-readable evidence taxonomy on every claim: directly
-observed (cached row) vs reconstructed relationship (join/projection) vs
-model-generated interpretation vs quantified uncertainty — so consumers
-of the API (and future researchers, §8) can filter by evidence grade
-instead of reading prose disclaimers.
+Outputs already connect to underlying evidence: canonical URLs, verdict
+metadata, cited threads and sections. Formalizing that strength into a
+machine-readable evidence model — observed evidence vs reconstructed
+relationships vs model interpretation vs quantified uncertainty — makes
+historical intelligence increasingly inspectable, letting API consumers
+filter by evidence grade. Provenance becomes a queryable property of
+the system rather than a property of its prose.
 
-## 5. Multi-source information ecosystem
+## 5. From multiple sources to an information ecosystem
 
-Today: reporting (news), regulatory (SEC), discussion (Reddit archive),
-prices, quotes. Reddit coverage is real but narrow (one archive, keyed
-subreddits). Genuine additions, each as a port behind the existing
-provider seams: earnings-call and interview **transcripts**, **analyst
-commentary**, company communications, **blogs**, **podcasts**, public
-video media. This is not "more sources" for coverage's sake: reporting
-captures what was published, while discussion and commentary reveal how
-information was interpreted, contested, amplified, or circulated — the
-vision is reconstructing the environment **across channels**, with per-
-channel provenance preserved (never pooled verdicts).
+The multi-source architecture (reporting, regulatory, discussion,
+prices) is the foundation for reconstructing a broader information
+ecosystem: transcripts and interviews, analyst commentary, company
+communications, blogs, podcasts, public video media. The product idea
+is not source accumulation — different channels reveal different
+dimensions of an environment (reporting, interpretation, discussion,
+disagreement, amplification, circulation), each with per-channel
+provenance preserved. The trajectory is **from a multi-source
+news/data system toward a multi-channel information-environment
+reconstruction system**.
 
-## 6. Information diffusion and attention
+## 6. From arrival data to information diffusion and attention
 
-Today arrival maps record per-layer first-seen order and lags — the raw
-material of diffusion, but not its analysis. Two genuine extensions:
+Arrival stamps already record when each information layer first
+appeared — the temporal foundation. The next layer studies how
+information moved: event → reporting → commentary → discussion →
+amplification → competing narrative → changing attention, analyzed as
+temporal sequence, co-occurrence, diffusion, and attention. An
+`ISearchInterestProvider` port already exists for the attention axis,
+reserved for an official credentialed source. Diffusion analysis stays
+within the project's non-causal methodology: sequence and co-occurrence
+are labeled as such.
 
-- **Diffusion sequences**: event → reporting → analyst discussion →
-  social amplification → competing narrative → attention shift, studied
-  as temporal sequence and co-occurrence. Causal language stays banned;
-  the system distinguishes sequence, co-occurrence, diffusion, and
-  attention as separate, labeled claims.
-- **Attention measurement**: an `ISearchInterestProvider` port already
-  exists with no registered implementation (deliberately — only an
-  official, credentialed source qualifies). Filling it would add the
-  attention axis the arrival data currently lacks.
+## 7. From historical information to decision reconstruction
 
-## 7. Decision reconstruction (not advice)
+Because the product reconstructs what was knowable at a point in time,
+a natural next question is what decision context existed for someone
+acting at that moment — the informational constraints and available
+evidence surrounding historical decisions. This extends the current
+copilot (which already reviews conclusions against cited evidence) into
+historical decision-environment reconstruction: a way to study how
+decisions related to their information, distinct in kind from
+recommendation.
 
-Today the copilot reviews a user's note against cited evidence and
-suggests next steps. The extension moves from "what information existed?"
-to **"what decisions were reasonable given the information available
-then?"** — reconstructing informational constraints and available
-evidence around historical decisions. Framed strictly as
-decision-*environment* reconstruction: no recommendations, no
-counterfactual profit claims, same containment contract as current
-copilot actions.
+## 8. From product API to research platform
 
-## 8. Research platform
+The system already produces structured historical cases, threads,
+evidence relationships, and arrival data. Exposing these as stable,
+versioned research corpora turns the product into infrastructure:
+researchers studying narratives, diffusion, attention, uncertainty, and
+historical decision-making get timestamped, version-stamped material
+built for computational work. The arc is **from an application that
+answers historical questions to infrastructure that enables researchers
+to study historical information environments**.
 
-Today there is no dataset export and no research-facing access beyond
-the product API. The direction is making frozen cases, threads,
-verdicts, and arrival data available as versioned research corpora with
-stable schemas — infrastructure for computational work on narratives,
-diffusion, attention, and historical decision-making, where every row
-already carries the timestamps and version stamps such work requires.
+## 9. From copilot to an AI research interface
 
-## 9. AI as a research interface (not a chatbot)
+The copilot's bounded actions over already-retrieved evidence point
+toward a fuller interface: a researcher interrogating the reconstructed
+environment — which narratives dominated a company on a date, how two
+companies' environments differed, which pre-cutoff evidence supported a
+narrative, how a narrative evolved across dates. The AI's value is
+making the environment interrogable while evidence, provenance,
+temporal bounds, and uncertainty stay attached to every answer. The
+constraint that gives this power is scope: the interface never sees a
+broader context than the evidence the question is allowed to see.
 
-Today the copilot performs bounded actions over already-retrieved
-evidence. The extension is evidence-constrained interrogation of frozen
-cases: "what were the dominant narratives around this company on this
-date?", "what information distinguished company A from company B?",
-"show me the pre-date evidence supporting this narrative" — answered
-only from stored rows, with citations, temporal bounds, and
-uncertainty attached. The AI never gets a broader context window than
-the evidence the question is allowed to see.
+## 10. Beyond markets: long-term horizon
 
-## 10. Beyond markets: horizon only, not roadmap
+"What was knowable then" generalizes in principle — technology
+developments, policy, geopolitical and economic events, public
+narratives, industries. The current product is intentionally grounded
+in markets, and its implementation is market-coupled at every layer, so
+this remains a conceptual horizon that the architecture protects
+(ports, frozen schemas, no market logic in generic machinery) rather
+than a direction being pursued.
 
-The framework (cutoff-filtered corpus → frozen cases → deterministic
-predicates → resemblance → quarantined aftermath) is domain-agnostic in
-principle and could one day describe technology developments, policy,
-geopolitical or economic events, and public narratives. Today the
-implementation is coupled to market data at every layer (symbols,
-prices, filings, moves), so this is a horizon to protect architecturally
-(ports, frozen schemas, no market logic in generic machinery) — not a
-committed direction and not a claim about non-market capability.
+## Principles that carry forward
 
-## Constraints that travel with every extension
-
-- Non-predictive, non-advisory, non-causal — methodology, not modesty.
-- No silent substitution: sources, transports, and evidence grades stay
-  distinct end to end.
-- Frozen evidence discipline: new capabilities read stored rows; nothing
-  re-fetches or re-decides history.
-- Degradation before failure: absent inputs produce honest empty states
-  with reasons, never invented data.
+These methodology constraints are what make the trajectory above
+trustworthy, and they travel with every extension: temporally grounded
+(cutoffs on everything), evidence-traceable (citations, not assertions),
+non-predictive, non-advisory, non-causal, provenance-preserving,
+deterministic where appropriate, and degradation-aware (honest empty
+states over invented data).
