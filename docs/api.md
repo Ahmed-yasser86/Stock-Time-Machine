@@ -1,5 +1,7 @@
 # Stock Time Machine API
 
+38 routes: 33 feature endpoints plus 5 infrastructure/meta routes (`/`,
+`/health`, `/health/db`, `api/timemachine/health`, `methodology`).
 Base URL (dev): `http://localhost:5251`. All errors are RFC 7807 `ProblemDetails`
 with user-facing copy and a `traceId`. Money is `decimal`; absent values are `null`,
 never `0` sentinels.
@@ -117,9 +119,9 @@ explainer is unavailable.
 
 Phrases caller-supplied deterministic gap pointers as next steps (max 5). The model phrases only — routes and links stay frontend-owned and must be preserved verbatim. Shares the copilot containment contract and the 30k-tpm budget.
 
-## POST /api/timemachine/copilot/{filings-summary|contrast|explain-uncertainty|gist|explain|suggest|review}
+## POST /api/timemachine/copilot/{filings-summary|contrast|explain-uncertainty|gist|explain|review}
 
-Evidence copilot: explicit AI actions over already-retrieved evidence, never auto-run. Body: `{ symbol, date, newsSource?, ids?, note? }`. `filings-summary` briefs the move's filings; `contrast` needs ≥2 article `ids` and reports agreement first; `explain-uncertainty` translates the measured uncertainty components into plain words (no new numbers); `gist` renders an English gist of non-English threads; `review` checks the user's conclusion note claim-by-claim and returns `{ ref, verdict: supported|unsupported|unclear, detail }[]` — it reviews, never authors. Null briefs / empty issues on disabled AI or empty evidence.
+Evidence copilot: explicit AI actions over already-retrieved evidence, never auto-run. Body: `{ symbol, date, newsSource?, ids?, note? }`. `filings-summary` briefs the move's filings; `contrast` needs ≥2 article `ids` and reports agreement first; `explain-uncertainty` translates the measured uncertainty components into plain words (no new numbers); `gist` renders an English gist of non-English threads; `review` checks the user's conclusion note claim-by-claim and returns `{ ref, verdict: supported|unsupported|unclear, detail }[]` — it reviews, never authors. Null briefs / empty issues on disabled AI or empty evidence. (`suggest` is documented separately above — it takes gap pointers, not article ids.)
 
 ## GET /api/timemachine/hype/signals?symbol=&date=&newsSource=
 
