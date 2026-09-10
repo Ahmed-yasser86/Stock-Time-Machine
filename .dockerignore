@@ -17,6 +17,7 @@
 **/bin
 **/charts
 **/dist
+**/Logs
 **/docker-compose*
 **/Dockerfile*
 **/node_modules
