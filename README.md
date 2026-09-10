@@ -27,6 +27,15 @@ layer) instead of re-hammering a throttled source.
 Resemblance degrades Qdrant → in-memory join → empty, each step logged.
 A dead vector store costs recall quality, never a failed response.
 
+### One limiter paces every provider
+A single global adaptive limiter sets per-provider rhythms (Alpha Vantage
+12s pacing, GDELT small batches, Gemini 30k tokens/min shared across
+embeddings and generation) instead of scattered sleeps. Typed 429s carry
+Retry-After backoff with bounded attempts; GDELT day-traversal runs under a
+fetch budget so one throttled window can't stall an investigation. Shared
+quota waits instead of failing — throttling degrades gracefully by design,
+not by accident.
+
 ### Day-boundary leakage closed
 Day-granularity evidence (filings, GDELT story dates stored as midnight UTC)
 used to slip through the end-of-day instant cutoff into the wrong
