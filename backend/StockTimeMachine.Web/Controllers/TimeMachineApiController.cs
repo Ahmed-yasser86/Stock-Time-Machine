@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using StockTimeMachine;
 using StockTimeMachine.Web.Models.Dto;
@@ -80,10 +79,8 @@ public class TimeMachineApiController : ControllerBase
         [FromQuery] string? sections,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        symbol = RequestValidation.RequireSymbol(symbol);
+        var parsedDate = RequestValidation.RequireDate(date);
 
         var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
         // Rescope: comma-separated subset of prices,filings,news,outcome.
@@ -107,52 +104,28 @@ public class TimeMachineApiController : ControllerBase
         [FromQuery] string? sections,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
-
+        symbol = RequestValidation.RequireSymbol(symbol);
+        var parsedDate = RequestValidation.RequireDate(date);
         var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
         var selectedSections = SnapshotSections.Parse(sections);
 
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
 
-        async Task WriteEvent(string name, object payload)
-        {
-            var json = JsonSerializer.Serialize(payload, SnapshotStreamJson);
-            await Response.WriteAsync($"event: {name}\ndata: {json}\n\n", ct);
-            await Response.Body.FlushAsync(ct);
-        }
-
-        var progress = new Progress<SnapshotProgress>(stage =>
-        {
-            // Fire-and-forget is wrong here: stages must arrive in order. The
-            // service awaits each resolve, so reports are already sequential;
-            // block the callback briefly to preserve wire order.
-            WriteEvent("stage", new
-            {
-                stage = stage.Stage,
-                state = stage.State,
-                detail = stage.Detail,
-                count = stage.Count
-            }).GetAwaiter().GetResult();
-        });
+        var progress = SseWriter.StageProgress(Response, ct);
 
         try
         {
             var response = await BuildSnapshotResponse(symbol, parsedDate, selectedNewsSource, selectedSections, progress, ct);
-            await WriteEvent("snapshot", response);
+            await SseWriter.WriteEventAsync(Response, "snapshot", response, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Snapshot stream failed for {Symbol} on {Date}", symbol, parsedDate);
-            await WriteEvent("error", new { detail = "Something went wrong. Please try again." });
+            await SseWriter.WriteEventAsync(Response, "error", new { detail = "Something went wrong. Please try again." }, ct);
         }
     }
-
-    private static readonly JsonSerializerOptions SnapshotStreamJson = new(JsonSerializerDefaults.Web);
 
     private async Task<SnapshotResponse> BuildSnapshotResponse(
         string symbol,
@@ -199,7 +172,7 @@ public class TimeMachineApiController : ControllerBase
         }
 
         var response = new SnapshotResponse(
-            Company: MapCompany(snapshot.Company, snapshot.CompanySymbol),
+            Company: CompanyMapper.Map(_directory, snapshot.CompanySymbol, snapshot.Company),
             SnapshotDate: snapshot.SnapshotDate,
             CutoffUtc: cutoff,
             Price: new PriceQuoteDto(snapshot.Open, snapshot.High, snapshot.Low, snapshot.Price, snapshot.Volume, snapshot.SnapshotDate),
@@ -234,8 +207,7 @@ public class TimeMachineApiController : ControllerBase
     [HttpGet("quote")]
     public async Task<ActionResult<LiveQuoteDto>> Quote([FromQuery] string? symbol, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
+        symbol = RequestValidation.RequireSymbol(symbol);
 
         var quote = await _quotes.GetQuoteAsync(symbol, ct);
         if (quote is null)
@@ -249,12 +221,12 @@ public class TimeMachineApiController : ControllerBase
     public async Task<ActionResult<SimulationResponse>> RunSimulation([FromBody] SimulationRequest request, CancellationToken ct)
     {
         if (request is null) throw new InvalidHistoricalDateException("Request body required.");
-        if (string.IsNullOrWhiteSpace(request.Symbol)) throw new InvalidHistoricalDateException("Symbol is required.");
+        var symbol = RequestValidation.RequireSymbol(request.Symbol);
         if (request.Amount <= 0) throw new InvalidHistoricalDateException("Amount must be greater than zero.");
         if (request.ExitDate.HasValue && request.ExitDate.Value < request.EntryDate)
             throw new InvalidHistoricalDateException("Exit date must be on or after the entry date.");
 
-        var result = await _simulation.Run(request.Symbol, request.EntryDate, request.Amount, request.ExitDate, ct);
+        var result = await _simulation.Run(symbol, request.EntryDate, request.Amount, request.ExitDate, ct);
         return Ok(new SimulationResponse(
             result.EntryPrice,
             result.SharesPurchased,
@@ -278,16 +250,5 @@ public class TimeMachineApiController : ControllerBase
             Sections: MethodologyContent.Sections
                 .Select(s => new MethodologySection(s.Heading, s.Body))
                 .ToList()));
-    }
-
-    private CompanySummaryDto MapCompany(Company? c, string symbol)
-    {
-        if (c is not null && !string.IsNullOrEmpty(c.Name))
-            return new CompanySummaryDto(c.Symbol, c.Name, c.Cik ?? "", c.Exchange ?? "", c.Sector ?? "");
-
-        if (_directory.TryGet(symbol, out var info) && info is not null)
-            return new CompanySummaryDto(info.Symbol, info.Name, info.Cik, info.Exchange, info.Sector);
-
-        return new CompanySummaryDto(symbol.ToUpperInvariant(), symbol.ToUpperInvariant(), "", "", "");
     }
 }

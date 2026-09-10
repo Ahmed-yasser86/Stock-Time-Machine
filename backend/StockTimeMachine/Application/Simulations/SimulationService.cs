@@ -4,12 +4,12 @@ namespace StockTimeMachine;
 
 public class SimulationService : ISimulationService
 {
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IPriceRepository _prices;
     private readonly ILogger<SimulationService> _logger;
 
-    public SimulationService(IHistoricalDataRepository dataRepo, ILogger<SimulationService> logger)
+    public SimulationService(IPriceRepository prices, ILogger<SimulationService> logger)
     {
-        _dataRepo = dataRepo;
+        _prices = prices;
         _logger = logger;
     }
 
@@ -31,7 +31,7 @@ public class SimulationService : ISimulationService
                 throw new InvalidHistoricalDateException("Exit date must be on or after the entry date.");
         }
 
-        var entryPrices = await _dataRepo.GetPricesAsOf(normalizedSymbol, entry.Date, 1, ct);
+        var entryPrices = await _prices.GetPricesAsOf(normalizedSymbol, entry.Date, 1, ct);
         var entryPrice = entryPrices.FirstOrDefault()?.Close;
 
         if (entryPrice is null || entryPrice <= 0)
@@ -45,14 +45,14 @@ public class SimulationService : ISimulationService
         else
         {
             // US-17: no exit date → most recent available price, labeled via ExitDate.
-            var latest = await _dataRepo.GetPricesAsOf(normalizedSymbol, DateOnly.FromDateTime(DateTime.UtcNow), 1, ct);
+            var latest = await _prices.GetPricesAsOf(normalizedSymbol, DateOnly.FromDateTime(DateTime.UtcNow), 1, ct);
             var latestPoint = latest.FirstOrDefault();
             if (latestPoint is null)
                 throw new HistoricalDataNotFoundException($"No price data available for {normalizedSymbol} on {entry.Date}");
             effectiveExitDate = latestPoint.Date;
         }
 
-        var exitPrices = await _dataRepo.GetPricesAsOf(normalizedSymbol, effectiveExitDate, 1, ct);
+        var exitPrices = await _prices.GetPricesAsOf(normalizedSymbol, effectiveExitDate, 1, ct);
         var exitPrice = exitPrices.FirstOrDefault()?.Close;
 
         if (exitPrice is null || exitPrice <= 0)

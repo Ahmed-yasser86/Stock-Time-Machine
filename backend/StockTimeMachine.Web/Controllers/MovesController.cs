@@ -50,13 +50,11 @@ public class MovesController : ControllerBase
     [HttpPost("moves/jobs")]
     public async Task<ActionResult<CreateJobResponse>> CreateJob([FromBody] CreateJobRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(req.Date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        var symbol = RequestValidation.RequireSymbol(req.Symbol);
+        var parsedDate = RequestValidation.RequireDate(req.Date);
         HistoricalDate.Create(parsedDate);
 
-        var id = await _runner.StartAsync(req.Symbol, parsedDate, req.NewsSource ?? _newsFactory.DefaultSource, ct);
+        var id = await _runner.StartAsync(symbol, parsedDate, req.NewsSource ?? _newsFactory.DefaultSource, ct);
         return Ok(new CreateJobResponse(id));
     }
 
@@ -70,13 +68,6 @@ public class MovesController : ControllerBase
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
 
-        async Task WriteEvent(string name, object payload)
-        {
-            var json = JsonSerializer.Serialize(payload, MovesStreamJson);
-            await Response.WriteAsync($"event: {name}\ndata: {json}\n\n", ct);
-            await Response.Body.FlushAsync(ct);
-        }
-
         async Task Heartbeat()
         {
             await Response.WriteAsync(": heartbeat\n\n", ct);
@@ -86,7 +77,7 @@ public class MovesController : ControllerBase
         var job = await _jobs.GetAsync(jobId, ct);
         if (job is null)
         {
-            await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+            await SseWriter.WriteEventAsync(Response, "error", new { detail = "Unknown investigation. Start a new one." }, ct);
             return;
         }
         if (job.Status == JobStatuses.Running && DateTime.UtcNow - job.CreatedAtUtc > _runner.Timeout)
@@ -96,7 +87,7 @@ public class MovesController : ControllerBase
         }
         if (job is null)
         {
-            await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+            await SseWriter.WriteEventAsync(Response, "error", new { detail = "Unknown investigation. Start a new one." }, ct);
             return;
         }
 
@@ -107,13 +98,13 @@ public class MovesController : ControllerBase
             ct.ThrowIfCancellationRequested();
             foreach (var stage in job.Stages.Skip(sent))
             {
-                await WriteEvent("stage", new
+                await SseWriter.WriteEventAsync(Response, "stage", new
                 {
                     stage = stage.Stage,
                     state = stage.State,
                     detail = stage.Detail,
                     count = stage.Count
-                });
+                }, ct);
                 sent++;
             }
             if (JobStatuses.IsTerminal(job.Status))
@@ -123,16 +114,16 @@ public class MovesController : ControllerBase
                     var window = JsonSerializer.Deserialize<MovesWindow>(job.MovesJson, MovesStreamJson);
                     var topics = JsonSerializer.Deserialize<NarrativeTopicsResult>(job.NarrativesJson, MovesStreamJson);
                     if (window is not null)
-                        await WriteEvent("moves", MapMoves(window));
+                        await SseWriter.WriteEventAsync(Response, "moves", MapMoves(window), ct);
                     if (topics is not null)
-                        await WriteEvent("narratives", MapNarratives(topics));
+                        await SseWriter.WriteEventAsync(Response, "narratives", MapNarratives(topics), ct);
                 }
                 else
                 {
                     var detail = job.Status == JobStatuses.Timeout
                         ? "The investigation exceeded its one-hour limit and was stopped."
                         : "Something went wrong. Please try again.";
-                    await WriteEvent("error", new { detail });
+                    await SseWriter.WriteEventAsync(Response, "error", new { detail }, ct);
                 }
                 return;
             }
@@ -154,7 +145,7 @@ public class MovesController : ControllerBase
             job = await _jobs.GetAsync(jobId, ct);
             if (job is null)
             {
-                await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+                await SseWriter.WriteEventAsync(Response, "error", new { detail = "Unknown investigation. Start a new one." }, ct);
                 return;
             }
             if (job.Status == JobStatuses.Running && DateTime.UtcNow - job.CreatedAtUtc > _runner.Timeout)
@@ -163,7 +154,7 @@ public class MovesController : ControllerBase
                 job = await _jobs.GetAsync(jobId, ct);
                 if (job is null)
                 {
-                    await WriteEvent("error", new { detail = "Unknown investigation. Start a new one." });
+                    await SseWriter.WriteEventAsync(Response, "error", new { detail = "Unknown investigation. Start a new one." }, ct);
                     return;
                 }
             }
@@ -179,10 +170,8 @@ public class MovesController : ControllerBase
         [FromQuery] string? newsSource,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        symbol = RequestValidation.RequireSymbol(symbol);
+        var parsedDate = RequestValidation.RequireDate(date);
 
         var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
         var result = await _narratives.GetTopics(symbol, parsedDate, selectedNewsSource, ct);
@@ -200,10 +189,8 @@ public class MovesController : ControllerBase
         [FromQuery] string? newsSource,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        symbol = RequestValidation.RequireSymbol(symbol);
+        var parsedDate = RequestValidation.RequireDate(date);
 
         var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
         var items = await _narratives.GetCandidates(symbol, parsedDate, selectedNewsSource, ct);
@@ -234,10 +221,8 @@ public class MovesController : ControllerBase
         [FromQuery] string? ids,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        symbol = RequestValidation.RequireSymbol(symbol);
+        var parsedDate = RequestValidation.RequireDate(date);
         var requested = (ids ?? "")
             .Split(new[] { ',', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(id => id.Trim())
@@ -271,8 +256,7 @@ public class MovesController : ControllerBase
         [FromQuery] string? symbol,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
+        symbol = RequestValidation.RequireSymbol(symbol);
         var ok = await _relevance.ApproveAsync(symbol, articleId, ct);
         return Ok(new { approved = ok });
     }
@@ -283,15 +267,14 @@ public class MovesController : ControllerBase
         [FromQuery] string? symbol,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
+        symbol = RequestValidation.RequireSymbol(symbol);
         var ok = await _relevance.RejectAsync(symbol, articleId, ct);
         return Ok(new { rejected = ok });
     }
 
     private NarrativesResponse MapNarratives(NarrativeTopicsResult result) =>
         new NarrativesResponse(
-            Company: MapCompany(result.CompanySymbol),
+            Company: CompanyMapper.Map(_directory, result.CompanySymbol),
             AsOfDate: result.AsOfDate,
             NewsSource: result.NewsSource,
             ArticlesConsidered: result.ArticlesConsidered,
@@ -320,10 +303,8 @@ public class MovesController : ControllerBase
         [FromQuery] string? newsSource,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        symbol = RequestValidation.RequireSymbol(symbol);
+        var parsedDate = RequestValidation.RequireDate(date);
 
         var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
         var window = await _moves.GetMoves(symbol, parsedDate, selectedNewsSource, ct);
@@ -343,46 +324,28 @@ public class MovesController : ControllerBase
         [FromQuery] string? newsSource,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        symbol = RequestValidation.RequireSymbol(symbol);
+        var parsedDate = RequestValidation.RequireDate(date);
 
         var selectedNewsSource = NewsSources.Normalize(newsSource ?? _newsFactory.DefaultSource);
 
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
 
-        async Task WriteEvent(string name, object payload)
-        {
-            var json = JsonSerializer.Serialize(payload, MovesStreamJson);
-            await Response.WriteAsync($"event: {name}\ndata: {json}\n\n", ct);
-            await Response.Body.FlushAsync(ct);
-        }
-
-        var progress = new Progress<SnapshotProgress>(stage =>
-        {
-            WriteEvent("stage", new
-            {
-                stage = stage.Stage,
-                state = stage.State,
-                detail = stage.Detail,
-                count = stage.Count
-            }).GetAwaiter().GetResult();
-        });
+        var progress = SseWriter.StageProgress(Response, ct);
 
         try
         {
             var window = await _moves.GetMoves(symbol, parsedDate, selectedNewsSource, ct, progress);
-            await WriteEvent("moves", MapMoves(window));
+            await SseWriter.WriteEventAsync(Response, "moves", MapMoves(window), ct);
             var topics = await _narratives.GetTopics(symbol, parsedDate, selectedNewsSource, ct, progress);
-            await WriteEvent("narratives", MapNarratives(topics));
+            await SseWriter.WriteEventAsync(Response, "narratives", MapNarratives(topics), ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Moves stream failed for {Symbol} on {Date}", symbol, parsedDate);
-            await WriteEvent("error", new { detail = "Something went wrong. Please try again." });
+            await SseWriter.WriteEventAsync(Response, "error", new { detail = "Something went wrong. Please try again." }, ct);
         }
     }
 
@@ -390,7 +353,7 @@ public class MovesController : ControllerBase
 
     private MovesResponse MapMoves(MovesWindow window) =>
         new MovesResponse(
-            Company: MapCompany(window.CompanySymbol),
+            Company: CompanyMapper.Map(_directory, window.CompanySymbol),
             DecisionDate: window.DecisionDate,
             NewsSource: window.NewsSource,
             Summary: new WindowSummaryDto(
@@ -434,12 +397,4 @@ public class MovesController : ControllerBase
                     kvp.Value.NewsFetchedLive,
                     kvp.Value.Arrival.Select(a => new ArrivalEntryDto(
                         a.Layer, a.FirstSeen, a.State, a.LagHours, a.Detail)).ToList())));
-
-    private CompanySummaryDto MapCompany(string symbol)
-    {
-        if (_directory.TryGet(symbol, out var info) && info is not null)
-            return new CompanySummaryDto(info.Symbol, info.Name, info.Cik, info.Exchange, info.Sector);
-
-        return new CompanySummaryDto(symbol.ToUpperInvariant(), symbol.ToUpperInvariant(), "", "", "");
-    }
 }

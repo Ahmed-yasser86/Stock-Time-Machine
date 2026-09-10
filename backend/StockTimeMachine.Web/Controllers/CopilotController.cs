@@ -24,11 +24,9 @@ public class CopilotController : ControllerBase
 
     private static (string Symbol, DateOnly AsOfDate, string NewsSource) Parse(CopilotRequest req)
     {
-        if (string.IsNullOrWhiteSpace(req.Symbol))
-            throw new InvalidHistoricalDateException("Symbol is required.");
-        if (!DateOnly.TryParse(req.Date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
-        return (req.Symbol, parsedDate, NewsSources.Normalize(req.NewsSource));
+        var symbol = RequestValidation.RequireSymbol(req.Symbol);
+        var parsedDate = RequestValidation.RequireDate(req.Date);
+        return (symbol, parsedDate, NewsSources.Normalize(req.NewsSource));
     }
 
     private static ClusterBriefDto? Map(ClusterBrief? brief) =>

@@ -95,6 +95,10 @@ builder.Services.AddSingleton<MarketAuxNewsProvider>(sp =>
         sp.GetRequiredService<ILogger<MarketAuxNewsProvider>>(),
         sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<INewsProviderFactory, NewsProviderFactory>();
+// Range keyword retrieval for relevance expansion: same singleton instance,
+// exposed through the Application port so RelevanceService never depends on
+// the concrete provider.
+builder.Services.AddSingleton<IRangeNewsSearcher>(sp => sp.GetRequiredService<GdeltNewsProvider>());
 
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();
@@ -110,7 +114,7 @@ builder.Services.AddHttpClient(nameof(FinBertSentimentAnalyzer));
 builder.Services.AddScoped<IFinancialSentimentAnalyzer>(sp =>
     new FinBertSentimentAnalyzer(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(FinBertSentimentAnalyzer)),
-        sp.GetRequiredService<IHistoricalDataRepository>(),
+        sp.GetRequiredService<IAiCacheRepository>(),
         sp.GetRequiredService<ILogger<FinBertSentimentAnalyzer>>(),
         sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddScoped<INarrativeService, NarrativeService>();

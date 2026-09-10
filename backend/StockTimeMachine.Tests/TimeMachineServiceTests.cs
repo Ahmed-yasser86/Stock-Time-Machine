@@ -44,6 +44,8 @@ public class TimeMachineServiceTests
         _sut = new TimeMachineService(
             new CompanyRepository(_db, NullLogger<CompanyRepository>.Instance),
             new HistoricalDataRepository(_db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(_db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(_db, NullLogger<HistoricalDataRepository>.Instance),
             _secEdgarMock.Object,
             _alphaMock.Object,
             _directory,
@@ -82,7 +84,7 @@ public class TimeMachineServiceTests
         });
         var sut = new TimeMachineService(
             new CompanyRepository(db, NullLogger<CompanyRepository>.Instance),
-            repo, _secEdgarMock.Object, _alphaMock.Object, _directory,
+            repo, repo, repo, _secEdgarMock.Object, _alphaMock.Object, _directory,
             Array.Empty<ICompanyLookup>(),
             new FixedNewsProviderFactory(news),
             new DisabledRelevanceStub(),

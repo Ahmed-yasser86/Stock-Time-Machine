@@ -54,6 +54,8 @@ public class InvestigationBehaviorTests
         StockTimeMachineDbContext db, Mock<ISecEdgarProvider> sec, Mock<IAlphaVantageProvider> av, INewsProviderFactory news) =>
         new(new CompanyRepository(db, NullLogger<CompanyRepository>.Instance),
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             sec.Object, av.Object, Directory(),
             Array.Empty<ICompanyLookup>(), news,
             new DisabledRelevanceStub(),

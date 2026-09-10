@@ -12,7 +12,8 @@ public class CopilotService : ICopilotService
     private const int MaxItems = 5;
     private const int MaxBodyChars = 1500;
 
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IFilingRepository _filings;
+    private readonly INewsRepository _news;
     private readonly IMoveDetectionService _moves;
     private readonly IGeminiClient _gemini;
     private readonly IArticleContentClient _bodies;
@@ -20,14 +21,16 @@ public class CopilotService : ICopilotService
     private readonly ILogger<CopilotService> _logger;
 
     public CopilotService(
-        IHistoricalDataRepository dataRepo,
+        IFilingRepository filings,
+        INewsRepository news,
         IMoveDetectionService moves,
         IGeminiClient gemini,
         IArticleContentClient bodies,
         IHypeFilingService hypeFilings,
         ILogger<CopilotService> logger)
     {
-        _dataRepo = dataRepo;
+        _filings = filings;
+        _news = news;
         _moves = moves;
         _gemini = gemini;
         _bodies = bodies;
@@ -45,7 +48,7 @@ public class CopilotService : ICopilotService
             var normalized = Require(symbol, asOfDate);
             if (!_gemini.IsEnabled)
                 return null;
-            var filings = (await _dataRepo.GetFilingsAsOf(normalized, asOfDate, ct)).Take(MaxItems).ToList();
+            var filings = (await _filings.GetFilingsAsOf(normalized, asOfDate, ct)).Take(MaxItems).ToList();
             if (filings.Count == 0)
                 return null;
             // Real content first: ensure stored summaries (bounded, skips
@@ -90,7 +93,7 @@ public class CopilotService : ICopilotService
         {
             try
             {
-                row = await _dataRepo.GetFilingSummary(filing.AccessionNumber, ct);
+                row = await _filings.GetFilingSummary(filing.AccessionNumber, ct);
             }
             catch (Exception ex)
             {
@@ -114,7 +117,7 @@ public class CopilotService : ICopilotService
             if (!_gemini.IsEnabled)
                 return null;
             var selected = NewsSources.Normalize(newsSource);
-            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
+            var cached = await _news.GetNewsAsOf(normalized, asOfDate, selected, ct);
             var docs = cached
                 .Where(n => IsFromSource(n, selected) && articleIds.Contains(n.Id))
                 .Take(MaxItems).ToList();
@@ -182,7 +185,7 @@ public class CopilotService : ICopilotService
             if (!_gemini.IsEnabled)
                 return null;
             var selected = NewsSources.Normalize(newsSource);
-            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
+            var cached = await _news.GetNewsAsOf(normalized, asOfDate, selected, ct);
             var docs = cached
                 .Where(n => IsFromSource(n, selected) && articleIds.Contains(n.Id))
                 .Take(MaxItems).ToList();
@@ -292,7 +295,7 @@ public class CopilotService : ICopilotService
                 return empty;
             var selected = NewsSources.Normalize(newsSource);
             var window = await _moves.GetMoves(normalized, asOfDate, selected, ct);
-            var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
+            var cached = await _news.GetNewsAsOf(normalized, asOfDate, selected, ct);
             var fromSource = cached.Where(n => IsFromSource(n, selected)).Take(20).ToList();
             var sb = Header(normalized, asOfDate);
             sb.AppendLine("A user wrote the conclusion note below, citing evidence as [move YYYY-MM-DD] and [thread terms]. Check EVERY cited claim against the evidence ledger. You REVIEW — you never rewrite conclusions, never add new claims, never advise.");

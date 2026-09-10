@@ -1,22 +1,51 @@
 # Architecture
 
-Four layers with enforced dependency direction (boundary violations fail the
-build) and a full backend suite running fully offline.
+Four layers with folder-level separation inside one core assembly, guarded
+by architecture tests (`ArchitectureTests`: legacy isolation, no ASP.NET in
+core, adapter placement, port adoption), and a full backend suite running
+fully offline.
 
 ## Layers and responsibilities
 
-- **Domain** — entities and pure rules, zero infrastructure references:
-  temporal math, regulatory windows, verdict models, signal catalog,
-  clustering math, regime/sentiment/uncertainty calculators. The research
-  logic lives here, where it can be unit-tested without keys or network.
-- **Application** — orchestration across explicitly injected interfaces:
-  projection (freeze), evaluation, indexing contracts, methodology content
-  (single source served to UI and API). No HTTP, no SQL, no file access.
-- **Infrastructure** — everything external: provider clients (GDELT Cloud
-  and Project, Alpha Vantage, MarketAux, Arctic Shift, SEC EDGAR, Finnhub,
-  Jina, Gemini), EF Core stores, Qdrant client, FinBERT client, job runner.
-- **Web** — thin controllers mapping domain results to DTOs. No business
-  logic; no analytical math.
+- **Domain** (`StockTimeMachine/Domain/`) — entities and pure rules with
+  zero infrastructure references: temporal math (`TemporalBoundary`),
+  date validation (`HistoricalDate`), material-disclosure rule
+  (`SecFiling.IsMaterialDisclosure`), verdict models, exceptions. Entities
+  are otherwise anemic by design: this is a read-heavy analytical system,
+  so behavioral rules (clustering math, regime/sentiment/uncertainty
+  calculators, signal catalog) live as pure statics and services in
+  Application, where they are unit-tested without keys or network.
+- **Application** (`StockTimeMachine/Application/`) — orchestration across
+  explicitly injected narrow ports (`IPriceRepository`,
+  `IFilingRepository`, `INewsRepository`, `IAiCacheRepository`,
+  `IRangeNewsSearcher`, provider abstractions): projection (freeze),
+  evaluation, indexing contracts, methodology content (single source
+  served to UI and API). The legacy composite `IHistoricalDataRepository`
+  is retained as a compatibility seam; no service depends on it
+  (pinned by `PersistencePorts_AreAdopted`).
+- **Infrastructure** (`StockTimeMachine/Infrastructure/`) — everything
+  external: provider clients (GDELT Cloud and Project, Alpha Vantage,
+  MarketAux, Arctic Shift, SEC EDGAR, Finnhub, Jina, Gemini), EF Core
+  stores (including `InvestigationJobStore` and the FinBERT sidecar
+  client), Qdrant client, job runner.
+- **Web** (`StockTimeMachine.Web/`) — controllers that validate input,
+  delegate to services, map to DTOs, and frame SSE streams. Shared
+  plumbing lives in `Controllers/ControllerHelpers.cs` (validation, SSE
+  framing, company mapping, operator gate). Product endpoints
+  (`HypeController`) are separate from operator endpoints
+  (`HypeOpsController`, harvest-gated); registry-mining math lives in
+  `Application/Hype/HypeSupport.cs`, not in endpoints.
+
+## Honest limitations
+
+Separation is folder-level plus tests, not compile-time: Domain,
+Application, and Infrastructure compile into one assembly
+(`StockTimeMachine.csproj`), so the dependency rule rests on convention
+and the architecture tests rather than project references. Namespaces are
+flat (`StockTimeMachine`, except `StockTimeMachine.Integrations`), so
+layering is not visible in imports either. A three-project split was
+deliberately deferred: diff noise outweighs value at this size while the
+tests pin the boundaries that matter.
 
 ## Why this shape fits this system
 

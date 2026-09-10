@@ -16,7 +16,7 @@ public class FinBertSentimentAnalyzer : IFinancialSentimentAnalyzer
     private const int BatchSize = 32;
 
     private readonly HttpClient _http;
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IAiCacheRepository _aiCache;
     private readonly ILogger<FinBertSentimentAnalyzer> _logger;
     private readonly string _endpoint;
     private readonly bool _enabled;
@@ -26,12 +26,12 @@ public class FinBertSentimentAnalyzer : IFinancialSentimentAnalyzer
 
     public FinBertSentimentAnalyzer(
         HttpClient http,
-        IHistoricalDataRepository dataRepo,
+        IAiCacheRepository aiCache,
         ILogger<FinBertSentimentAnalyzer> logger,
         IConfiguration config)
     {
         _http = http;
-        _dataRepo = dataRepo;
+        _aiCache = aiCache;
         _logger = logger;
         _endpoint = (config["Nlp:Endpoint"] ?? "http://127.0.0.1:5252").TrimEnd('/');
         _enabled = (config["Nlp:Enabled"] ?? "true").Equals("true", StringComparison.OrdinalIgnoreCase);
@@ -57,7 +57,7 @@ public class FinBertSentimentAnalyzer : IFinancialSentimentAnalyzer
             ArticleSentiment? cached = null;
             try
             {
-                cached = await _dataRepo.GetSentiment(article.Id, ModelId, ct);
+                cached = await _aiCache.GetSentiment(article.Id, ModelId, ct);
             }
             catch (Exception ex)
             {
@@ -107,7 +107,7 @@ public class FinBertSentimentAnalyzer : IFinancialSentimentAnalyzer
                 };
                 try
                 {
-                    await _dataRepo.StoreSentiment(row, ct);
+                    await _aiCache.StoreSentiment(row, ct);
                 }
                 catch (Exception ex)
                 {

@@ -10,20 +10,23 @@ namespace StockTimeMachine;
 // logged, never thrown.
 public class HypeCaseIndexer : IHypeCaseIndexer
 {
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IAiCacheRepository _aiCache;
+    private readonly IFilingRepository _filingsRepo;
     private readonly IVectorStore _vectors;
     private readonly IGeminiClient _gemini;
     private readonly IHypeFilingService _filings;
     private readonly ILogger<HypeCaseIndexer> _logger;
 
     public HypeCaseIndexer(
-        IHistoricalDataRepository dataRepo,
+        IAiCacheRepository aiCache,
+        IFilingRepository filingsRepo,
         IVectorStore vectors,
         IGeminiClient gemini,
         IHypeFilingService filings,
         ILogger<HypeCaseIndexer> logger)
     {
-        _dataRepo = dataRepo;
+        _aiCache = aiCache;
+        _filingsRepo = filingsRepo;
         _vectors = vectors;
         _gemini = gemini;
         _filings = filings;
@@ -54,7 +57,7 @@ public class HypeCaseIndexer : IHypeCaseIndexer
         {
             try
             {
-                var row = await _dataRepo.GetEmbedding(id, model, ct);
+                var row = await _aiCache.GetEmbedding(id, model, ct);
                 if (row is null || string.IsNullOrWhiteSpace(row.VectorJson))
                     continue;
                 var vec = JsonSerializer.Deserialize<float[]>(row.VectorJson);
@@ -138,7 +141,7 @@ public class HypeCaseIndexer : IHypeCaseIndexer
                 continue;
             try
             {
-                var row = await _dataRepo.GetFilingSummary(accession, ct);
+                var row = await _filingsRepo.GetFilingSummary(accession, ct);
                 if (row is null)
                     continue;
                 inputs.Add(HypeCaseVector.FromRecord(row, row.StructuredJson));

@@ -15,20 +15,20 @@ public class HypeFilingService : IHypeFilingService
     private readonly IHttpClientFactory _httpFactory;
     private readonly IGeminiClient _gemini;
     private readonly IConfiguration _config;
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IFilingRepository _filings;
     private readonly ILogger<HypeFilingService> _logger;
 
     public HypeFilingService(
         IHttpClientFactory httpFactory,
         IGeminiClient gemini,
         IConfiguration config,
-        IHistoricalDataRepository dataRepo,
+        IFilingRepository filings,
         ILogger<HypeFilingService> logger)
     {
         _httpFactory = httpFactory;
         _gemini = gemini;
         _config = config;
-        _dataRepo = dataRepo;
+        _filings = filings;
         _logger = logger;
     }
 
@@ -51,14 +51,14 @@ public class HypeFilingService : IHypeFilingService
                 continue;
             try
             {
-                if (await _dataRepo.GetFilingSummary(filing.AccessionNumber, ct) is not null)
+                if (await _filings.GetFilingSummary(filing.AccessionNumber, ct) is not null)
                     continue;
                 var record = await SummarizeStructuredAsync(
                     symbol, filing.AccessionNumber, filing.FormType,
                     filing.FiledAt, filing.Url ?? "", asOfDate, ct);
                 if (record is not null)
                 {
-                    await _dataRepo.StoreFilingSummary(record, ct);
+                    await _filings.StoreFilingSummary(record, ct);
                     generated++;
                 }
             }

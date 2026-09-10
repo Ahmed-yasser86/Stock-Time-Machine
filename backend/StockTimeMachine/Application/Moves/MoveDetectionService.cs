@@ -34,7 +34,9 @@ public class MoveDetectionService : IMoveDetectionService
     public const int SocialLookbackDays = 7;
 
     private readonly ICompanyRepository _companyRepo;
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IPriceRepository _prices;
+    private readonly IFilingRepository _filings;
+    private readonly INewsRepository _news;
     private readonly IAlphaVantageProvider _alphaVantage;
     private readonly ICompanyDirectory _directory;
     private readonly INewsProviderFactory _newsFactory;
@@ -45,7 +47,9 @@ public class MoveDetectionService : IMoveDetectionService
 
     public MoveDetectionService(
         ICompanyRepository companyRepo,
-        IHistoricalDataRepository dataRepo,
+        IPriceRepository prices,
+        IFilingRepository filings,
+        INewsRepository news,
         IAlphaVantageProvider alphaVantage,
         ICompanyDirectory directory,
         INewsProviderFactory newsFactory,
@@ -55,7 +59,9 @@ public class MoveDetectionService : IMoveDetectionService
         ILogger<MoveDetectionService> logger)
     {
         _companyRepo = companyRepo;
-        _dataRepo = dataRepo;
+        _prices = prices;
+        _filings = filings;
+        _news = news;
         _alphaVantage = alphaVantage;
         _directory = directory;
         _newsFactory = newsFactory;
@@ -223,7 +229,7 @@ public class MoveDetectionService : IMoveDetectionService
     // identities (same quota discipline as the snapshot engine).
     private async Task<IReadOnlyList<PricePoint>> ResolveWindow(string symbol, DateOnly asOfDate, CancellationToken ct)
     {
-        var prices = await _dataRepo.GetPricesAsOf(symbol, asOfDate, FetchSize, ct);
+        var prices = await _prices.GetPricesAsOf(symbol, asOfDate, FetchSize, ct);
         if (prices.Count > 0)
             return prices;
 
@@ -238,8 +244,8 @@ public class MoveDetectionService : IMoveDetectionService
         var fresh = await _alphaVantage.GetDailyPrices(symbol, asOfDate, FetchSize, ct);
         if (fresh.Count > 0)
         {
-            await _dataRepo.StorePrices(symbol, fresh, ct);
-            return await _dataRepo.GetPricesAsOf(symbol, asOfDate, FetchSize, ct);
+            await _prices.StorePrices(symbol, fresh, ct);
+            return await _prices.GetPricesAsOf(symbol, asOfDate, FetchSize, ct);
         }
 
         return prices;
@@ -257,7 +263,7 @@ public class MoveDetectionService : IMoveDetectionService
             // but movement-level eligibility is the 30-day regulatory window
             // (reg-v1, extra layer over semantic relevance, which is
             // untouched). A 2015 filing is never evidence for a 2026 move.
-            var filings = await _dataRepo.GetFilingsAsOf(symbol, moveDate, ct);
+            var filings = await _filings.GetFilingsAsOf(symbol, moveDate, ct);
             evidence.Filings = RegulatoryEvidence
                 .SelectInWindow(filings, moveDate)
                 .ToList();
@@ -275,7 +281,7 @@ public class MoveDetectionService : IMoveDetectionService
             // serves repeat windows at zero provider cost. Source-filtered
             // inside the query so another source's burst can't push this
             // source's rows out of the read window.
-            var fromSource = (await _dataRepo.GetNewsAsOf(symbol, moveDate, newsSource, ct))
+            var fromSource = (await _news.GetNewsAsOf(symbol, moveDate, newsSource, ct))
                 .Where(n => IsFromSource(n, newsSource)).ToList();
             var fetchKey = symbol + "|" + newsSource;
             if (fromSource.Count == 0)
@@ -298,8 +304,8 @@ public class MoveDetectionService : IMoveDetectionService
                         var fresh = await provider.SearchAsync(symbol, companyName, moveDate, ct);
                         if (fresh.Count > 0)
                         {
-                            await _dataRepo.StoreNews(symbol, fresh, ct);
-                            var reread = await _dataRepo.GetNewsAsOf(symbol, moveDate, newsSource, ct);
+                            await _news.StoreNews(symbol, fresh, ct);
+                            var reread = await _news.GetNewsAsOf(symbol, moveDate, newsSource, ct);
                             fromSource = reread.Where(n => IsFromSource(n, newsSource)).ToList();
                         }
                     }
@@ -353,7 +359,7 @@ public class MoveDetectionService : IMoveDetectionService
 
         try
         {
-            var after = await _dataRepo.GetPricesAfter(symbol, moveDate, 5, ct);
+            var after = await _prices.GetPricesAfter(symbol, moveDate, 5, ct);
             evidence.Reaction = after
                 .Select(p => new MarketReaction { Date = p.Date, Close = p.Close })
                 .ToList();
@@ -386,7 +392,7 @@ public class MoveDetectionService : IMoveDetectionService
         try
         {
             var latest = moves.Max(m => m.Date);
-            var cached = await _dataRepo.GetNewsAsOf(symbol, latest, newsSource, ct);
+            var cached = await _news.GetNewsAsOf(symbol, latest, newsSource, ct);
             var newest = cached
                 .Where(n => IsFromSource(n, newsSource))
                 .Select(n => (DateTime?)n.PublishedAt)
@@ -397,7 +403,7 @@ public class MoveDetectionService : IMoveDetectionService
                 return; // Fresh enough: provider's trailing window is covered.
             var fresh = await _newsFactory.Get(newsSource).SearchAsync(symbol, companyName, latest, ct);
             if (fresh.Count > 0)
-                await _dataRepo.StoreNews(symbol, fresh, ct);
+                await _news.StoreNews(symbol, fresh, ct);
             _logger.LogInformation("Stale news refresh for {Symbol}: newest cached {Newest} vs latest move {Latest}, fetched {Count}",
                 symbol, newest, latest, fresh.Count);
         }

@@ -10,20 +10,20 @@ public class HypeBriefService : IHypeBriefService
     private readonly IGeminiClient _gemini;
     private readonly ICompanyDirectory _directory;
     private readonly IHypeFilingService _filings;
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IFilingRepository _filingsRepo;
     private readonly ILogger<HypeBriefService> _logger;
 
     public HypeBriefService(
         IGeminiClient gemini,
         ICompanyDirectory directory,
         IHypeFilingService filings,
-        IHistoricalDataRepository dataRepo,
+        IFilingRepository filingsRepo,
         ILogger<HypeBriefService> logger)
     {
         _gemini = gemini;
         _directory = directory;
         _filings = filings;
-        _dataRepo = dataRepo;
+        _filingsRepo = filingsRepo;
         _logger = logger;
     }
 
@@ -174,7 +174,7 @@ public class HypeBriefService : IHypeBriefService
             FilingSummaryRecord? row = null;
             try
             {
-                row = await _dataRepo.GetFilingSummary(accession, ct);
+                row = await _filingsRepo.GetFilingSummary(accession, ct);
             }
             catch (Exception ex)
             {

@@ -53,13 +53,9 @@ public class HypeSectorTests
             cases.Object,
             Mock.Of<IHypeResemblanceService>(),
             Mock.Of<IHypeBriefService>(),
-            Mock.Of<IHypeCaseIndexer>(),
-            Mock.Of<IHypeFilingService>(),
-            Mock.Of<IVectorStore>(),
             Mock.Of<IInvestigationJobStore>(),
             Mock.Of<ICompanyDirectory>(),
             Mock.Of<INewsProviderFactory>(),
-            Mock.Of<IConfiguration>(),
             NullLogger<HypeController>.Instance);
     }
 
@@ -187,10 +183,9 @@ public class HypeSectorTests
         var sut = new HypeController(
             moves.Object, narratives.Object, cases.Object,
             Mock.Of<IHypeResemblanceService>(), Mock.Of<IHypeBriefService>(),
-            Mock.Of<IHypeCaseIndexer>(), Mock.Of<IHypeFilingService>(),
-            Mock.Of<IVectorStore>(), Mock.Of<IInvestigationJobStore>(),
+            Mock.Of<IInvestigationJobStore>(),
             directory.Object, Mock.Of<INewsProviderFactory>(),
-            Mock.Of<IConfiguration>(), NullLogger<HypeController>.Instance);
+            NullLogger<HypeController>.Instance);
 
         var result = await sut.Sector("NVDA", "2026-06-15", "gdelt", CancellationToken.None);
         var response = Assert.IsType<HypeSectorResponse>(

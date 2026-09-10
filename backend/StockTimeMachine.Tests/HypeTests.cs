@@ -1168,7 +1168,7 @@ public class HypeTests
 
     private static HypeResemblanceService ResemblanceSut(
         Mock<IHistoricalDataRepository> repo, IGeminiClient gemini, IVectorStore? vectors = null) =>
-        new(repo.Object, gemini, vectors ?? new UnavailableVectorStore(),
+        new(repo.Object, repo.Object, gemini, vectors ?? new UnavailableVectorStore(),
             NullLogger<HypeResemblanceService>.Instance);
 
     [Fact]
@@ -1377,7 +1377,7 @@ public class HypeTests
         store.Setup(s => s.UpsertCaseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateOnly>(),
                 It.IsAny<float[]>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
-        var indexer = new HypeCaseIndexer(repo.Object, store.Object,
+        var indexer = new HypeCaseIndexer(repo.Object, repo.Object, store.Object,
             new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
             new NullFilingService(),
             NullLogger<HypeCaseIndexer>.Instance);
@@ -1403,7 +1403,7 @@ public class HypeTests
         store.Setup(s => s.UpsertCaseAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateOnly>(),
                 It.IsAny<float[]>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
-        var indexer = new HypeCaseIndexer(repo.Object, store.Object,
+        var indexer = new HypeCaseIndexer(repo.Object, repo.Object, store.Object,
             new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
             new NullFilingService(),
             NullLogger<HypeCaseIndexer>.Instance);
@@ -1428,7 +1428,7 @@ public class HypeTests
         });
         var store = new Mock<IVectorStore>();
         store.Setup(s => s.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        var indexer = new HypeCaseIndexer(repo.Object, store.Object,
+        var indexer = new HypeCaseIndexer(repo.Object, repo.Object, store.Object,
             new FuncGeminiStub(_ => Array.Empty<RelevanceVerdict>()),
             new NullFilingService(),
             NullLogger<HypeCaseIndexer>.Instance);

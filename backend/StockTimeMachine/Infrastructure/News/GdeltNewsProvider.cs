@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace StockTimeMachine;
 
-public class GdeltNewsProvider : INewsProvider
+public class GdeltNewsProvider : INewsProvider, IRangeNewsSearcher
 {
     private readonly HttpClient _http;
     private readonly ILogger<GdeltNewsProvider> _logger;

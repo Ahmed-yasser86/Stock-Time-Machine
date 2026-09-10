@@ -83,4 +83,57 @@ public class ArchitectureTests
         Assert.Equal("StockTimeMachine.Integrations", typeof(FinnhubQuoteProvider).Namespace);
         Assert.Equal("StockTimeMachine.Integrations", typeof(FinnhubCompanyLookup).Namespace);
     }
+
+    [Fact]
+    public void RelevanceService_DependsOnRangeSearchAbstraction()
+    {
+        // Expansion capability must come through the Application port, never
+        // the concrete transport: pinning the DIP direction so a future
+        // transport can serve expansion without touching RelevanceService.
+        var ctors = typeof(RelevanceService).GetConstructors();
+        var ctor = Assert.Single(ctors);
+        var paramTypes = ctor.GetParameters().Select(p => p.ParameterType).ToArray();
+        Assert.Contains(typeof(IRangeNewsSearcher), paramTypes);
+        Assert.DoesNotContain(paramTypes, t => t == typeof(GdeltNewsProvider));
+        Assert.True(typeof(IRangeNewsSearcher).IsAssignableFrom(typeof(GdeltNewsProvider)));
+    }
+
+    [Fact]
+    public void PersistencePorts_AreAdopted()
+    {
+        // Every repository consumer depends only on the focused port(s) it
+        // uses. The composite IHistoricalDataRepository is a compat seam:
+        // no constructor may take it directly.
+        var consumers = new[]
+        {
+            typeof(TimeMachineService),
+            typeof(SimulationService),
+            typeof(MoveDetectionService),
+            typeof(NarrativeService),
+            typeof(CopilotService),
+            typeof(RelevanceService),
+            typeof(FinBertSentimentAnalyzer),
+            typeof(HypeBriefService),
+            typeof(HypeCaseIndexer),
+            typeof(HypeFilingService),
+            typeof(HypeResemblanceService),
+        };
+        var focused = new[]
+        {
+            typeof(ICompanyRepository),
+            typeof(IPriceRepository),
+            typeof(IFilingRepository),
+            typeof(INewsRepository),
+            typeof(IAiCacheRepository),
+        };
+        foreach (var consumer in consumers)
+        {
+            var ctor = Assert.Single(consumer.GetConstructors());
+            var paramTypes = ctor.GetParameters().Select(p => p.ParameterType).ToArray();
+            Assert.DoesNotContain(typeof(IHistoricalDataRepository), paramTypes);
+            var repoParams = paramTypes.Where(t => t.Name.EndsWith("Repository", StringComparison.Ordinal)).ToArray();
+            Assert.NotEmpty(repoParams);
+            Assert.All(repoParams, t => Assert.Contains(t, focused));
+        }
+    }
 }

@@ -45,6 +45,8 @@ public class MoveDetectionServiceTests
         IFinancialSentimentAnalyzer? sentiment = null, IRelevanceService? relevance = null) =>
         new(new CompanyRepository(db, NullLogger<CompanyRepository>.Instance),
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             av.Object, directory,
             new FixedNewsProviderFactory(news),
             social ?? Array.Empty<ISocialSignalProvider>(),
@@ -369,7 +371,7 @@ public class MoveDetectionServiceTests
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance));
         var sut = new MoveDetectionService(
             new CompanyRepository(db, NullLogger<CompanyRepository>.Instance),
-            throwing, av.Object, directory,
+            throwing, throwing, throwing, av.Object, directory,
             new FixedNewsProviderFactory(new NullNewsProvider(NullLogger<NullNewsProvider>.Instance)),
             Array.Empty<ISocialSignalProvider>(),
             new DisabledSentimentStub(),

@@ -35,8 +35,7 @@ public class CompareController : ControllerBase
             .Select(s => s.ToUpperInvariant()).Distinct().Take(2).ToList();
         if (picks.Count < 2)
             throw new InvalidHistoricalDateException("At least two symbols are required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        var parsedDate = RequestValidation.RequireDate(date);
         var sharedTerms = (terms ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToList();
         if (sharedTerms.Count == 0)
@@ -66,8 +65,7 @@ public class CompareController : ControllerBase
             .Select(s => s.ToUpperInvariant()).Distinct().Take(2).ToList();
         if (picks.Count != 2)
             throw new InvalidHistoricalDateException("Exactly two symbols are required.");
-        if (!DateOnly.TryParse(date, out var parsedDate))
-            throw new InvalidHistoricalDateException("Date must be a valid yyyy-MM-dd value.");
+        var parsedDate = RequestValidation.RequireDate(date);
 
         var selectedNewsSource = NewsSources.Normalize(newsSource);
         var result = await _narratives.CrossThreadSimilarity(picks, parsedDate, selectedNewsSource, ct);

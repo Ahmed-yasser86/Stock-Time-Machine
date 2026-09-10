@@ -21,6 +21,7 @@ public class ThreadArticlesTests
 
     private static NarrativeService Sut(StockTimeMachineDbContext db) => new(
         new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+        new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
         Mock.Of<IGeminiClient>(),
         Mock.Of<IArticleContentClient>(),
         Mock.Of<ICompanyDirectory>(),

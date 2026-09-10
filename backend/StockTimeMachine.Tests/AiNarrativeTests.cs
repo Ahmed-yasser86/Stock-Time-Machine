@@ -222,6 +222,7 @@ public class AiNarrativeTests
         var gemini = new FixedGeminiStub();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             gemini, new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
@@ -250,6 +251,7 @@ public class AiNarrativeTests
         await SeedPair(db);
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new ThrowingGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
@@ -265,6 +267,7 @@ public class AiNarrativeTests
         var db = NewDb();
         await SeedPair(db);
         var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
@@ -289,7 +292,7 @@ public class AiNarrativeTests
                 PublishedAt = new DateTime(2020, 1, 10), Url = $"https://example.com/g{i}",
                 CompanySymbol = "TSLA",
             }));
-        var sut = new NarrativeService(repo,
+        var sut = new NarrativeService(repo, repo,
             new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(),
             new FixedRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
@@ -317,7 +320,7 @@ public class AiNarrativeTests
                 PublishedAt = new DateTime(2020, 1, 10), Url = $"https://example.com/h{i}",
                 CompanySymbol = "TSLA",
             }));
-        var sut = new NarrativeService(repo,
+        var sut = new NarrativeService(repo, repo,
             new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(),
             new FixedRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
@@ -344,7 +347,7 @@ public class AiNarrativeTests
             new NewsArticle { Id = "b1", Title = "Approvals sought for new data center", Description = "Water review", Source = "GDELT", PublishedAt = new DateTime(2020, 1, 11), Url = "https://example.com/b1", CompanySymbol = "BBB" },
         });
         var gemini = new FixedGeminiStub();
-        var sut = new NarrativeService(repo, gemini,
+        var sut = new NarrativeService(repo, repo, gemini,
             new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var brief = await sut.BriefSharedThread(
@@ -363,6 +366,7 @@ public class AiNarrativeTests
         var db = NewDb();
         await SeedPair(db);
         var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new FixedGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
@@ -399,6 +403,7 @@ public class AiNarrativeTests
     private static CopilotService Copilot(
         StockTimeMachineDbContext db, IGeminiClient gemini) =>
         new(new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new StubMoves(), gemini, new DisabledBodyStub(),
             new Mock<IHypeFilingService>().Object,
             NullLogger<CopilotService>.Instance);
@@ -529,6 +534,7 @@ public class AiNarrativeTests
 
     private static NarrativeService CrossSut(
         StockTimeMachineDbContext db, IGeminiClient gemini) => new(
+        new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
         new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
         gemini, new DisabledBodyStub(), TestDirectory.Tesla(),
         new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
@@ -701,6 +707,7 @@ public class AiNarrativeTests
         var db = NewDb();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.CrossThreadSimilarity(
@@ -795,6 +802,7 @@ public class AiNarrativeTests
         var gemini = new FixedGeminiStub();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             gemini, new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var first = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
@@ -837,6 +845,7 @@ public class AiNarrativeTests
         var gemini = new FixedGeminiStub();
         var sut = new NarrativeService(
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             gemini, new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
         var stages = new List<SnapshotProgress>();
         var progress = new Progress<SnapshotProgress>(s => stages.Add(s));
@@ -859,6 +868,7 @@ public class AiNarrativeTests
     {
         var db = NewDb();
         var sut = new NarrativeService(
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new DisabledGeminiStub(), new DisabledBodyStub(), TestDirectory.Tesla(), new DisabledRelevanceStub(), NullLogger<NarrativeService>.Instance);
         var stages = new List<SnapshotProgress>();
@@ -892,6 +902,7 @@ public class AiNarrativeTests
     private static RelevanceService RelevanceSut(
         StockTimeMachineDbContext db, IGeminiClient gemini) =>
         new(new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             gemini,
             new GdeltNewsProvider(new HttpClient(),
                 NullLogger<GdeltNewsProvider>.Instance,
@@ -1015,7 +1026,7 @@ public class AiNarrativeTests
             RelArticle("n2", "Tesla earnings smash records quarterly"),
             RelArticle("noise1", "Market noise daily roundup chatter"),
         });
-        var sut = new NarrativeService(repo, new DisabledGeminiStub(), new DisabledBodyStub(),
+        var sut = new NarrativeService(repo, repo, new DisabledGeminiStub(), new DisabledBodyStub(),
             TestDirectory.Tesla(), new FixedRelevanceStub(), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);
@@ -1033,7 +1044,7 @@ public class AiNarrativeTests
         var db = NewDb();
         await SeedPair(db);
         var repo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
-        var relevance = new RelevanceService(repo, new FuncGeminiStub(prompt =>
+        var relevance = new RelevanceService(repo, repo, new FuncGeminiStub(prompt =>
         {
             // Every requested id relevant except titles carrying "fire".
             var ids = new List<string>();
@@ -1060,7 +1071,7 @@ public class AiNarrativeTests
                 NullLogger<GdeltNewsProvider>.Instance,
                 new ConfigurationBuilder().Build()),
             NullLogger<RelevanceService>.Instance);
-        var sut = new NarrativeService(repo, new DisabledGeminiStub(), new DisabledBodyStub(),
+        var sut = new NarrativeService(repo, repo, new DisabledGeminiStub(), new DisabledBodyStub(),
             TestDirectory.Tesla(), relevance, NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("TSLA", new DateOnly(2020, 1, 15), NewsSources.Gdelt);

@@ -12,7 +12,8 @@ public class NarrativeService : INarrativeService
     private const int MaxFetchedBodies = 3;
     private const int MaxBodyChars = 1500;
 
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly INewsRepository _news;
+    private readonly IAiCacheRepository _aiCache;
     private readonly IGeminiClient _gemini;
     private readonly IArticleContentClient _bodies;
     private readonly ICompanyDirectory _directory;
@@ -20,14 +21,16 @@ public class NarrativeService : INarrativeService
     private readonly ILogger<NarrativeService> _logger;
 
     public NarrativeService(
-        IHistoricalDataRepository dataRepo,
+        INewsRepository news,
+        IAiCacheRepository aiCache,
         IGeminiClient gemini,
         IArticleContentClient bodies,
         ICompanyDirectory directory,
         IRelevanceService relevance,
         ILogger<NarrativeService> logger)
     {
-        _dataRepo = dataRepo;
+        _news = news;
+        _aiCache = aiCache;
         _gemini = gemini;
         _bodies = bodies;
         _directory = directory;
@@ -43,7 +46,7 @@ public class NarrativeService : INarrativeService
 
         var normalized = symbol.Trim().ToUpperInvariant();
         var selected = NewsSources.Normalize(newsSource);
-        var articles = (await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct))
+        var articles = (await _news.GetNewsAsOf(normalized, asOfDate, selected, ct))
             .Where(n => IsFromSource(n, selected)).ToList();
 
         var result = new NarrativeTopicsResult
@@ -94,7 +97,7 @@ public class NarrativeService : INarrativeService
             result.ExpansionRelevant = expansion.NewRelevant;
             if (expansion.NewRelevant > 0)
             {
-                articles = (await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct))
+                articles = (await _news.GetNewsAsOf(normalized, asOfDate, selected, ct))
                     .Where(n => IsFromSource(n, selected)).ToList();
                 result.ArticlesConsidered = articles.Count;
                 gateInput = articles.ToList();
@@ -139,7 +142,7 @@ public class NarrativeService : INarrativeService
         var uncertain = await _relevance.CandidatesAsync(normalized, asOfDate, ct);
         if (uncertain.Count == 0)
             return Array.Empty<NewsCandidate>();
-        var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
+        var cached = await _news.GetNewsAsOf(normalized, asOfDate, selected, ct);
         var byId = cached.Where(n => IsFromSource(n, selected))
             .ToDictionary(n => n.Id, StringComparer.Ordinal);
         return uncertain
@@ -169,7 +172,7 @@ public class NarrativeService : INarrativeService
             .ToList();
         if (wanted.Count == 0)
             return Array.Empty<NewsCandidate>();
-        var cached = await _dataRepo.GetNewsAsOf(normalized, asOfDate, selected, ct);
+        var cached = await _news.GetNewsAsOf(normalized, asOfDate, selected, ct);
         var byId = cached.Where(n => IsFromSource(n, selected))
             .ToDictionary(n => n.Id, StringComparer.Ordinal);
         var found = new List<NewsCandidate>();
@@ -183,7 +186,7 @@ public class NarrativeService : INarrativeService
             ArticleRelevance? relevance = null;
             try
             {
-                relevance = await _dataRepo.GetRelevance(id, normalized, ct);
+                relevance = await _aiCache.GetRelevance(id, normalized, ct);
             }
             catch (Exception ex)
             {
@@ -335,7 +338,7 @@ public class NarrativeService : INarrativeService
             float[]? hit = null;
             try
             {
-                var row = await _dataRepo.GetEmbedding(docs[i].Id, model, ct);
+                var row = await _aiCache.GetEmbedding(docs[i].Id, model, ct);
                 if (row is not null)
                     hit = System.Text.Json.JsonSerializer.Deserialize<float[]>(row.VectorJson);
             }
@@ -363,7 +366,7 @@ public class NarrativeService : INarrativeService
                 vectors[missingIdx[k]] = fresh[k];
                 try
                 {
-                    await _dataRepo.StoreEmbedding(new ArticleEmbedding
+                    await _aiCache.StoreEmbedding(new ArticleEmbedding
                     {
                         ArticleId = docs[missingIdx[k]].Id,
                         Model = model,
@@ -510,7 +513,7 @@ public class NarrativeService : INarrativeService
                 if (string.IsNullOrEmpty(symbol))
                     continue;
                 HistoricalDate.Create(asOfDate);
-                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, selected, ct);
+                var cached = await _news.GetNewsAsOf(symbol, asOfDate, selected, ct);
                 foreach (var n in cached.Where(n => IsFromSource(n, selected)))
                 {
                     var tokens = new HashSet<string>(
@@ -607,7 +610,7 @@ public class NarrativeService : INarrativeService
             var perSymbol = new List<(string Symbol, List<NewsArticle> Docs, IReadOnlyList<float[]> Vectors)>();
             foreach (var symbol in picks)
             {
-                var cached = await _dataRepo.GetNewsAsOf(symbol, asOfDate, selected, ct);
+                var cached = await _news.GetNewsAsOf(symbol, asOfDate, selected, ct);
                 // Defensive cutoff (the repository enforces it too): a mocked
                 // or future row must never enter a historical comparison.
                 var docs = cached

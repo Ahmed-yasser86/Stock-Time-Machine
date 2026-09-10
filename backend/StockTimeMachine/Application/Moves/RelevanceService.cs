@@ -18,20 +18,23 @@ public class RelevanceService : IRelevanceService
         "merger acquisition", "layoffs", "product launch",
     };
 
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly INewsRepository _news;
+    private readonly IAiCacheRepository _aiCache;
     private readonly IGeminiClient _gemini;
-    private readonly GdeltNewsProvider _project;
+    private readonly IRangeNewsSearcher _rangeSearch;
     private readonly ILogger<RelevanceService> _logger;
 
     public RelevanceService(
-        IHistoricalDataRepository dataRepo,
+        INewsRepository news,
+        IAiCacheRepository aiCache,
         IGeminiClient gemini,
-        GdeltNewsProvider project,
+        IRangeNewsSearcher rangeSearch,
         ILogger<RelevanceService> logger)
     {
-        _dataRepo = dataRepo;
+        _news = news;
+        _aiCache = aiCache;
         _gemini = gemini;
-        _project = project;
+        _rangeSearch = rangeSearch;
         _logger = logger;
     }
 
@@ -67,7 +70,7 @@ public class RelevanceService : IRelevanceService
             List<NewsArticle> found;
             try
             {
-                found = (await _project.SearchRangeAsync(
+                found = (await _rangeSearch.SearchRangeAsync(
                     query, normalized, from, asOfDate, asOfDate, 20, ct)).ToList();
             }
             catch (OperationCanceledException) { throw; }
@@ -86,7 +89,7 @@ public class RelevanceService : IRelevanceService
                 ArticleRelevance? existing = null;
                 try
                 {
-                    existing = await _dataRepo.GetRelevance(article.Id, normalized, ct);
+                    existing = await _aiCache.GetRelevance(article.Id, normalized, ct);
                 }
                 catch (Exception ex)
                 {
@@ -100,7 +103,7 @@ public class RelevanceService : IRelevanceService
                 continue;
             try
             {
-                await _dataRepo.StoreNews(normalized, fresh, ct);
+                await _news.StoreNews(normalized, fresh, ct);
             }
             catch (Exception ex)
             {
@@ -122,14 +125,14 @@ public class RelevanceService : IRelevanceService
 
     public Task<IReadOnlyList<ArticleRelevance>> CandidatesAsync(
         string symbol, DateOnly asOfDate, CancellationToken ct = default) =>
-        _dataRepo.GetUncertain(symbol, asOfDate, ct);
+        _aiCache.GetUncertain(symbol, asOfDate, ct);
 
     public Task<bool> ApproveAsync(string symbol, string articleId, CancellationToken ct = default) =>
-        _dataRepo.SetRelevanceDecision(articleId, symbol,
+        _aiCache.SetRelevanceDecision(articleId, symbol,
             RelevanceDecisions.UserApproved, RelevanceSources.User, ct);
 
     public Task<bool> RejectAsync(string symbol, string articleId, CancellationToken ct = default) =>
-        _dataRepo.SetRelevanceDecision(articleId, symbol,
+        _aiCache.SetRelevanceDecision(articleId, symbol,
             RelevanceDecisions.Irrelevant, RelevanceSources.User, ct);
 
     // The single authoritative relevance decision. Verdict precedence:
@@ -151,7 +154,7 @@ public class RelevanceService : IRelevanceService
             ArticleRelevance? cached = null;
             try
             {
-                cached = await _dataRepo.GetRelevance(article.Id, normalized, ct);
+                cached = await _aiCache.GetRelevance(article.Id, normalized, ct);
             }
             catch (Exception ex)
             {
@@ -291,7 +294,7 @@ public class RelevanceService : IRelevanceService
             result[row.ArticleId] = row;
         try
         {
-            await _dataRepo.StoreRelevances(rows, ct);
+            await _aiCache.StoreRelevances(rows, ct);
         }
         catch (Exception ex)
         {

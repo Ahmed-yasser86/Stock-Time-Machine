@@ -43,18 +43,21 @@ public class HypeResemblanceService : IHypeResemblanceService
     // layer (the pre-cap behavior hid it entirely).
     private const int PatternLeadSlots = 3;
 
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IAiCacheRepository _aiCache;
+    private readonly IFilingRepository _filings;
     private readonly IGeminiClient _gemini;
     private readonly IVectorStore _vectors;
     private readonly ILogger<HypeResemblanceService> _logger;
 
     public HypeResemblanceService(
-        IHistoricalDataRepository dataRepo,
+        IAiCacheRepository aiCache,
+        IFilingRepository filings,
         IGeminiClient gemini,
         IVectorStore vectors,
         ILogger<HypeResemblanceService> logger)
     {
-        _dataRepo = dataRepo;
+        _aiCache = aiCache;
+        _filings = filings;
         _gemini = gemini;
         _vectors = vectors;
         _logger = logger;
@@ -218,7 +221,7 @@ public class HypeResemblanceService : IHypeResemblanceService
                 continue;
             try
             {
-                var row = await _dataRepo.GetFilingSummary(accession, ct);
+                var row = await _filings.GetFilingSummary(accession, ct);
                 if (row is null)
                     continue;
                 inputs.Add(HypeCaseVector.FromRecord(row, row.StructuredJson));
@@ -423,7 +426,7 @@ public class HypeResemblanceService : IHypeResemblanceService
         {
             try
             {
-                var row = await _dataRepo.GetEmbedding(id, model, ct);
+                var row = await _aiCache.GetEmbedding(id, model, ct);    
                 if (row is null || string.IsNullOrWhiteSpace(row.VectorJson))
                     continue;
                 var vec = JsonSerializer.Deserialize<float[]>(row.VectorJson);

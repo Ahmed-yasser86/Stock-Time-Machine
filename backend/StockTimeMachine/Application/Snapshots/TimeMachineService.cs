@@ -5,7 +5,9 @@ namespace StockTimeMachine;
 public class TimeMachineService : ITimeMachineService
 {
     private readonly ICompanyRepository _companyRepo;
-    private readonly IHistoricalDataRepository _dataRepo;
+    private readonly IPriceRepository _prices;
+    private readonly IFilingRepository _filings;
+    private readonly INewsRepository _news;
     private readonly ISecEdgarProvider _secEdgar;
     private readonly IAlphaVantageProvider _alphaVantage;
     private readonly ICompanyDirectory _directory;
@@ -16,7 +18,9 @@ public class TimeMachineService : ITimeMachineService
 
     public TimeMachineService(
         ICompanyRepository companyRepo,
-        IHistoricalDataRepository dataRepo,
+        IPriceRepository prices,
+        IFilingRepository filings,
+        INewsRepository news,
         ISecEdgarProvider secEdgar,
         IAlphaVantageProvider alphaVantage,
         ICompanyDirectory directory,
@@ -26,7 +30,9 @@ public class TimeMachineService : ITimeMachineService
         ILogger<TimeMachineService> logger)
     {
         _companyRepo = companyRepo;
-        _dataRepo = dataRepo;
+        _prices = prices;
+        _filings = filings;
+        _news = news;
         _secEdgar = secEdgar;
         _alphaVantage = alphaVantage;
         _directory = directory;
@@ -248,7 +254,7 @@ public class TimeMachineService : ITimeMachineService
     {
         // Free-tier discipline: the database is always consulted before any
         // external call, so repeated investigations cost zero provider requests.
-        var prices = await _dataRepo.GetPricesAsOf(symbol, asOfDate, 30, ct);
+        var prices = await _prices.GetPricesAsOf(symbol, asOfDate, 30, ct);
         if (prices.Count > 0)
             return prices;
 
@@ -267,8 +273,8 @@ public class TimeMachineService : ITimeMachineService
         var freshPrices = await _alphaVantage.GetDailyPrices(symbol, asOfDate, 365, ct);
         if (freshPrices.Count > 0)
         {
-            await _dataRepo.StorePrices(symbol, freshPrices, ct);
-            return await _dataRepo.GetPricesAsOf(symbol, asOfDate, 30, ct);
+            await _prices.StorePrices(symbol, freshPrices, ct);
+            return await _prices.GetPricesAsOf(symbol, asOfDate, 30, ct);
         }
 
         return prices;
@@ -286,7 +292,7 @@ public class TimeMachineService : ITimeMachineService
             return new List<SecFiling>();
         }
 
-        var filings = await _dataRepo.GetFilingsAsOf(company.Symbol, asOfDate, ct);
+        var filings = await _filings.GetFilingsAsOf(company.Symbol, asOfDate, ct);
         if (filings.Count > 0)
             return filings;
 
@@ -294,8 +300,8 @@ public class TimeMachineService : ITimeMachineService
         var freshFilings = await _secEdgar.GetCompanyFilings(cik, asOfDate, ct);
         if (freshFilings.Count > 0)
         {
-            await _dataRepo.StoreFilings(company.Symbol, freshFilings, ct);
-            return await _dataRepo.GetFilingsAsOf(company.Symbol, asOfDate, ct);
+            await _filings.StoreFilings(company.Symbol, freshFilings, ct);
+            return await _filings.GetFilingsAsOf(company.Symbol, asOfDate, ct);
         }
 
         return filings;
@@ -306,7 +312,7 @@ public class TimeMachineService : ITimeMachineService
         // Same coverage-freeze guard as the moves lens: a non-empty cache must
         // not shadow later coverage. One live refresh per snapshot when the
         // newest cached row predates the cutoff by 7+ days.
-        var fromSelectedSource = (await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct))
+        var fromSelectedSource = (await _news.GetNewsAsOf(symbol, asOfDate, newsSource, ct))
             .Where(n => IsFromSource(n, newsSource)).ToList();
         var newest = fromSelectedSource
             .Select(n => (DateTime?)n.PublishedAt)
@@ -320,8 +326,8 @@ public class TimeMachineService : ITimeMachineService
                 var refreshed = await provider.SearchAsync(symbol, companyName, asOfDate, ct);
                 if (refreshed.Count > 0)
                 {
-                    await _dataRepo.StoreNews(symbol, refreshed, ct);
-                    var reread = await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
+                    await _news.StoreNews(symbol, refreshed, ct);
+                    var reread = await _news.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
                     fromSelectedSource = reread.Where(n => IsFromSource(n, newsSource)).ToList();
                     _logger.LogInformation("Stale snapshot news refreshed for {Symbol}: {Count} rows", symbol, fromSelectedSource.Count);
                 }
@@ -339,8 +345,8 @@ public class TimeMachineService : ITimeMachineService
         var fresh = await fallbackProvider.SearchAsync(symbol, companyName, asOfDate, ct);
         if (fresh.Count > 0)
         {
-            await _dataRepo.StoreNews(symbol, fresh, ct);
-            var reread = await _dataRepo.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
+            await _news.StoreNews(symbol, fresh, ct);
+            var reread = await _news.GetNewsAsOf(symbol, asOfDate, newsSource, ct);
             return await GateAsync(
                 reread.Where(n => IsFromSource(n, newsSource)).ToList(),
                 symbol, companyName, asOfDate, ct);
@@ -403,7 +409,7 @@ public class TimeMachineService : ITimeMachineService
 
     private async Task<IReadOnlyList<SecFiling>> ResolveOutcomeFilings(Company company, DateOnly asOfDate, CancellationToken ct)
     {
-        var outcomeFilings = await _dataRepo.GetFilingsAfter(company.Symbol, asOfDate, 30, ct);
+        var outcomeFilings = await _filings.GetFilingsAfter(company.Symbol, asOfDate, 30, ct);
         if (outcomeFilings.Count > 0)
             return outcomeFilings;
 
@@ -421,8 +427,8 @@ public class TimeMachineService : ITimeMachineService
         var freshFilings = await _secEdgar.GetCompanyFilings(cik, windowEnd, ct);
         if (freshFilings.Count > 0)
         {
-            await _dataRepo.StoreFilings(company.Symbol, freshFilings, ct);
-            return await _dataRepo.GetFilingsAfter(company.Symbol, asOfDate, 30, ct);
+            await _filings.StoreFilings(company.Symbol, freshFilings, ct);
+            return await _filings.GetFilingsAfter(company.Symbol, asOfDate, 30, ct);
         }
 
         return new List<SecFiling>();
@@ -430,7 +436,7 @@ public class TimeMachineService : ITimeMachineService
 
     private async Task<IReadOnlyList<PricePoint>> ResolveOutcomePrices(string symbol, Company company, DateOnly asOfDate, CancellationToken ct)
     {
-        var outcomePrices = await _dataRepo.GetPricesAfter(symbol, asOfDate, 30, ct);
+        var outcomePrices = await _prices.GetPricesAfter(symbol, asOfDate, 30, ct);
         if (outcomePrices.Count > 0)
             return outcomePrices.ToList();
 
@@ -448,8 +454,8 @@ public class TimeMachineService : ITimeMachineService
         var freshPrices = await _alphaVantage.GetDailyPrices(symbol, futureDate, 60, ct);
         if (freshPrices is not null && freshPrices.Count > 0)
         {
-            await _dataRepo.StorePrices(symbol, freshPrices, ct);
-            var result = await _dataRepo.GetPricesAfter(symbol, asOfDate, 30, ct);
+            await _prices.StorePrices(symbol, freshPrices, ct);
+            var result = await _prices.GetPricesAfter(symbol, asOfDate, 30, ct);
             return result.ToList();
         }
 

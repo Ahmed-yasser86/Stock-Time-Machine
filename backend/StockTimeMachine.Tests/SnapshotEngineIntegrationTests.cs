@@ -25,7 +25,7 @@ public class SnapshotEngineIntegrationTests
 
         var companyRepo = new CompanyRepository(db, NullLogger<CompanyRepository>.Instance);
         var dataRepo = new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance);
-        var sut = new TimeMachineService(companyRepo, dataRepo, sec.Object, av.Object, directory, Array.Empty<ICompanyLookup>(), new FixedNewsProviderFactory(new NullNewsProvider(NullLogger<NullNewsProvider>.Instance)), new DisabledRelevanceStub(), NullLogger<TimeMachineService>.Instance);
+        var sut = new TimeMachineService(companyRepo, dataRepo, dataRepo, dataRepo, sec.Object, av.Object, directory, Array.Empty<ICompanyLookup>(), new FixedNewsProviderFactory(new NullNewsProvider(NullLogger<NullNewsProvider>.Instance)), new DisabledRelevanceStub(), NullLogger<TimeMachineService>.Instance);
         return (db, sec, av, sut);
     }
 

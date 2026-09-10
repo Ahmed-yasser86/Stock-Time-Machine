@@ -116,6 +116,7 @@ public class RelevanceGateTests
     }
     private static RelevanceService RuleOnlySut(StockTimeMachineDbContext db) =>
         new(new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
+            new HistoricalDataRepository(db, NullLogger<HistoricalDataRepository>.Instance),
             new DisabledGeminiStub(),
             new GdeltNewsProvider(new HttpClient(),
                 NullLogger<GdeltNewsProvider>.Instance,
@@ -156,7 +157,7 @@ public class RelevanceGateTests
             .ReturnsAsync((ArticleRelevance?)null);
         repo.Setup(r => r.StoreRelevances(It.IsAny<IEnumerable<ArticleRelevance>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("db down"));
-        var sut = new RelevanceService(repo.Object,
+        var sut = new RelevanceService(repo.Object, repo.Object,
             new FuncGeminiStub(_ => new[]
             {
                 new RelevanceVerdict { Id = "a1", Relevant = true, Category = "FINANCIAL", Confidence = 0.9, Reason = "R" },
@@ -189,7 +190,7 @@ public class RelevanceGateTests
                 Decision = RelevanceDecisions.UserApproved, DecisionSource = RelevanceSources.User,
             },
         });
-        var sut = new RelevanceService(repo,
+        var sut = new RelevanceService(repo, repo,
             new FuncGeminiStub(_ => new[]
             {
                 new RelevanceVerdict { Id = "a1", Relevant = false, Category = "UNRELATED", Confidence = 0.9, Reason = "AI disagrees." },
@@ -224,7 +225,7 @@ public class RelevanceGateTests
                 Decision = RelevanceDecisions.Uncertain, DecisionSource = RelevanceSources.Rule,
             },
         });
-        var sut = new RelevanceService(repo,
+        var sut = new RelevanceService(repo, repo,
             new FuncGeminiStub(_ => new[]
             {
                 new RelevanceVerdict { Id = "a1", Relevant = true, Category = "FINANCIAL", Confidence = 0.9, Reason = "AI judges relevant." },
@@ -259,7 +260,7 @@ public class RelevanceGateTests
             Doc("g3", "Cocaine dealers sentenced in Frankfurt drug ring", ""),
             Doc("g4", "Review: the greatest war movies streaming now", "Including titles on Netflix"),
         });
-        var sut = new NarrativeService(repo, new DisabledGeminiStub(), new DisabledBodyStub(),
+        var sut = new NarrativeService(repo, repo, new DisabledGeminiStub(), new DisabledBodyStub(),
             NetflixDirectory(), RuleOnlySut(db), NullLogger<NarrativeService>.Instance);
 
         var result = await sut.GetTopics("NFLX", new DateOnly(2026, 6, 15), NewsSources.Gdelt);
