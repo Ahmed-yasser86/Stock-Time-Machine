@@ -199,6 +199,19 @@ narrative; uncertainty is a descriptive proxy, not modeled risk; regimes are
 window-relative; AI outputs are labeled and versioned; investigations take
 minutes under provider pacing. Full account: [limitations](docs/limitations.md).
 
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | .NET 9, ASP.NET Core, Entity Framework Core 9 |
+| Database | SQL Server 2022 (cache store; Qdrant Cloud for vectors) |
+| AI / ML | FinBERT sidecar (PyTorch, Transformers), Google Gemini (embeddings + generation), Jina Reader |
+| Market & news providers | Alpha Vantage, SEC EDGAR, GDELT, MarketAux, Arctic Shift, Finnhub |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, nginx |
+| Testing | xUnit, Moq, EF InMemory, WebApplicationFactory |
+| Observability | Serilog (console + rolling file, 14-day retention) |
+| Deploy | Docker Compose, Kubernetes manifests |
+
 ## Run (plug and play)
 
 The fastest path is Docker — one command brings up SQL Server, Qdrant,
