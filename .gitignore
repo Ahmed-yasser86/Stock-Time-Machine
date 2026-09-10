@@ -162,4 +162,4 @@ docs/*
 !docs/testing.md
 !docs/limitations.md
 !docs/development.md
-!docs/THREAD_CLUSTERING.md
+!docs/thread-clustering.md

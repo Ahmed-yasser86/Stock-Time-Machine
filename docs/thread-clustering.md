@@ -1,15 +1,16 @@
 # Thread Clustering & Evidence Traceability
 
-> Local working document — never commit (repo docs rule). The user-facing
-> summary lives in the methodology API ("Thread Clustering" section,
-> served from `MethodologyContent.cs`).
+> Technical evidence record for the average-linkage decision. The
+> user-facing summary lives in the methodology API ("Thread Clustering"
+> section, served from `MethodologyContent.cs`).
 
 ## 1. What we did (chronology)
 
-1. **Evaluation (read-only).** A 166-article NVIDIA thread (`nvidia · chip · china`,
-   NVDA as-of 2026-06-23) was suspected of fusing distinct narratives. Audit of
-   164 retrievable member titles found zero off-topic articles but three fused
-   sub-narratives: China/export controls (~42), GPU/hardware (~40), general AI (~72).
+1. **Evaluation (read-only).** A 166-member NVIDIA thread (`nvidia · chip · china`,
+   NVDA as-of 2026-06-23) was suspected of fusing distinct narratives. Of the
+   166 member ids, 164 had titles retrievable from cache; audit of those 164
+   found zero off-topic articles but three fused sub-narratives:
+   China/export controls (~42), GPU/hardware (~40), general AI (~72).
 2. **Root cause identified.** `EmbeddingClustering.cs` used greedy agglomerative
    clustering with **single linkage** (max pairwise cosine) at 0.75. One bridge
    article above the bar fuses otherwise weakly related subgroups.
@@ -28,14 +29,19 @@
 ## 2. Achievements
 
 - The 166-article mega-thread now resolves live into **43 coherent threads**
-  (top sizes 38/20/16/14/11/8/6/5), matching the offline prediction almost exactly.
+  (top sizes 38/20/16/14/11/8/6/5), matching the offline A/B measurement for
+  that case (43 clusters, largest 38 — §4, Average @ 0.75 row).
 - Internal coherence of large clusters: median pairwise similarity **~0.70 →
   ~0.79**, sub-threshold pairs **~80% → ~10–20%**.
-- Singleton rate held at **12–13%** (honest non-matches, not failures).
+- Singleton rate held at **12–13%** (valid singleton output — articles with
+  no above-threshold partner — not clustering errors).
 - Every thread is now inspectable down to canonical article URLs; live audit
   returned exact membership (38/38, 20/20, 16/16 on NVDA; 9/9 on MSFT) with
-  zero misassignment and zero invented links.
-- Full suite **429/429**, tsc clean, vite build clean, secret scans clean.
+  no observed membership discrepancies against the cached reference rows
+  (no independent human ground truth exists for these threads) and zero
+  invented links.
+- Full suite **429/429** (at time of writing), tsc clean, vite build clean,
+  secret scans clean.
 
 ## 3. Architecture — pipeline data path
 
@@ -78,6 +84,13 @@ Measured on 172 vectors (case 1) / 150 vectors (case 2):
 | Single + post-pass | = avg .75 | = avg .75 | = avg .75 | = avg .75 | = avg .75 | Yes (bit-identical — redundant) |
 | Single @ 0.80 | 45 / 41 | 114 / 97 | 0.73 | 66% / 63% | 35 / 32 | No — blob persists, members shed |
 
+"Separates narratives?" = whether the three fused sub-narratives from §1
+(China/export-controls vs GPU/hardware vs general AI) end up in distinct
+clusters rather than one blob. "No — still blobs" means cluster counts
+rose but the dominant cluster still spans multiple sub-narratives;
+"No — blob persists, members shed" means the blob survived while smaller
+clusters peeled off as singletons.
+
 Additional measurements:
 
 - **Bridges:** 64/164 blob members (39%) averaged < 0.70 similarity to the
@@ -85,7 +98,9 @@ Additional measurements:
 - **Merge log:** 165 merges descending 1.000 → ~0.75; strongest rejected
   pairs at 0.747/0.739/0.732 — the old boundary was razor-thin and arbitrary.
 - **Runtime:** similarity matrix ~8s per 174 articles in throwaway Python;
-  clustering proper ~1s. Production C# is faster. No perf concern.
+  clustering proper ~1s. This measures experiment cost only, not a
+  language comparison; at these volumes (embedding ceiling: 400 articles)
+  there is no perf concern either way.
 - **Determinism:** harness rerun byte-identical across processes.
 
 ## 5. Decision record
@@ -102,16 +117,22 @@ Additional measurements:
   Not "more clusters", not "fewer articles per cluster". Singleton growth
   8→22 is accepted honest output, never optimized away.
 
-## 6. Downstream effects (observed + expected)
+## 6. Downstream effects
+
+Observed (verified live):
 
 - **Signal voting:** triggers now vote on single-narrative threads. The old
   blob cast one STRATEGY vote for three stories; isolated threads vote their
   own categories (verified: smuggling thread votes LEGAL on its own).
-- **Resemblance:** mean-pooling over tight threads sharpens case vectors
-  (previously 166-vector soup per case).
+
+Expected consequences of the new behavior (not separately measured):
+
+- **Resemblance:** mean-pooling over tight threads should sharpen case
+  vectors (previously one 166-vector soup per case).
 - **Briefs:** the top-8 briefing budget covers 8 focused threads instead of
-  1 blob + scraps; modest token increase, capped by existing bounds.
-- **Evidence weighting:** thread size now means something.
+  1 blob + scraps; token increase bounded by the existing caps.
+- **Evidence weighting:** thread size now reflects narrative support rather
+  than chaining accidents.
 
 ## 7. Verification & tests
 
@@ -139,9 +160,6 @@ Additional measurements:
 
 ## 9. Operations
 
-- Company directory refresh: `scripts/refresh-company-directory.ps1`
-  (SEC mirror + curated overlay, quarterly).
-- reg-v1 backfill backup retained: `HypeCases_backup_20260908`.
 - GDELT quota is the binding live constraint: each full investigation
   traverses ~100 provider days. Verification batteries should be budgeted.
 - Known honest limits: GDELT entity-anchored corpus under-covers small-cap
