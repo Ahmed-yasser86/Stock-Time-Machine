@@ -149,8 +149,17 @@ docs/features/*.md
 docs/*
 # ----- Public documentation (committed) -----
 !README.md
-!docs/research.md
-!docs/technical.md
 !docs/overview.md
 !docs/data-snapshot.md
 !docs/pipelines.md
+!docs/methodology.md
+!docs/signals.md
+!docs/analytics.md
+!docs/architecture.md
+!docs/data.md
+!docs/providers.md
+!docs/reproducibility.md
+!docs/testing.md
+!docs/limitations.md
+!docs/development.md
+!docs/THREAD_CLUSTERING.md
