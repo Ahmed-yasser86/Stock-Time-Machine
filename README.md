@@ -251,7 +251,7 @@ Keys stay server-side: never logged, never returned to browsers.
 | `JINA_API_KEY`       | [Jina AI](https://jina.ai/reader) | Full article bodies for briefs (else titles only)   |
 | `FINNHUB_TOKEN`      | [Finnhub](https://finnhub.io) (free tier) | Live delayed quotes + company-profile fallback      |
 | `ALPHAVANTAGE_API_KEY` | [Alpha Vantage](https://www.alphavantage.co) (free tier) | Price history + Alpha Vantage news source |
-| `GDELT_API_KEY`      | Optional (GDELT Project API is keyless) | GDELT Cloud tier; without it, keyless Project API |
+| `GDELT_API_KEY`      | Required for the Cloud tier (Bearer auth on every call) | `gdelt-cloud` news source; without it, only the keyless Project API (`gdelt`) works |
 | `MARKETAUX_API_KEY`  | [MarketAux](https://www.marketaux.com) | MarketAux news source                               |
 
 No key is needed for SEC EDGAR — only a contact `SEC_USER_AGENT`, which
