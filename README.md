@@ -205,6 +205,7 @@ minutes under provider pacing. Full account: [limitations](docs/limitations.md).
 [Pipelines](docs/pipelines.md) | [Signals](docs/signals.md) |
 [Analytics](docs/analytics.md) | [Architecture](docs/architecture.md) |
 [Data](docs/data.md) | [Providers](docs/providers.md) |
+[Rate limiting](docs/rate-limiting.md) |
 [Caching](docs/caching.md) |
 [Reproducibility](docs/reproducibility.md) | [Testing](docs/testing.md) |
 [Limitations](docs/limitations.md) | [Development](docs/development.md)
@@ -298,6 +299,7 @@ guide: [development](docs/development.md).
 | [Architecture](docs/architecture.md) | Layer responsibilities, boundaries, and honest limitations |
 | [Data](docs/data.md) | Cache tables, schemas, retention, frozen rows |
 | [Providers](docs/providers.md) | External providers, keys, pacing, degradation behavior |
+| [Rate limiting](docs/rate-limiting.md) | AIMD limiter, per-scope quotas, token weights, call-site caps |
 | [Caching](docs/caching.md) | Cache patterns, invalidation story, quotas, limitations |
 | [API](docs/api.md) | Endpoint reference: routes, payloads, SSE events, throttling |
 | [Reproducibility](docs/reproducibility.md) | Version stamps, re-runs, byte-identical guarantees |
