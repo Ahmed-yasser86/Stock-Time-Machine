@@ -53,6 +53,38 @@ The backend suite runs fully offline (InMemory stores, stubbed providers) —
 temporal guards, trigger math, merge behavior, and failure paths pinned
 without keys, quota, or network.
 
+### Research achievements
+- **Re-derivable detections.** Every signal trigger names its threads,
+  flags, and regime dates; every resemblance is labeled by which query
+  agreed; every brief cites numbered claims. A detection can be checked by
+  hand from frozen evidence — no black box to take on faith.
+- **Hindsight-proof comparisons.** Supporters must have peaked no later
+  than the explained peak; resemblance pools exclude post-peak members;
+  future rows never enter historical state. Precedent means precedent.
+- **Evidence-backed matching.** Cross-company pairs expose cohesion per
+  thread, thread-level mean, shared terms, and full member lists with
+  canonical URLs — plus duplicate-content exclusion with counts. Similarity
+  is the discovery signal; the member lists are the verdict material.
+- **Version-stamped methodology.** Projection, regulatory window, and
+  relevance-prompt versions ride on every frozen case, so a later
+  re-study can state exactly what changed and what held.
+
+### Business achievements
+- **Diligence with proof.** Pre-decision reviews show what was knowable
+  before a date, each item timestamped and sourced — the kind of record
+  compliance reviews and investment committees ask for and rarely get.
+- **Quota economy.** Caching at every layer (prices, filings, articles,
+  verdicts, embeddings, summaries) means repeat and comparative analysis
+  costs a fraction of first-run spend — the cost structure favors
+  re-examination over re-fetching.
+- **No-forecast positioning.** The system describes and resembles; it never
+  predicts, recommends, or implies causation — in prompts, UI copy, and
+  API shapes alike. That restraint is what makes its output usable inside
+  regulated workflows.
+- **One-cutoff multi-name review.** Sector sweeps evaluate several names
+  under a single shared cutoff with failure-isolated rows — a morning
+  research routine in one view instead of scattered tabs.
+
 ---
 
 ## Executive summary
